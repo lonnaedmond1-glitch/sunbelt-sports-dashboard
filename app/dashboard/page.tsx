@@ -83,8 +83,44 @@ function parseJobDate(dateStr: string): Date | null {
 }
 
 // ─── Module 1: Active Job State Engine ──────────────────────────────────────
-// A job is ACTIVE only if: (1) it appears in the CURRENT WEEK schedule AND
-// (2) it has at least 1 Jotform field report submission.
+// A job is ACTIVE if it appeared on the schedule within the last 14 days
+// OR has an active Gantt entry (endDate >= today), AND scope is not 100% done.
+function isRecentlyActive(job: any, scheduleData: any): boolean {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const twoWeeksAgo = new Date(today); twoWeeksAgo.setDate(today.getDate() - 14);
+  const twoWeeksAgoISO = twoWeeksAgo.toISOString().split('T')[0];
+
+  const jobName = (job.Job_Name || '').toLowerCase();
+  const jobNum = (job.Job_Number || '');
+
+  // Check 1: appeared in schedule within last 14 days (using lastDate from jobOccurrences)
+  const occurrences: any[] = scheduleData?.jobFirstOccurrences || [];
+  for (const occ of occurrences) {
+    const ref = (occ.jobRef || '').toLowerCase();
+    const lastDate = occ.lastDate || occ.firstDate || '';
+    if (lastDate < twoWeeksAgoISO) continue; // too old
+    // Match by Gantt job number (most reliable)
+    if (occ.ganttJobNumber && occ.ganttJobNumber === jobNum) return true;
+    // Match by name fragment
+    const refWord = ref.split(' ')[0];
+    const nameWord = jobName.split(' ')[0];
+    if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
+    if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
+  }
+
+  // Check 2: active Gantt entry — job timeline hasn't ended yet
+  const ganttJobs: any[] = scheduleData?.activeGanttJobs || [];
+  for (const g of ganttJobs) {
+    if (g.Job_Number && g.Job_Number === jobNum) return true;
+    const gName = (g.Job_Name || '').toLowerCase();
+    const gWord = gName.split(' ')[0];
+    if (gWord && gWord.length > 3 && jobName.includes(gWord)) return true;
+  }
+
+  return false;
+}
+
+// Also check if on THIS WEEK for sub-label differentiation
 function isOnCurrentWeekSchedule(job: any, scheduleData: any): boolean {
   const days: any[] = scheduleData?.currentWeek?.days || [];
   const jobName = (job.Job_Name || '').toLowerCase();
@@ -92,9 +128,7 @@ function isOnCurrentWeekSchedule(job: any, scheduleData: any): boolean {
     for (const assignment of (day.assignments || [])) {
       if (assignment.decoded?.isOff) continue;
       const ref = (assignment.decoded?.jobRef || '').toLowerCase();
-      // Match by Gantt job number (most reliable)
       if (assignment.ganttMatch?.jobNumber && assignment.ganttMatch.jobNumber === job.Job_Number) return true;
-      // Match by name fragment (first meaningful word)
       const refWord = ref.split(' ')[0];
       const nameWord = jobName.split(' ')[0];
       if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
@@ -251,18 +285,20 @@ export default async function MasterDashboard() {
   for (const r of fieldReports) reportMap[r.Job_Number] = r;
 
   // ── Module 1: Active Job State Engine ──────────────────────────────────
-  // ActiveStatus = TRUE only when: on current week schedule AND has ≥1 field report
+  // ActiveStatus = TRUE: on schedule within last 14 days OR Gantt still open, AND scope < 100%
   const activeJobs = jobs.filter((j: any) =>
-    isOnCurrentWeekSchedule(j, scheduleData) && !!reportMap[j.Job_Number]
+    isRecentlyActive(j, scheduleData) && (j.Pct_Complete || 0) < 100
   );
 
-  // Scheduled this week but no field report yet = "Scheduled, Not Mobilized"
+  // On this week's schedule but no field report = "Scheduled, Not Mobilized"
   const scheduledNotMobilized = jobs.filter((j: any) =>
-    isOnCurrentWeekSchedule(j, scheduleData) && !reportMap[j.Job_Number]
+    isOnCurrentWeekSchedule(j, scheduleData) && !reportMap[j.Job_Number] && (j.Pct_Complete || 0) < 100
   );
 
-  // Jobs not on this week's schedule (upcoming/backlog)
-  const upcomingJobs = jobs.filter((j: any) => !isOnCurrentWeekSchedule(j, scheduleData));
+  // Not active this period
+  const upcomingJobs = jobs.filter((j: any) =>
+    !isRecentlyActive(j, scheduleData) || (j.Pct_Complete || 0) >= 100
+  );
 
   const totalPortfolio = jobs.reduce((sum: number, j: any) => sum + (j.Contract_Amount || 0), 0);
   const totalBilled = jobs.reduce((sum: number, j: any) => sum + (j.Billed_To_Date || 0), 0);
