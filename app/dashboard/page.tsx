@@ -83,8 +83,9 @@ function parseJobDate(dateStr: string): Date | null {
 }
 
 // ─── Module 1: Active Job State Engine ──────────────────────────────────────
-// A job is ACTIVE if it appeared on the schedule within the last 14 days
-// OR has an active Gantt entry (endDate >= today), AND scope is not 100% done.
+// A job is ACTIVE if a crew was assigned to it in the SCHEDULE SHEET within
+// the last 14 days AND scope is not 100% done.
+// Source of truth: the weekly crew schedule (not the Gantt).
 function isRecentlyActive(job: any, scheduleData: any): boolean {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const twoWeeksAgo = new Date(today); twoWeeksAgo.setDate(today.getDate() - 14);
@@ -93,28 +94,21 @@ function isRecentlyActive(job: any, scheduleData: any): boolean {
   const jobName = (job.Job_Name || '').toLowerCase();
   const jobNum = (job.Job_Number || '');
 
-  // Check 1: appeared in schedule within last 14 days (using lastDate from jobOccurrences)
+  // Only source: jobFirstOccurrences from the weekly crew schedule sheet.
+  // Each occurrence has a lastDate = most recent day this job appeared on a crew row.
   const occurrences: any[] = scheduleData?.jobFirstOccurrences || [];
   for (const occ of occurrences) {
-    const ref = (occ.jobRef || '').toLowerCase();
     const lastDate = occ.lastDate || occ.firstDate || '';
-    if (lastDate < twoWeeksAgoISO) continue; // too old
+    // Job must have appeared on the schedule within the last 14 days
+    if (lastDate < twoWeeksAgoISO) continue;
+    const ref = (occ.jobRef || '').toLowerCase();
     // Match by Gantt job number (most reliable)
     if (occ.ganttJobNumber && occ.ganttJobNumber === jobNum) return true;
-    // Match by name fragment
+    // Match by name fragment (first meaningful word in schedule ref)
     const refWord = ref.split(' ')[0];
     const nameWord = jobName.split(' ')[0];
     if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
     if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
-  }
-
-  // Check 2: active Gantt entry — job timeline hasn't ended yet
-  const ganttJobs: any[] = scheduleData?.activeGanttJobs || [];
-  for (const g of ganttJobs) {
-    if (g.Job_Number && g.Job_Number === jobNum) return true;
-    const gName = (g.Job_Name || '').toLowerCase();
-    const gWord = gName.split(' ')[0];
-    if (gWord && gWord.length > 3 && jobName.includes(gWord)) return true;
   }
 
   return false;
