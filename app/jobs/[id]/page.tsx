@@ -1,29 +1,21 @@
 import React from 'react';
 import Link from 'next/link';
 import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
+import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
 
 export const dynamic = 'force-dynamic';
 
-const getBaseUrl = () => {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-};
-
 async function getLiveJobData(jobNumber: string) {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/jobs`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return (json.data || []).find((j: any) => j.Job_Number?.trim() === jobNumber.trim()) || null;
+    const jobs = await fetchLiveJobs();
+    return jobs.find((j: any) => j.Job_Number?.trim() === jobNumber.trim()) || null;
   } catch { return null; }
 }
 
 async function getLiveFieldReport(jobNumber: string) {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/field-reports`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return (json.data || []).find((r: any) => r.Job_Number?.trim() === jobNumber.trim()) || null;
+    const reports = await fetchLiveFieldReports();
+    return reports.find((r: any) => r.Job_Number?.trim() === jobNumber.trim()) || null;
   } catch { return null; }
 }
 

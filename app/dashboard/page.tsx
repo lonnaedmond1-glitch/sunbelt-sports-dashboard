@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import MapWrapper from '@/components/MapWrapper';
+import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,23 +10,8 @@ const getBaseUrl = () => {
   return 'http://localhost:3000';
 };
 
-async function getLiveJobs() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/jobs`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return json.data || [];
-  } catch { return []; }
-}
-
-async function getLiveFieldReports() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/field-reports`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return json.data || [];
-  } catch { return []; }
-}
+const getLiveJobs = fetchLiveJobs;
+const getLiveFieldReports = fetchLiveFieldReports;
 
 async function getSamsaraData() {
   try {

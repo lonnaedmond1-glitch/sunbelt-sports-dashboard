@@ -1,19 +1,10 @@
 import React from 'react';
+import { fetchScorecardData } from '@/lib/sheets-data';
 
 export const dynamic = 'force-dynamic';
 
-const getBaseUrl = () => {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-};
-
 async function getScorecardData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/scorecard`, { cache: 'no-store' });
-    if (!res.ok) return {};
-    const json = await res.json();
-    return json.data || {};
-  } catch { return {}; }
+  return fetchScorecardData();
 }
 
 function fmt(n: number, decimals = 1) {

@@ -1,19 +1,10 @@
 import React from 'react';
+import { fetchEstimatingData } from '@/lib/sheets-data';
 
 export const dynamic = 'force-dynamic';
 
-const getBaseUrl = () => {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-};
-
 async function getEstimatingData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/estimating`, { cache: 'no-store' });
-    if (!res.ok) return { bids: [], commitments: [] };
-    const json = await res.json();
-    return json.data || { bids: [], commitments: [] };
-  } catch { return { bids: [], commitments: [] }; }
+  return fetchEstimatingData();
 }
 
 function fmt(n: number) {
