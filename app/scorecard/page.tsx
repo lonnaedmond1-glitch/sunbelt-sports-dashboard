@@ -20,7 +20,7 @@ function fmtFull(n: number) {
 }
 
 export default async function ScorecardPage() {
-  const sc = await getScorecardData();
+  const sc: any = await getScorecardData();
 
   const healthColor = (sc.netIncome?.current || 0) > 0 ? '#20BC64' : '#ef4444';
   const grossMarginColor = (sc.grossMarginPct?.current || 0) > 20 ? '#20BC64' : (sc.grossMarginPct?.current || 0) > 10 ? '#fb923c' : '#ef4444';
