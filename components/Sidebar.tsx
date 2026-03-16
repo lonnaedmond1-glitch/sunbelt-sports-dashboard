@@ -5,8 +5,12 @@ import { usePathname } from 'next/navigation';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/scorecard', label: 'Scorecard', icon: '📈' },
   { href: '/schedule', label: 'Schedule', icon: '📅' },
+  { href: '/scorecard', label: 'Scorecard', icon: '📈' },
+  { href: '/estimating', label: 'Estimating', icon: '🎯' },
+  { href: '/equipment', label: 'Equipment', icon: '🚜' },
+  { href: '/change-orders', label: 'Change Orders', icon: '📝' },
+  { href: '/project-scorecard', label: 'Project Scores', icon: '⚖️' },
 ];
 
 export default function Sidebar() {

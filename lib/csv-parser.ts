@@ -77,3 +77,60 @@ export function getFieldReportForJob(jobNumber: string): FieldReport | undefined
   const all = readCSV<FieldReport>('Field_Reports.csv');
   return all.find(r => r.Job_Number.trim() === jobNumber.trim());
 }
+
+export interface ChangeOrder {
+  Job_Number: string;
+  CO_Number: string;
+  Description: string;
+  Requested_By: string;
+  Date_Submitted: string;
+  Status: string;
+  Amount: string;
+  Type: string;
+  Notes: string;
+}
+
+export function getAllChangeOrders(): ChangeOrder[] {
+  return readCSV<ChangeOrder>('Change_Orders.csv');
+}
+
+export function getChangeOrdersForJob(jobNumber: string): ChangeOrder[] {
+  return getAllChangeOrders().filter(co => co.Job_Number.trim() === jobNumber.trim());
+}
+
+export interface ProjectScorecard {
+  Job_Number: string;
+  Est_Man_Hours: string;
+  Act_Man_Hours: string;
+  Est_Stone_Tons: string;
+  Act_Stone_Tons: string;
+  Est_Binder_Tons: string;
+  Act_Binder_Tons: string;
+  Est_Topping_Tons: string;
+  Act_Topping_Tons: string;
+  Est_Days_On_Site: string;
+  Act_Days_On_Site: string;
+  Weather_Days: string;
+}
+
+export function getAllScorecards(): ProjectScorecard[] {
+  return readCSV<ProjectScorecard>('Project_Scorecards.csv');
+}
+
+export function getScorecardForJob(jobNumber: string): ProjectScorecard | undefined {
+  return getAllScorecards().find(s => s.Job_Number.trim() === jobNumber.trim());
+}
+
+export interface JobFolder {
+  Job_Number: string;
+  Job_Folder_Link: string;
+  Contract_Link: string;
+  Work_Order_Link: string;
+  Plans_Link: string;
+  Material_Resources_Link: string;
+}
+
+export function getJobFolder(jobNumber: string): JobFolder | undefined {
+  const all = readCSV<JobFolder>('Job_Folders.csv');
+  return all.find(f => f.Job_Number.trim() === jobNumber.trim());
+}

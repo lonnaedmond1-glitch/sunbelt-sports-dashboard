@@ -1,0 +1,15 @@
+Job_Number,CO_Number,Description,Requested_By,Date_Submitted,Status,Amount,Type,Notes
+25-177,CO-001,Additional drainage work at north end,Robins & Morton,2025-06-15,Approved,$18500,Scope Addition,Approved by PM - work started
+25-177,CO-002,Remobilization for weather delays (3 days),Sunbelt Sports,2025-07-01,Pending,$8200,Time & Material,Submitted to GC - awaiting response
+25-221,CO-001,Extra base stone for subgrade repair,Charles Black Construction,2025-08-10,Approved,$12400,Scope Addition,Grade issues found during excavation
+25-221,CO-002,Concrete curb modification per revised plans,Charles Black Construction,2025-08-22,Approved,$6800,Design Change,Architect issued revised detail
+25-221,CO-003,Additional paving for parking area tie-in,Charles Black Construction,2025-09-05,Pending,$22100,Scope Addition,Submitted - GC reviewing
+24-130,CO-001,Winter premium for cold weather paving,Southern Builders,2024-11-20,Approved,$4500,Time & Material,Standard winter rate applied
+24-130,CO-002,Crack repair on existing surface (not in scope),Southern Builders,2024-12-01,Rejected,$3200,Scope Addition,GC says included in original scope
+25-254,CO-001,Testing and compaction verification,Fred Smith Co,2026-01-15,Approved,$2800,Quality/Testing,Third party testing required
+25-201,CO-001,Extended mobilization - owner delay (2 weeks),Field Turf USA,2025-10-12,Approved,$15600,Time Extension,Owner delayed site access
+25-201,CO-002,Additional striping and marking per NCAA standards,Field Turf USA,2025-11-01,Pending,$7400,Scope Addition,NCAA updated requirements mid-project
+25-283,CO-001,Rock excavation - unforeseen conditions,Baseline Sports Construction,2026-02-20,Approved,$28900,Differing Conditions,Rock encountered at 18 inches
+25-283,CO-002,Dewatering for 5 additional days,Baseline Sports Construction,2026-03-01,Pending,$9600,Differing Conditions,Water table higher than borings indicated
+25-262,CO-001,Added trench drain per revised civil drawings,The Scruggs Company,2026-01-28,Approved,$11200,Design Change,Civil engineer revised drainage plan
+25-141,CO-001,Additional topsoil and fine grading,Polysport USA,2026-02-10,Pending,$5400,Scope Addition,Existing grade worse than anticipated

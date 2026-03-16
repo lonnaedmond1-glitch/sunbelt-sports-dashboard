@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber } from '@/lib/csv-parser';
+import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -48,6 +48,9 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
   const prep = getPrepForJob(jobNumber);
   const rentals = getRentalsForJob(jobNumber);
   const csvReport = getFieldReportForJob(jobNumber);
+  const changeOrders = getChangeOrdersForJob(jobNumber);
+  const scorecard = getScorecardForJob(jobNumber);
+  const jobFolder = getJobFolder(jobNumber);
 
   const job = liveJob || (csvJob ? { Job_Name: csvJob.Job_Name, General_Contractor: '', Point_Of_Contact: '', Project_Manager: csvJob.Project_Manager, State: csvJob.Location, Status: csvJob.Status, Start_Date: csvJob.Start_Date, Contract_Amount: 0, Billed_To_Date: 0, Pct_Complete: 0, Lat: '', Lng: '' } : null);
 
@@ -169,6 +172,35 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
           </div>
         )}
 
+        {/* JOB DOCUMENTS */}
+        {jobFolder && (
+          <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Job Documents</h2>
+              <a href={jobFolder.Job_Folder_Link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-[#20BC64] hover:underline flex items-center gap-1">
+                📂 Open Job Folder →
+              </a>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'Contract', icon: '📄', link: jobFolder.Contract_Link || jobFolder.Job_Folder_Link, color: '#20BC64' },
+                { label: 'Work Order', icon: '📋', link: jobFolder.Work_Order_Link || jobFolder.Job_Folder_Link, color: '#60a5fa' },
+                { label: 'Plans', icon: '📐', link: jobFolder.Plans_Link || jobFolder.Job_Folder_Link, color: '#a78bfa' },
+                { label: 'Materials', icon: '🏗️', link: jobFolder.Material_Resources_Link || jobFolder.Job_Folder_Link, color: '#fb923c' },
+              ].map(doc => (
+                <a key={doc.label} href={doc.link} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-3 p-4 rounded-xl bg-black/20 border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group cursor-pointer">
+                  <span className="text-2xl">{doc.icon}</span>
+                  <div>
+                    <p className="text-sm font-black" style={{ color: doc.color }}>{doc.label}</p>
+                    <p className="text-[10px] text-white/30 group-hover:text-white/50 transition-colors">View in Drive →</p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* MAIN GRID */}
         <div className="grid grid-cols-12 gap-5">
 
@@ -280,6 +312,75 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
               ))}
             </div>
           </div>
+
+          {/* CHANGE ORDERS */}
+          {changeOrders.length > 0 && (
+            <div className="col-span-12 bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Change Orders</h2>
+                <span className="text-xs font-bold text-white/30">{changeOrders.length} total</span>
+              </div>
+              <div className="space-y-2">
+                {changeOrders.map((co, i) => {
+                  const statusCls = co.Status === 'Approved' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : co.Status === 'Pending' ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-red-400 bg-red-500/10 border-red-500/20';
+                  return (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-black/20 border border-white/5">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-black text-[#60a5fa]">{co.CO_Number}</span>
+                          <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusCls}`}>{co.Status}</span>
+                        </div>
+                        <p className="text-xs text-white/60">{co.Description}</p>
+                        {co.Notes && <p className="text-[10px] text-white/30 italic mt-0.5">{co.Notes}</p>}
+                      </div>
+                      <div className="text-right ml-4">
+                        <p className="text-sm font-black text-white">{co.Amount}</p>
+                        <p className="text-[10px] text-white/30">{co.Type}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {/* SCORECARD: EST vs ACTUAL */}
+          {scorecard && (
+            <div className="col-span-12 bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Est vs Actual Scorecard</h2>
+                {parseInt(scorecard.Weather_Days) > 0 && (
+                  <span className="text-xs font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    ☁️ {scorecard.Weather_Days} Weather Days
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-5 gap-3">
+                {[
+                  { label: 'Man Hours', est: parseFloat(scorecard.Est_Man_Hours)||0, act: parseFloat(scorecard.Act_Man_Hours)||0, unit: 'hrs', color: '#fb923c' },
+                  { label: 'Stone', est: parseFloat(scorecard.Est_Stone_Tons)||0, act: parseFloat(scorecard.Act_Stone_Tons)||0, unit: 'tons', color: '#a78bfa' },
+                  { label: 'Binder', est: parseFloat(scorecard.Est_Binder_Tons)||0, act: parseFloat(scorecard.Act_Binder_Tons)||0, unit: 'tons', color: '#60a5fa' },
+                  { label: 'Topping', est: parseFloat(scorecard.Est_Topping_Tons)||0, act: parseFloat(scorecard.Act_Topping_Tons)||0, unit: 'tons', color: '#20BC64' },
+                  { label: 'Days', est: parseFloat(scorecard.Est_Days_On_Site)||0, act: parseFloat(scorecard.Act_Days_On_Site)||0, unit: 'days', color: '#f472b6' },
+                ].map(m => {
+                  const pctVal = m.est > 0 ? Math.round((m.act / m.est) * 100) : 0;
+                  const isOver = m.act > m.est * 1.05;
+                  return (
+                    <div key={m.label} className="bg-black/20 rounded-lg p-3 border border-white/5">
+                      <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: m.color }}>{m.label}</p>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-white/30">Est: {m.est.toLocaleString()}</span>
+                        <span className="font-bold" style={{ color: isOver ? '#ef4444' : m.color }}>Act: {m.act.toLocaleString()}</span>
+                      </div>
+                      <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, pctVal)}%`, backgroundColor: isOver ? '#ef4444' : m.color }} />
+                      </div>
+                      <p className="text-[10px] text-white/20 mt-1 text-right">{pctVal}%</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
