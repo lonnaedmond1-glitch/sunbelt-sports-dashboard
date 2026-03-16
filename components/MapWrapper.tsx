@@ -23,6 +23,7 @@ interface JobPin {
   Pct_Complete: number;
   General_Contractor: string;
   Contract_Amount: number;
+  nearestVehicle?: { name: string; driver: string; miles: number } | null;
 }
 
 interface VehiclePin {

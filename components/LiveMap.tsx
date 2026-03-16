@@ -11,6 +11,7 @@ interface JobPin {
   Pct_Complete: number;
   General_Contractor: string;
   Contract_Amount: number;
+  nearestVehicle?: { name: string; driver: string; miles: number } | null;
 }
 
 interface VehiclePin {
@@ -35,9 +36,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    // Dynamically import Leaflet to avoid SSR issues
     import('leaflet').then((L) => {
-      // Fix leaflet default icon paths
       // @ts-expect-error - leaflet icon prototype fix
       delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({
@@ -49,20 +48,18 @@ export default function LiveMap({ jobs, vehicles }: Props) {
       if (!mapRef.current) return;
 
       const map = L.map(mapRef.current, {
-        center: [33.0, -85.0], // Center on Southeast US
+        center: [33.0, -85.0],
         zoom: 6,
         zoomControl: true,
         attributionControl: false,
       });
       mapInstanceRef.current = map;
 
-      // Dark tile layer (CartoDB dark matter)
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19,
         subdomains: 'abcd',
       }).addTo(map);
 
-      // Custom job site icon
       const jobIcon = (pct: number) => L.divIcon({
         html: `
           <div style="
@@ -82,7 +79,6 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         popupAnchor: [0, -38],
       });
 
-      // Vehicle icon
       const vehicleIcon = L.divIcon({
         html: `
           <div style="
@@ -100,7 +96,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         popupAnchor: [0, -14],
       });
 
-      // Plot job pins
+      // Plot job pins — no clustering, each pin independent
       const validJobs = jobs.filter(j => j.Lat && j.Lng && !isNaN(parseFloat(j.Lat)));
       validJobs.forEach((job) => {
         const lat = parseFloat(job.Lat);
@@ -108,13 +104,21 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         const pct = Math.round(job.Pct_Complete || 0);
         if (isNaN(lat) || isNaN(lng)) return;
 
+        // Samsara proximity badge
+        const proximityHtml = job.nearestVehicle
+          ? `<div style="margin-top:6px; padding:4px 8px; background:rgba(96,165,250,0.15); border:1px solid rgba(96,165,250,0.3); border-radius:6px; font-size:10px; color:#60a5fa;">
+               🚛 ${job.nearestVehicle.name} — ${job.nearestVehicle.miles.toFixed(1)} mi away
+             </div>`
+          : `<div style="margin-top:6px; font-size:10px; color:rgba(255,255,255,0.25);">No Samsara vehicle within 10mi</div>`;
+
         const marker = L.marker([lat, lng], { icon: jobIcon(pct) }).addTo(map);
         marker.bindPopup(`
-          <div style="font-family:Montserrat,sans-serif; min-width:180px; background:#1e2023; color:white; border-radius:8px; padding:12px; border:1px solid rgba(255,255,255,0.1);">
+          <div style="font-family:Montserrat,sans-serif; min-width:200px; background:#1e2023; color:white; border-radius:8px; padding:12px; border:1px solid rgba(255,255,255,0.1);">
             <p style="font-size:11px; color:#20BC64; font-weight:900; text-transform:uppercase; margin:0 0 4px 0;">${job.Job_Number}</p>
             <p style="font-size:13px; font-weight:700; margin:0 0 4px 0;">${job.Job_Name}</p>
             <p style="font-size:11px; color:rgba(255,255,255,0.5); margin:0 0 2px 0;">${job.General_Contractor || ''}</p>
             <p style="font-size:11px; color:rgba(255,255,255,0.5); margin:0;">${pct}% complete · $${(job.Contract_Amount || 0).toLocaleString()}</p>
+            ${proximityHtml}
             <a href="/jobs/${job.Job_Number}" style="display:inline-block; margin-top:8px; font-size:11px; color:#20BC64; font-weight:700;">View Snapshot →</a>
           </div>
         `, { className: 'dark-popup' });
@@ -125,7 +129,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         const marker = L.marker([v.lat, v.lng], { icon: vehicleIcon }).addTo(map);
         marker.bindPopup(`
           <div style="font-family:Montserrat,sans-serif; background:#1e2023; color:white; border-radius:8px; padding:10px; border:1px solid rgba(96,165,250,0.3);">
-            <p style="font-size:11px; color:#60a5fa; font-weight:900; margin:0 0 4px 0;">VEHICLE</p>
+            <p style="font-size:11px; color:#60a5fa; font-weight:900; margin:0 0 4px 0;">SAMSARA</p>
             <p style="font-size:13px; font-weight:700; margin:0 0 2px 0;">${v.name}</p>
             <p style="font-size:11px; color:rgba(255,255,255,0.5); margin:0;">Driver: ${v.driver}</p>
             <p style="font-size:11px; color:rgba(255,255,255,0.5); margin:0;">${v.speed} mph</p>
@@ -133,13 +137,11 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         `, { className: 'dark-popup' });
       });
 
-      // Auto-fit to job pins if there are valid ones
       if (validJobs.length > 0) {
         const bounds = L.latLngBounds(validJobs.map(j => [parseFloat(j.Lat), parseFloat(j.Lng)]));
         map.fitBounds(bounds, { padding: [48, 48], maxZoom: 9 });
       }
 
-      // Add custom CSS for dark popups
       const style = document.createElement('style');
       style.textContent = `
         .dark-popup .leaflet-popup-content-wrapper { background:transparent; border:none; box-shadow:none; padding:0; }
@@ -171,3 +173,4 @@ export default function LiveMap({ jobs, vehicles }: Props) {
     </>
   );
 }
+

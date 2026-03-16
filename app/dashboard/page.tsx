@@ -1,5 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
+import fs from 'fs';
+import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData } from '@/lib/sheets-data';
 
@@ -12,6 +14,36 @@ const getBaseUrl = () => {
 
 const getLiveJobs = fetchLiveJobs;
 const getLiveFieldReports = fetchLiveFieldReports;
+
+// ─── Load Project Scorecards for est/actual comparison ───────────────────────
+function loadScorecardEstimates(): Record<string, { estTons: number; estDays: number }> {
+  try {
+    const filePath = path.join(process.cwd(), 'data', 'Project_Scorecards.csv');
+    const text = fs.readFileSync(filePath, 'utf-8');
+    const lines = text.trim().split('\n');
+    const result: Record<string, { estTons: number; estDays: number }> = {};
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      const jobNum = cols[0]?.trim();
+      if (!jobNum) continue;
+      const estBinder = parseFloat(cols[5] || '0') || 0;
+      const estTopping = parseFloat(cols[7] || '0') || 0;
+      const estStone = parseFloat(cols[3] || '0') || 0;
+      const estDays = parseFloat(cols[9] || '0') || 0;
+      result[jobNum] = { estTons: estBinder + estTopping + estStone, estDays };
+    }
+    return result;
+  } catch { return {}; }
+}
+
+// ─── Haversine distance (miles) ───────────────────────────────────────────────
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 async function getSamsaraData() {
   try {
@@ -38,12 +70,6 @@ async function getWeatherAlerts() {
   } catch { return []; }
 }
 
-async function getScheduleOccurrences(): Promise<any[]> {
-  try {
-    const data = await fetchScheduleData();
-    return data.jobFirstOccurrences || [];
-  } catch { return []; }
-}
 
 // ─── Parse schedule date ────────────────────────────────────────────────────
 function parseJobDate(dateStr: string): Date | null {
@@ -56,10 +82,32 @@ function parseJobDate(dateStr: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// ─── Module 1: Active Job State Engine ──────────────────────────────────────
+// A job is ACTIVE only if: (1) it appears in the CURRENT WEEK schedule AND
+// (2) it has at least 1 Jotform field report submission.
+function isOnCurrentWeekSchedule(job: any, scheduleData: any): boolean {
+  const days: any[] = scheduleData?.currentWeek?.days || [];
+  const jobName = (job.Job_Name || '').toLowerCase();
+  for (const day of days) {
+    for (const assignment of (day.assignments || [])) {
+      if (assignment.decoded?.isOff) continue;
+      const ref = (assignment.decoded?.jobRef || '').toLowerCase();
+      // Match by Gantt job number (most reliable)
+      if (assignment.ganttMatch?.jobNumber && assignment.ganttMatch.jobNumber === job.Job_Number) return true;
+      // Match by name fragment (first meaningful word)
+      const refWord = ref.split(' ')[0];
+      const nameWord = jobName.split(' ')[0];
+      if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
+      if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
+    }
+  }
+  return false;
+}
+
 function isJobScheduled(job: any): boolean {
   const start = parseJobDate(job.Start_Date);
   if (!start) return false;
-  return start <= new Date(); // past start date = should be active
+  return start <= new Date();
 }
 
 // ─── Health scoring ──────────────────────────────────────────────────────────
@@ -78,89 +126,143 @@ function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
   return 'green';
 }
 
-// ─── Risk computation ────────────────────────────────────────────────────────
-function computeRisks(jobs: any[], reportMap: Record<string, any>, samsara: any, crossCheck: any) {
+// ─── Module 3: Risk & Alerts Engine ─────────────────────────────────────────
+function computeRisks(
+  jobs: any[],
+  reportMap: Record<string, any>,
+  scheduleData: any,
+  weatherAlerts: any[],
+  scorecardEstimates: Record<string, { estTons: number; estDays: number }>,
+  prepBoard: any[]
+) {
   const risks: { level: 'critical' | 'warning' | 'info'; job?: string; message: string }[] = [];
-  const today = new Date();
+  const now = new Date();
+  const todayISO = now.toISOString().split('T')[0];
+  // EST offset: UTC-5 (standard) / UTC-4 (daylight)
+  const estHour = now.getUTCHours() - 4; // approximate EDT
 
-  // 1. ON SITE, NO REPORT — Samsara vehicle at jobsite but no Jotform report filed
-  (crossCheck.onSiteNoReport || []).forEach((alert: any) => {
-    risks.push({ level: 'critical', job: alert.job, message: `ON SITE, NO REPORT: ${alert.vehicle} is ${alert.distance}ft from ${alert.jobName} (${alert.job}) but NO field report has been filed. PM: ${alert.pm}. Action: Contact foreman immediately.` });
-  });
-
-  // 2. SCHEDULE DEVIATION — past start date, no vehicle activity, no field reports
-  (crossCheck.scheduledNoActivity || []).forEach((alert: any) => {
-    risks.push({ level: 'warning', job: alert.job, message: `SCHEDULE DEVIATION: ${alert.jobName} (${alert.job}) was scheduled to start ${alert.startDate} (${alert.daysPastStart}d ago) but has no crew on site and no field reports. PM: ${alert.pm}. Action: Verify mobilization status.` });
-  });
-
-  // 3. OVERDUE — finish date passed, not 100% complete (only for scheduled jobs)
-  jobs.filter(j => {
-    const finish = parseJobDate(j.Finish_Date);
-    return finish && finish < today && (j.Pct_Complete || 0) < 100 && isJobScheduled(j);
-  }).forEach(j => {
-    const finish = parseJobDate(j.Finish_Date)!;
-    const daysOver = Math.ceil((today.getTime() - finish.getTime()) / (1000 * 60 * 60 * 24));
-    risks.push({ level: 'critical', job: j.Job_Number, message: `OVERDUE: ${j.Job_Name} was due ${j.Finish_Date} (${daysOver}d ago) but is only ${Math.round(j.Pct_Complete)}% complete. PM: ${j.Project_Manager}. Action: Update schedule and notify GC (${j.General_Contractor}).` });
-  });
-
-  // 4. BILLING GAP — scheduled job, significant billing but no field reports to back it up
-  jobs.filter(j => isJobScheduled(j) && j.Pct_Complete >= 50 && !reportMap[j.Job_Number])
-    .forEach(j => risks.push({ level: 'warning', job: j.Job_Number, message: `DATA GAP: ${j.Job_Name} is ${Math.round(j.Pct_Complete)}% billed but has ZERO field reports. PM: ${j.Project_Manager}. Action: Confirm foremen are submitting daily Jotform reports.` }));
-
-  // 5. SLOW PROGRESS — scheduled, past start date, large contract, low billing
-  jobs.filter(j => isJobScheduled(j) && j.Contract_Amount >= 500000 && j.Pct_Complete < 10 && j.Pct_Complete > 0)
-    .forEach(j => risks.push({ level: 'warning', job: j.Job_Number, message: `SLOW PROGRESS: ${j.Job_Name} — $${(j.Contract_Amount/1000).toFixed(0)}K contract, past start date, only ${Math.round(j.Pct_Complete)}% billed. PM: ${j.Project_Manager}. Review production pace with crew.` }));
-
-  // 6. CASH FLOW — overall portfolio
-  const totalPortfolio = jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0);
-  const totalBilled = jobs.reduce((s: number, j: any) => s + (j.Billed_To_Date || 0), 0);
-  const overallPct = totalPortfolio > 0 ? (totalBilled / totalPortfolio) * 100 : 0;
-  if (overallPct < 20)
-    risks.push({ level: 'warning', message: `CASH FLOW: Portfolio is only ${overallPct.toFixed(1)}% billed ($${(totalBilled/1000000).toFixed(1)}M collected of $${(totalPortfolio/1000000).toFixed(1)}M total). Action: Review billing schedule with accounting.` });
-
-  // 7. EXTENDED DURATION — long-running jobs that may have rental overrun
-  Object.values(reportMap).filter((r: any) => r.Days_Active > 45).forEach((r: any) => {
-    const job = jobs.find((j: any) => j.Job_Number === r.Job_Number);
-    if (job && isJobScheduled(job)) {
-      risks.push({ level: 'info', job: r.Job_Number, message: `EXTENDED OPS: ${job.Job_Name} has ${r.Days_Active} field report days. PM: ${job.Project_Manager}. Verify rental equipment is still needed on site.` });
+  // ── CONDITION 1: Missing Jotform ─────────────────────────────────────────
+  // Crew scheduled today but zero field reports, after 10AM EST
+  const todayDays = (scheduleData?.currentWeek?.days || []).filter((d: any) => d.date === todayISO);
+  if (estHour >= 10) {
+    for (const day of todayDays) {
+      const jobsScheduledToday = new Set<string>();
+      for (const assignment of (day.assignments || [])) {
+        if (!assignment.decoded?.isOff && assignment.crewType === 'primary') {
+          const ref = assignment.decoded?.jobRef;
+          if (ref) jobsScheduledToday.add(ref.toLowerCase());
+        }
+      }
+      for (const ref of Array.from(jobsScheduledToday)) {
+        const matchedJob = jobs.find(j => {
+          const nameWord = (j.Job_Name || '').toLowerCase().split(' ')[0];
+          return nameWord.length > 3 && ref.includes(nameWord);
+        });
+        if (matchedJob && !reportMap[matchedJob.Job_Number]) {
+          risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `MISSING JOTFORM: Crew scheduled at ${matchedJob.Job_Name} today but NO field report submitted as of ${estHour}:00 EST. PM: ${matchedJob.Project_Manager}. Action: Contact foreman immediately.` });
+        }
+      }
     }
-  });
+  }
+
+  // ── CONDITION 2: Material Overrun ─────────────────────────────────────────
+  // Cumulative Jotform tonnage > estimated tonnage from Project Scorecards
+  for (const [jobNum, report] of Object.entries(reportMap)) {
+    const est = scorecardEstimates[jobNum];
+    if (!est || est.estTons === 0) continue;
+    const actualTons = (report.GAB_Tonnage || 0) + (report.Binder_Tonnage || 0) + (report.Topping_Tonnage || 0);
+    if (actualTons > est.estTons) {
+      const pctOver = Math.round(((actualTons - est.estTons) / est.estTons) * 100);
+      const job = jobs.find(j => j.Job_Number === jobNum);
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `FINANCIAL RISK — MATERIAL OVERRUN: ${job.Job_Name} has consumed ${actualTons.toLocaleString()}t vs ${est.estTons.toLocaleString()}t estimated (${pctOver}% over). PM: ${job.Project_Manager}. Review material yield and adjust remaining quantities.` });
+    }
+  }
+
+  // ── CONDITION 3: Days on Site Overrun ────────────────────────────────────
+  // Field report day count > allotted days from Project Scorecards
+  for (const [jobNum, report] of Object.entries(reportMap)) {
+    const est = scorecardEstimates[jobNum];
+    if (!est || est.estDays === 0) continue;
+    const actualDays = report.Days_Active || 0;
+    if (actualDays > est.estDays) {
+      const daysOver = actualDays - est.estDays;
+      const job = jobs.find(j => j.Job_Number === jobNum);
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `SCHEDULE RISK — DAYS OVERRUN: ${job.Job_Name} is ${daysOver}d over allotted days on site (${actualDays} logged vs ${est.estDays} estimated). PM: ${job.Project_Manager}. Verify equipment off-rent and escalate if needed.` });
+    }
+  }
+
+  // ── CONDITION 4: Weather Risk (>40% rain during working hours) ───────────
+  const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+  weatherAlerts
+    .filter((a: any) => a.date >= todayISO && a.date <= threeDaysOut && a.precipProb >= 40)
+    .slice(0, 5)
+    .forEach((wx: any) => {
+      const lvl = wx.precipProb >= 70 ? 'critical' as const : 'warning' as const;
+      risks.push({ level: lvl, job: wx.job, message: `WEATHER RISK: ${wx.icon || '🌧'} ${wx.precipProb}% rain chance at ${wx.jobName} on ${wx.date} — ${wx.high}°F, ${wx.wind}mph wind${wx.precip > 0 ? `, ${wx.precip}" expected` : ''}. PM: ${wx.pm}. Plan for possible delay.` });
+    });
+
+  // ── CONDITION 5: Vendor/Credit Account Missing ───────────────────────────
+  // Uses Job Prep Board credit status as proxy for vendor account status
+  for (const prep of prepBoard) {
+    const creditStatus = (prep.Asphalt_Plant_Credit || prep.Plant_Credit || '').toLowerCase();
+    const quarryStatus = (prep.Quarry_Credit || prep.Stone_Credit || '').toLowerCase();
+    const isBad = (s: string) => s && ['pending', 'missing', 'not approved', 'inactive', 'hold'].some(k => s.includes(k));
+    if (isBad(creditStatus) || isBad(quarryStatus)) {
+      const job = jobs.find(j => j.Job_Number === prep.Job_Number);
+      if (job) {
+        const bad = [isBad(creditStatus) ? 'Asphalt Plant' : '', isBad(quarryStatus) ? 'Quarry' : ''].filter(Boolean).join(' & ');
+        risks.push({ level: 'warning', job: prep.Job_Number, message: `SUPPLY CHAIN RISK: ${job.Job_Name} — ${bad} account status is NOT active. PM: ${job.Project_Manager}. Resolve credit before mobilization.` });
+      }
+    }
+  }
 
   return risks.slice(0, 15);
 }
 
 export default async function MasterDashboard() {
-  const [jobs, fieldReports, samsara, crossCheck, weatherAlerts, scheduleOccurrences] = await Promise.all([getLiveJobs(), getLiveFieldReports(), getSamsaraData(), getCrossCheckData(), getWeatherAlerts(), getScheduleOccurrences()]);
+  // Fetch all data in parallel
+  const [jobs, fieldReports, samsara, crossCheck, weatherAlerts, scheduleData] = await Promise.all([
+    getLiveJobs(),
+    getLiveFieldReports(),
+    getSamsaraData(),
+    getCrossCheckData(),
+    getWeatherAlerts(),
+    fetchScheduleData(),
+  ]);
+
+  // Load local estimates for risk engine
+  const scorecardEstimates = loadScorecardEstimates();
+
+  // Load prep board for vendor credit status
+  let prepBoard: any[] = [];
+  try {
+    const prepText = fs.readFileSync(path.join(process.cwd(), 'data', 'Job_Prep_Board.csv'), 'utf-8');
+    const prepLines = prepText.trim().split('\n');
+    const headers = prepLines[0].split(',').map((h: string) => h.trim());
+    prepBoard = prepLines.slice(1).map((line: string) => {
+      const cols = line.split(',');
+      const obj: any = {};
+      headers.forEach((h: string, i: number) => obj[h] = cols[i]?.trim() || '');
+      return obj;
+    });
+  } catch { prepBoard = []; }
 
   const reportMap: Record<string, any> = {};
   for (const r of fieldReports) reportMap[r.Job_Number] = r;
 
-  // A job is "active" only if it has hit the schedule at least once
-  // Cross-reference by matching job name to schedule job refs OR by Gantt job number
-  function hasHitSchedule(job: any): boolean {
-    const jobName = (job.Job_Name || '').toLowerCase();
-    const jobNum = (job.Job_Number || '');
-    for (const occ of scheduleOccurrences) {
-      // Match by Gantt job number
-      if (occ.ganttJobNumber && occ.ganttJobNumber === jobNum) return true;
-      // Match by name: schedule ref is typically the first word(s) of the job name
-      const ref = (occ.jobRef || '').toLowerCase();
-      if (ref && jobName.includes(ref.split(' ')[0]) && ref.split(' ')[0].length > 2) return true;
-      if (ref && ref.includes(jobName.split(' ')[0]) && jobName.split(' ')[0].length > 2) return true;
-    }
-    return false;
-  }
+  // ── Module 1: Active Job State Engine ──────────────────────────────────
+  // ActiveStatus = TRUE only when: on current week schedule AND has ≥1 field report
+  const activeJobs = jobs.filter((j: any) =>
+    isOnCurrentWeekSchedule(j, scheduleData) && !!reportMap[j.Job_Number]
+  );
 
-  const activeJobs = jobs.filter((j: any) => {
-    const isExecuted = ['executed', 'signed', 'received'].includes((j.Status || '').toLowerCase());
-    return isExecuted && hasHitSchedule(j);
-  });
+  // Scheduled this week but no field report yet = "Scheduled, Not Mobilized"
+  const scheduledNotMobilized = jobs.filter((j: any) =>
+    isOnCurrentWeekSchedule(j, scheduleData) && !reportMap[j.Job_Number]
+  );
 
-  // Jobs that are executed but haven't hit the schedule yet
-  const upcomingJobs = jobs.filter((j: any) => {
-    const isExecuted = ['executed', 'signed', 'received'].includes((j.Status || '').toLowerCase());
-    return isExecuted && !hasHitSchedule(j);
-  });
+  // Jobs not on this week's schedule (upcoming/backlog)
+  const upcomingJobs = jobs.filter((j: any) => !isOnCurrentWeekSchedule(j, scheduleData));
 
   const totalPortfolio = jobs.reduce((sum: number, j: any) => sum + (j.Contract_Amount || 0), 0);
   const totalBilled = jobs.reduce((sum: number, j: any) => sum + (j.Billed_To_Date || 0), 0);
@@ -172,15 +274,7 @@ export default async function MasterDashboard() {
   const totalManHours = fieldReports.reduce((s: number, r: any) => s + (r.Total_Man_Hours || 0), 0);
   const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
-  const risks = computeRisks(jobs, reportMap, samsara, crossCheck);
-
-  // Add weather alerts to risks (next 3 days only)
-  const today = new Date().toISOString().split('T')[0];
-  const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
-  const urgentWeather = weatherAlerts.filter((a: any) => a.date >= today && a.date <= threeDaysOut).slice(0, 5);
-  for (const wx of urgentWeather) {
-    risks.push({ level: wx.precipProb >= 80 ? 'critical' as const : 'warning' as const, job: wx.job, message: `WEATHER: ${wx.icon} ${wx.weather} at ${wx.jobName} on ${wx.date} — ${wx.high}°F, ${wx.precipProb}% chance of rain${wx.precip > 0 ? `, ${wx.precip}" expected` : ''}, ${wx.wind}mph wind. PM: ${wx.pm}` });
-  }
+  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard);
 
   const criticalCount = risks.filter(r => r.level === 'critical').length;
   const warningCount = risks.filter(r => r.level === 'warning').length;
@@ -232,7 +326,7 @@ export default async function MasterDashboard() {
         {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label: 'Active Jobs', value: activeJobs.length.toString(), sub: 'On the schedule', color: '#20BC64' },
+            { label: 'Active Jobs', value: activeJobs.length.toString(), sub: scheduledNotMobilized.length > 0 ? `+${scheduledNotMobilized.length} scheduled, not mobilized` : 'On schedule with field reports', color: '#20BC64' },
             { label: 'Portfolio Value', value: `$${(totalPortfolio / 1000000).toFixed(1)}M`, sub: 'Total contract value', color: '#60a5fa' },
             { label: 'Billed To Date', value: `$${(totalBilled / 1000000).toFixed(1)}M`, sub: `${overallPct}% collected`, color: '#a78bfa' },
             { label: 'Vehicles Live', value: samsara.configured ? samsara.vehicles.length.toString() : '—', sub: samsara.configured ? 'Samsara GPS' : 'No API key', color: '#fb923c' },
@@ -267,16 +361,34 @@ export default async function MasterDashboard() {
             </div>
             <div style={{ height: '460px' }}>
               <MapWrapper
-                jobs={activeJobs.map((j: any) => ({
-                  Job_Number: j.Job_Number,
-                  Job_Name: j.Job_Name,
-                  Lat: j.Lat,
-                  Lng: j.Lng,
-                  Status: j.Status,
-                  Pct_Complete: j.Pct_Complete || 0,
-                  General_Contractor: j.General_Contractor,
-                  Contract_Amount: j.Contract_Amount || 0,
-                }))}
+                jobs={activeJobs.map((j: any) => {
+                  const jobLat = parseFloat(j.Lat);
+                  const jobLng = parseFloat(j.Lng);
+                  // Module 2: Find nearest Samsara vehicle within 10 miles
+                  let nearestVehicle: { name: string; driver: string; miles: number } | null = null;
+                  if (!isNaN(jobLat) && !isNaN(jobLng) && samsara.vehicles?.length) {
+                    let minDist = Infinity;
+                    for (const v of samsara.vehicles) {
+                      if (!v.lat || !v.lng) continue;
+                      const dist = haversineDistance(jobLat, jobLng, v.lat, v.lng);
+                      if (dist < minDist && dist <= 10) {
+                        minDist = dist;
+                        nearestVehicle = { name: v.name, driver: v.driver, miles: dist };
+                      }
+                    }
+                  }
+                  return {
+                    Job_Number: j.Job_Number,
+                    Job_Name: j.Job_Name,
+                    Lat: j.Lat,
+                    Lng: j.Lng,
+                    Status: j.Status,
+                    Pct_Complete: j.Pct_Complete || 0,
+                    General_Contractor: j.General_Contractor,
+                    Contract_Amount: j.Contract_Amount || 0,
+                    nearestVehicle,
+                  };
+                })}
                 vehicles={samsara.vehicles || []}
               />
             </div>
