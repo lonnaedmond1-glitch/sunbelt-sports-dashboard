@@ -46,7 +46,7 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
   const scorecard = getScorecardForJob(jobNumber);
   const jobFolder = getJobFolder(jobNumber);
 
-  const job = liveJob || (csvJob ? { Job_Name: csvJob.Job_Name, General_Contractor: '', Point_Of_Contact: '', Project_Manager: csvJob.Project_Manager, State: csvJob.Location, Status: csvJob.Status, Start_Date: csvJob.Start_Date, Contract_Amount: 0, Billed_To_Date: 0, Pct_Complete: 0, Lat: '', Lng: '' } : null);
+  const job = liveJob || (csvJob ? { Job_Name: csvJob.Job_Name, General_Contractor: '', Point_Of_Contact: '', Project_Manager: csvJob.Project_Manager, State: csvJob.Location, Status: csvJob.Status, Start_Date: csvJob.Start_Date, Contract_Amount: 0, Billed_To_Date: 0, Pct_Complete: 0, Lat: '', Lng: '', Track_Surface: '', Field_Events: '', Micromill: '' } : null);
 
   const weatherPeriods = job ? await getWeather(job.Lat || '', job.Lng || '') : null;
   const weatherDays = weatherPeriods ? weatherPeriods.filter((_: any, i: number) => i % 2 === 0).slice(0, 5) : [];
