@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData } from '@/lib/sheets-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,9 +40,7 @@ async function getWeatherAlerts() {
 
 async function getScheduleOccurrences(): Promise<any[]> {
   try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/schedule`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
+    const data = await fetchScheduleData();
     return data.jobFirstOccurrences || [];
   } catch { return []; }
 }

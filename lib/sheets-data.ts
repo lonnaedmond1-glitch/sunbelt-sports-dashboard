@@ -195,106 +195,303 @@ const BS_GID = '1219933569';
 const AR_GID = '811286112';
 const CS_GID = '1255706057';
 
+async function fetchTab(sheetId: string, gid: string): Promise<string[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    return text.split('\n').map(l => l.replace(/\r$/, ''));
+  } catch { return []; }
+}
+
+function findRow(lines: string[], label: string): string[] {
+  for (const line of lines) {
+    if (line.toLowerCase().includes(label.toLowerCase())) {
+      return parseCSVLine(line);
+    }
+  }
+  return [];
+}
+
+function findRowValue(lines: string[], label: string, col = 1): number {
+  const row = findRow(lines, label);
+  return row.length > col ? parseMoney(row[col]) : 0;
+}
+
 export async function fetchScorecardData() {
   try {
-    const [plRes, bsRes, arRes, csRes] = await Promise.all([
-      fetch(`https://docs.google.com/spreadsheets/d/${QB_SHEET_ID}/export?format=csv&gid=${PL_GID}`, { next: { revalidate: 300 } }),
-      fetch(`https://docs.google.com/spreadsheets/d/${QB_SHEET_ID}/export?format=csv&gid=${BS_GID}`, { next: { revalidate: 300 } }),
-      fetch(`https://docs.google.com/spreadsheets/d/${QB_SHEET_ID}/export?format=csv&gid=${AR_GID}`, { next: { revalidate: 300 } }),
-      fetch(`https://docs.google.com/spreadsheets/d/${QB_SHEET_ID}/export?format=csv&gid=${CS_GID}`, { next: { revalidate: 300 } }),
+    const [plLines, bsLines, arLines, csLines] = await Promise.all([
+      fetchTab(QB_SHEET_ID, PL_GID), fetchTab(QB_SHEET_ID, BS_GID),
+      fetchTab(QB_SHEET_ID, AR_GID), fetchTab(QB_SHEET_ID, CS_GID),
     ]);
-    const plText = await plRes.text();
-    const bsText = await bsRes.text();
-    const arText = await arRes.text();
-    const csText = await csRes.text();
-    
-    // P&L parsing
-    const plLines = plText.split('\n').filter(l => l.trim());
-    let revenue = 0, cogs = 0, operating = 0, otherIncome = 0, otherExpense = 0;
-    const revenueAccounts: any[] = [];
-    let section = '';
+
+    // ─── P&L Data ───
+    const totalIncome = findRowValue(plLines, 'Total for Income');
+    const constructionIncome = findRowValue(plLines, 'Total for 4000 Construction Income');
+    const totalCOGS = findRowValue(plLines, 'Total for Cost of Goods Sold');
+    const grossProfit = findRowValue(plLines, 'Gross Profit');
+    const totalExpenses = findRowValue(plLines, 'Total for Expenses');
+    const netIncome = findRowValue(plLines, 'Net Income');
+    const directJobCost = findRowValue(plLines, 'Total for 5000 Direct Job Cost');
+
+    // Income breakdown
+    const incomeBreakdown: { category: string; amount: number }[] = [];
     for (const line of plLines) {
       const cols = parseCSVLine(line);
-      const label = cols[0]?.trim().toLowerCase() || '';
-      const val = parseMoney(cols[1] || '');
-      if (label.includes('total income')) { revenue = val; section = ''; }
-      else if (label.includes('total cost of goods')) cogs = val;
-      else if (label.includes('total expenses')) operating = val;
-      else if (label === 'income' || label.includes('ordinary income')) section = 'income';
-      else if (section === 'income' && val > 0 && !label.includes('total') && label.length > 2) {
-        revenueAccounts.push({ name: cols[0]?.trim(), amount: val });
+      const label = cols[0] || '';
+      if (label.startsWith('4') && !label.startsWith('Total') && cols[1]) {
+        const amt = parseMoney(cols[1]);
+        if (amt !== 0) incomeBreakdown.push({ category: label, amount: amt });
       }
-      if (label.includes('other income')) otherIncome = val;
-      if (label.includes('other expense')) otherExpense = val;
     }
-    
-    // Balance Sheet parsing
-    const bsLines = bsText.split('\n').filter(l => l.trim());
-    let totalAssets = 0, totalLiabilities = 0, totalEquity = 0, cash = 0, currentAssets = 0, currentLiabs = 0;
-    for (const line of bsLines) {
-      const cols = parseCSVLine(line);
-      const label = cols[0]?.trim().toLowerCase() || '';
-      const val = parseMoney(cols[1] || '');
-      if (label.includes('total assets')) totalAssets = val;
-      else if (label.includes('total liabilities')) totalLiabilities = val;
-      else if (label.includes('total equity')) totalEquity = val;
-      else if (label.includes('checking') || label.includes('savings')) cash += val;
-      else if (label.includes('total current assets')) currentAssets = val;
-      else if (label.includes('total current liabilities')) currentLiabs = val;
-    }
-    
-    // AR Aging parsing
-    const arLines = arText.split('\n').filter(l => l.trim());
-    const arBuckets: any = { current: 0, '1-30': 0, '31-60': 0, '61-90': 0, over90: 0, total: 0 };
+
+    // ─── Balance Sheet Data ───
+    const bankTotal = findRowValue(bsLines, 'Total for Bank Accounts');
+    const arTotal = findRowValue(bsLines, 'Total for Accounts Receivable');
+    const apTotal = findRowValue(bsLines, 'Total for Accounts Payable');
+    const currentAssets = findRowValue(bsLines, 'Total for Current Assets');
+    const currentLiabilities = findRowValue(bsLines, 'Total for Current Liabilities');
+    const arApRatio = apTotal > 0 ? Math.round((arTotal / apTotal) * 100) / 100 : 0;
+
+    // ─── AR Aging Data ───
+    let arTotalRow: string[] = [];
     for (const line of arLines) {
       const cols = parseCSVLine(line);
-      const label = cols[0]?.trim().toLowerCase() || '';
-      if (label === 'total' || label.includes('total')) {
-        arBuckets.current = parseMoney(cols[1] || '');
-        arBuckets['1-30'] = parseMoney(cols[2] || '');
-        arBuckets['31-60'] = parseMoney(cols[3] || '');
-        arBuckets['61-90'] = parseMoney(cols[4] || '');
-        arBuckets.over90 = parseMoney(cols[5] || '');
-        arBuckets.total = parseMoney(cols[6] || cols[5] || '');
+      if (cols[0]?.trim() === 'TOTAL') { arTotalRow = cols; break; }
+    }
+    const arAging = {
+      current: arTotalRow.length > 1 ? parseMoney(arTotalRow[1]) : 0,
+      '1_30': arTotalRow.length > 2 ? parseMoney(arTotalRow[2]) : 0,
+      '31_60': arTotalRow.length > 3 ? parseMoney(arTotalRow[3]) : 0,
+      '61_90': arTotalRow.length > 4 ? parseMoney(arTotalRow[4]) : 0,
+      over90: arTotalRow.length > 5 ? parseMoney(arTotalRow[5]) : 0,
+      total: arTotalRow.length > 6 ? parseMoney(arTotalRow[6]) : 0,
+    };
+
+    // Top AR customers
+    const arByCustomer: any[] = [];
+    for (const line of arLines) {
+      const cols = parseCSVLine(line);
+      if (cols[0]?.startsWith('Total for ') && cols[6]) {
+        arByCustomer.push({
+          customer: cols[0].replace('Total for ', ''),
+          current: parseMoney(cols[1]), d1_30: parseMoney(cols[2]),
+          d31_60: parseMoney(cols[3]), d61_90: parseMoney(cols[4]),
+          over90: parseMoney(cols[5]), total: parseMoney(cols[6]),
+        });
       }
     }
-    
-    // Customer Sales parsing
-    const csLines = csText.split('\n').filter(l => l.trim());
-    const customerSales: any[] = [];
+    arByCustomer.sort((a: any, b: any) => b.total - a.total);
+
+    // ─── Sales by Customer ───
+    let csTotalRow: string[] = [];
     for (const line of csLines) {
       const cols = parseCSVLine(line);
-      const name = cols[0]?.trim();
-      const amount = parseMoney(cols[1] || '');
-      if (name && amount > 0 && !name.toLowerCase().includes('total') && name.length > 2) {
-        customerSales.push({ name, amount });
+      if (cols[0]?.trim() === 'TOTAL') { csTotalRow = cols; break; }
+    }
+    const totalSales = csTotalRow.length > 1 ? parseMoney(csTotalRow[1]) : 0;
+    const salesByCustomer: any[] = [];
+    for (const line of csLines) {
+      const cols = parseCSVLine(line);
+      if (cols[0]?.startsWith('Total for ') && cols[1]) {
+        salesByCustomer.push({ customer: cols[0].replace('Total for ', ''), amount: parseMoney(cols[1]) });
       }
     }
-    customerSales.sort((a: any, b: any) => b.amount - a.amount);
-    
-    const grossProfit = revenue - cogs;
-    const netIncome = grossProfit - operating + otherIncome - otherExpense;
-    
+    salesByCustomer.sort((a: any, b: any) => b.amount - a.amount);
+
+    // ─── Computed Metrics ───
+    const grossMarginPct = totalIncome > 0 ? Math.round((grossProfit / totalIncome) * 1000) / 10 : 0;
+    const netMarginPct = totalIncome > 0 ? Math.round((netIncome / totalIncome) * 1000) / 10 : 0;
+    const currentRatio = currentLiabilities > 0 ? Math.round((currentAssets / currentLiabilities) * 100) / 100 : 0;
+    const reportPeriod = plLines[2]?.replace(/"/g, '').trim() || 'Unknown';
+
+    // Return in the EXACT format the scorecard page expects (nested { current: value })
     return {
-      revenue, cogs, grossProfit, operating, otherIncome, otherExpense, netIncome,
-      grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
-      netMargin: revenue > 0 ? (netIncome / revenue) * 100 : 0,
-      revenueAccounts,
-      totalAssets, totalLiabilities, totalEquity, cash, currentAssets, currentLiabs,
-      currentRatio: currentLiabs > 0 ? currentAssets / currentLiabs : 0,
-      arBuckets, customerSales,
+      reportPeriod,
+      cashFlow: { current: bankTotal },
+      accountsReceivable: { current: arTotal },
+      accountsPayable: { current: apTotal },
+      arApRatio: { current: arApRatio },
+      currentRatio: { current: currentRatio },
+      currentAssets: { current: currentAssets },
+      currentLiabilities: { current: currentLiabilities },
+      totalRevenueFY: { current: totalIncome },
+      constructionIncome: { current: constructionIncome },
+      totalSales: { current: totalSales },
+      grossProfit: { current: grossProfit },
+      grossMarginPct: { current: grossMarginPct },
+      netIncome: { current: netIncome },
+      netMarginPct: { current: netMarginPct },
+      totalCOGS: { current: totalCOGS },
+      directJobCost: { current: directJobCost },
+      totalExpenses: { current: totalExpenses },
+      arAging,
+      arByCustomer: arByCustomer.slice(0, 15),
+      salesByCustomer: salesByCustomer.slice(0, 15),
+      numCustomers: salesByCustomer.length,
+      incomeBreakdown,
     };
   } catch { return {}; }
 }
 
 // ──────────────────────────── SCHEDULE (Google Sheets) ────────────────────────────
 
+const SCHEDULE_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
 const SCHEDULE_GID = '416948597';
 const GANTT_SHEET_ID = '178t9iioyveWqP6o8x2lQwMagexDP0W9FA4I2jfutJmw';
 const GANTT_GID = '1949703319';
 
-// Re-export the schedule API's URL for fetching (schedule has complex logic, keep using the API route)
-export function getScheduleApiUrl(): string {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}/api/sync/schedule`;
-  return 'http://localhost:3000/api/sync/schedule';
+const CREW_COLUMNS: { name: string; col: number; pmCol?: number; type: string }[] = [
+  { name: 'Rosendo / P1', col: 8, pmCol: 9, type: 'primary' },
+  { name: 'Julio / B1', col: 21, pmCol: 22, type: 'primary' },
+  { name: 'Martin / B2', col: 24, pmCol: 25, type: 'primary' },
+  { name: 'Juan / B3', col: 26, pmCol: 28, type: 'primary' },
+  { name: 'Cesar', col: 29, type: 'primary' },
+  { name: 'Pedro', col: 30, type: 'primary' },
+  { name: 'Jeff', col: 2, type: 'support' },
+  { name: 'David', col: 5, type: 'support' },
+  { name: 'Lowboy 1', col: 3, type: 'logistics' },
+  { name: 'Lowboy 2', col: 4, type: 'logistics' },
+  { name: 'Sergio', col: 11, type: 'support' },
+  { name: 'Shawn', col: 13, type: 'support' },
+  { name: 'Giovany (NC)', col: 15, pmCol: 16, type: 'primary' },
+  { name: 'Marcos (NC)', col: 18, pmCol: 19, type: 'primary' },
+  { name: 'Concrete Sub 1', col: 37, type: 'sub' },
+  { name: 'Concrete Sub 2', col: 38, type: 'sub' },
+  { name: 'Bud', col: 49, type: 'support' },
+];
+const DELIVERY_COL = 7;
+
+const SUPPLIER_MAP: Record<string, string> = {
+  'CWM': 'CW Matthews', 'APAC': 'APAC-Atlantic', 'VMC': 'Vulcan Materials',
+  'MM': 'Martin Marietta', 'WG': 'Wiregrass', 'Reeves': 'Reeves Construction',
+};
+
+function parseScheduleDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
+  const cleaned = dateStr.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '');
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function decodeAssignment(text: string) {
+  const lower = text.toLowerCase();
+  const isOff = ['out of country', 'off', 'office', 'available', 'l-10', 'travel', 'meeting'].some(k => lower.includes(k));
+  if (isOff) return { jobRef: text, activity: '', state: '', supplier: '', raw: text, isOff: true };
+  const parts = text.split(' - ').map(p => p.trim());
+  return { jobRef: parts[0] || text, activity: parts[1] || '', state: parts[2] || '', supplier: parts[3] || '', raw: text, isOff: false };
+}
+
+function parseDateStr(s: string): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+export async function fetchScheduleData() {
+  try {
+    const [schedRes, ganttRes] = await Promise.all([
+      fetch(`https://docs.google.com/spreadsheets/d/${SCHEDULE_SHEET_ID}/export?format=csv&gid=${SCHEDULE_GID}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+      }),
+      fetch(`https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=${GANTT_GID}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+      }),
+    ]);
+
+    // Parse Gantt
+    const ganttJobs: any[] = [];
+    if (ganttRes.ok) {
+      const ganttCSV = await ganttRes.text();
+      const ganttLines = ganttCSV.split('\n').map(l => l.replace(/\r$/, ''));
+      for (let i = 1; i < ganttLines.length; i++) {
+        const cols = parseCSVLine(ganttLines[i]);
+        const jobNum = cols[0]?.trim();
+        if (!jobNum) continue;
+        ganttJobs.push({
+          Job_Number: jobNum, Job_Name: cols[1]?.trim() || '',
+          Project_Type: cols[2]?.trim() || '', Start: cols[3]?.trim() || '', End: cols[4]?.trim() || '',
+          startDate: parseDateStr(cols[3]?.trim() || ''), endDate: parseDateStr(cols[4]?.trim() || ''),
+        });
+      }
+    }
+
+    // Parse schedule
+    if (!schedRes.ok) return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: ganttJobs.length };
+    const csvText = await schedRes.text();
+    const lines = csvText.split('\n').map(l => l.replace(/\r$/, ''));
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const dow = today.getDay();
+    const monOffset = dow === 0 ? -6 : 1 - dow;
+    const thisMonday = new Date(today); thisMonday.setDate(today.getDate() + monOffset);
+    const nextMonday = new Date(thisMonday); nextMonday.setDate(thisMonday.getDate() + 7);
+    const endOfNextWeek = new Date(nextMonday); endOfNextWeek.setDate(nextMonday.getDate() + 7);
+
+    // First pass: job occurrences
+    const jobOccurrences = new Map<string, { firstDate: string; lastDate: string; jobRef: string; ganttJobNumber: string }>();
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      const date = parseScheduleDate(cols[0]);
+      if (!date) continue;
+      const dateISO = date.toISOString().split('T')[0];
+      for (const crew of CREW_COLUMNS) {
+        const jobText = cols[crew.col] || '';
+        if (!jobText) continue;
+        const decoded = decodeAssignment(jobText);
+        if (decoded.isOff) continue;
+        const ref = decoded.jobRef.toLowerCase();
+        const existing = jobOccurrences.get(ref);
+        if (!existing || dateISO < existing.firstDate) {
+          const ganttMatch = ganttJobs.find((g: any) => ref.split(' ')[0] && g.Job_Name.toLowerCase().includes(ref.split(' ')[0]));
+          jobOccurrences.set(ref, { firstDate: dateISO, lastDate: dateISO, jobRef: decoded.jobRef, ganttJobNumber: ganttMatch?.Job_Number || '' });
+        } else if (dateISO > existing.lastDate) { existing.lastDate = dateISO; }
+      }
+    }
+    const jobFirstOccurrences = Array.from(jobOccurrences.values());
+
+    // Second pass: current/next week
+    const currentWeekDays: any[] = [];
+    const nextWeekDays: any[] = [];
+    const deliveries: any[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      const dateStr = cols[0];
+      const date = parseScheduleDate(dateStr);
+      if (!date || date < thisMonday || date >= endOfNextWeek) continue;
+      const isCurrentWeek = date < nextMonday;
+
+      const assignments: any[] = [];
+      for (const crew of CREW_COLUMNS) {
+        const jobText = cols[crew.col] || '';
+        const pm = crew.pmCol ? (cols[crew.pmCol] || '') : '';
+        if (jobText) {
+          const decoded = decodeAssignment(jobText);
+          const supplierFull = SUPPLIER_MAP[decoded.supplier] || decoded.supplier;
+          const ganttMatch = ganttJobs.find((g: any) => decoded.jobRef.toLowerCase().split(' ')[0] && g.Job_Name.toLowerCase().includes(decoded.jobRef.toLowerCase().split(' ')[0]));
+          assignments.push({ crew: crew.name, crewType: crew.type, job: jobText, pm, decoded, supplierFull, ganttMatch: ganttMatch ? { jobNumber: ganttMatch.Job_Number, projectType: ganttMatch.Project_Type, start: ganttMatch.Start, end: ganttMatch.End } : null });
+        }
+      }
+
+      const deliveryText = cols[DELIVERY_COL] || '';
+      if (deliveryText) { deliveries.push({ date: date.toISOString().split('T')[0], dateDisplay: dateStr, dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }), description: deliveryText, isCurrentWeek }); }
+
+      const dayData = { date: date.toISOString().split('T')[0], dateDisplay: dateStr, dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }), assignments, isToday: date.getTime() === today.getTime() };
+      if (isCurrentWeek) currentWeekDays.push(dayData); else nextWeekDays.push(dayData);
+    }
+
+    const activeGanttJobs = ganttJobs.filter((g: any) => g.startDate && g.endDate && g.startDate <= endOfNextWeek && g.endDate >= today);
+    const scheduledJobs = new Set<string>();
+    [...currentWeekDays, ...nextWeekDays].forEach(d => d.assignments.forEach((a: any) => { if (!a.decoded.isOff) scheduledJobs.add(a.decoded.jobRef); }));
+
+    return {
+      currentWeek: { weekOf: thisMonday.toISOString().split('T')[0], label: `Week of ${thisMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: currentWeekDays },
+      nextWeek: { weekOf: nextMonday.toISOString().split('T')[0], label: `Week of ${nextMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: nextWeekDays },
+      deliveries, activeGanttJobs, jobFirstOccurrences,
+      scheduledJobCount: scheduledJobs.size, ganttJobCount: ganttJobs.length,
+      timestamp: new Date().toISOString(),
+    };
+  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
 }

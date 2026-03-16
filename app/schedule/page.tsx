@@ -1,5 +1,6 @@
 import React from 'react';
 import MapWrapper from '@/components/MapWrapper';
+import { fetchScheduleData } from '@/lib/sheets-data';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,11 +10,7 @@ const getBaseUrl = () => {
 };
 
 async function getScheduleData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/schedule`, { cache: 'no-store' });
-    if (!res.ok) return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [] };
-    return await res.json();
-  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [] }; }
+  return fetchScheduleData();
 }
 
 async function getWeatherData() {
