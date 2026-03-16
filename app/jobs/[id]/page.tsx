@@ -2,6 +2,8 @@ import React from 'react';
 import Link from 'next/link';
 import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
 
+export const dynamic = 'force-dynamic';
+
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return 'http://localhost:3000';

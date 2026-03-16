@@ -1,6 +1,8 @@
 import React from 'react';
 import MapWrapper from '@/components/MapWrapper';
 
+export const dynamic = 'force-dynamic';
+
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
   return 'http://localhost:3000';
