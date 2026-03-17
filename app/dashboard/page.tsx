@@ -82,10 +82,10 @@ function parseJobDate(dateStr: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// ─── Scheduled Jobs State Engine ─────────────────────────────────────────────
+
 // A job is SCHEDULED if it appears on ANY crew row in the master schedule
-// within a strict ±7 day rolling window (7 days back, 7 days forward).
-// Source of truth: the master schedule sheet ONLY.
+// within the current week or next week (strict ±7 day window from schedule grid).
+// Source of truth: currentWeek and nextWeek parsed day assignments ONLY.
 function isScheduledCurrently(job: any, scheduleData: any): boolean {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
@@ -96,7 +96,7 @@ function isScheduledCurrently(job: any, scheduleData: any): boolean {
   const jobName = (job.Job_Name || '').toLowerCase();
   const jobNum = (job.Job_Number || '');
 
-  // Scan all days in both current week and next week (covers the +7 forward window)
+  // Only scan current week and next week day-level assignments from the schedule grid
   const allDays: any[] = [
     ...(scheduleData?.currentWeek?.days || []),
     ...(scheduleData?.nextWeek?.days || []),
@@ -115,22 +115,9 @@ function isScheduledCurrently(job: any, scheduleData: any): boolean {
     }
   }
 
-  // Also check jobFirstOccurrences for the -7 day back window
-  // (covers jobs that were on the schedule last week but not in current/next week parse)
-  const occurrences: any[] = scheduleData?.jobFirstOccurrences || [];
-  for (const occ of occurrences) {
-    const lastDate = occ.lastDate || occ.firstDate || '';
-    if (lastDate < minISO || lastDate > maxISO) continue;
-    const ref = (occ.jobRef || '').toLowerCase();
-    if (occ.ganttJobNumber && occ.ganttJobNumber === jobNum) return true;
-    const refWord = ref.split(' ')[0];
-    const nameWord = jobName.split(' ')[0];
-    if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
-    if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
-  }
-
   return false;
 }
+
 
 function isJobScheduled(job: any): boolean {
   const start = parseJobDate(job.Start_Date);
