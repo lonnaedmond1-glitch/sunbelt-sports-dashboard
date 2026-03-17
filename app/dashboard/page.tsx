@@ -210,8 +210,13 @@ function computeRisks(
   scheduleData: any,
   weatherAlerts: any[],
   scorecardEstimates: Record<string, { estTons: number; estDays: number }>,
-  prepBoard: any[]
+  prepBoard: any[],
+  scheduledJobs: any[]
 ) {
+  // Limit weather alerts to only currently scheduled jobs
+  const scheduledJobNums = new Set(scheduledJobs.map((j: any) => j.Job_Number));
+  const scheduledWeatherAlerts = weatherAlerts.filter((a: any) => scheduledJobNums.has(a.job));
+
   const risks: { level: 'critical' | 'warning' | 'info'; job?: string; message: string }[] = [];
   const now = new Date();
   const todayISO = now.toISOString().split('T')[0];
@@ -270,7 +275,7 @@ function computeRisks(
 
   // ── CONDITION 4: Weather Risk (≥40% rain during working hours) ───────────
   const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
-  weatherAlerts
+  scheduledWeatherAlerts
     .filter((a: any) => a.date >= todayISO && a.date <= threeDaysOut)
     .slice(0, 8)
     .forEach((wx: any) => {
@@ -356,7 +361,8 @@ export default async function MasterDashboard() {
   const totalManHours = fieldReports.reduce((s: number, r: any) => s + (r.Total_Man_Hours || 0), 0);
   const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
-  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard);
+  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs);
+
 
   const criticalCount = risks.filter(r => r.level === 'critical').length;
   const warningCount = risks.filter(r => r.level === 'warning').length;
