@@ -240,7 +240,7 @@ function computeRisks(
   // EST offset: UTC-5 (standard) / UTC-4 (daylight)
   const estHour = now.getUTCHours() - 4; // approximate EDT
 
-  // ── CONDITION 1: Missing Jotform ─────────────────────────────────────────
+  // ── CONDITION 1: Missing Field Report ────────────────────────────────────
   // Crew scheduled today but zero field reports, after 10AM EST
   const todayDays = (scheduleData?.currentWeek?.days || []).filter((d: any) => d.date === todayISO);
   if (estHour >= 10) {
@@ -261,7 +261,7 @@ function computeRisks(
           });
         }
         if (matchedJob && !reportMap[matchedJob.Job_Number]) {
-          risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `MISSING JOTFORM: Crew scheduled at ${matchedJob.Job_Name} today but NO field report submitted as of ${estHour}:00 EST. PM: ${matchedJob.Project_Manager}. Action: Contact foreman immediately.` });
+          risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `MISSING FIELD REPORT: Crew scheduled at ${matchedJob.Job_Name} today but NO field report submitted as of ${estHour}:00 EST. PM: ${matchedJob.Project_Manager}. Action: Contact foreman immediately.` });
         }
       }
     }
@@ -440,7 +440,7 @@ export default async function MasterDashboard() {
             { label: 'Portfolio Value', value: `$${(totalPortfolio / 1000000).toFixed(1)}M`, sub: 'Total contract value', color: '#60a5fa' },
             { label: 'Billed To Date', value: `$${(totalBilled / 1000000).toFixed(1)}M`, sub: `${overallPct}% collected`, color: '#a78bfa' },
             { label: 'Crews Live', value: samsara.configured ? samsara.vehicles.length.toString() : '—', sub: samsara.configured ? 'Samsara GPS' : 'No API key', color: '#fb923c' },
-            { label: 'Field Reports', value: fieldReports.length.toString(), sub: 'Jobs with Jotform data', color: '#20BC64' },
+            { label: 'Field Reports', value: fieldReports.length.toString(), sub: 'Jobs with field data', color: '#20BC64' },
           ].map((kpi) => (
             <div key={kpi.label} className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
               <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">{kpi.label}</p>
@@ -545,6 +545,63 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
+        {/* ── LOWBOY COMMAND ─────────────────────────────────────────────── */}
+        {(() => {
+          const lowboyVehicle = samsara.configured
+            ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('jose') || (v.name || '').toLowerCase().includes('lowboy'))
+            : null;
+
+          if (!lowboyVehicle && !samsara.configured) return null;
+
+          return (
+            <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
+              <div className="p-5 border-b border-white/5 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-sm font-black uppercase tracking-widest text-white/60">🚛 Lowboy Command — Jose De Lara</h2>
+                  {lowboyVehicle && (
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                      {lowboyVehicle.speed > 2 ? `🟢 EN ROUTE · ${lowboyVehicle.speed} mph` : '🟡 PARKED'}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[9px] font-bold text-emerald-400 px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">✅ PERMANENT PERMIT</span>
+              </div>
+              {lowboyVehicle ? (
+                <div className="p-5">
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Current Location</p>
+                      <p className="text-xs font-bold text-white/70 leading-relaxed">{lowboyVehicle.address || 'GPS Active'}</p>
+                    </div>
+                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Speed</p>
+                      <p className="text-2xl font-black text-white">{lowboyVehicle.speed}<span className="text-sm text-white/30 ml-1">mph</span></p>
+                    </div>
+                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Heading</p>
+                      <p className="text-lg font-black text-white/60">{lowboyVehicle.heading || 0}°</p>
+                    </div>
+                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Driver</p>
+                      <p className="text-sm font-black text-white/70">{lowboyVehicle.driver || 'Jose De Lara'}</p>
+                    </div>
+                  </div>
+                  {lowboyVehicle.speed > 2 && (
+                    <div className="mt-3 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
+                      <span className="text-emerald-400">🚛</span>
+                      <p className="text-xs text-emerald-300/70 font-bold">Lowboy is currently in transit at {lowboyVehicle.speed} mph. ETA to next staging site updating live via Samsara.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-5 text-center">
+                  <p className="text-white/30 text-sm">Awaiting Samsara GPS signal for Jose De Lara&apos;s lowboy unit.</p>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ── ROW 3: SCORECARD + JOB HEALTH ──────────────────────────────── */}
         <div className="grid grid-cols-12 gap-6">
 
@@ -552,7 +609,7 @@ export default async function MasterDashboard() {
           <div className="col-span-12 lg:col-span-5 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
             <div className="p-5 border-b border-white/5">
               <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Portfolio Scorecard — Estimated vs. Actual</h2>
-              <p className="text-xs text-white/30 mt-1">Billing % from Google Sheets · Tonnage from Jotform field reports</p>
+              <p className="text-xs text-white/30 mt-1">Billing % · Production tonnage from field reports</p>
             </div>
             <div className="p-5 space-y-5">
 
@@ -571,7 +628,7 @@ export default async function MasterDashboard() {
               {/* Asphalt Tonnage */}
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Asphalt Tonnage (Jotform)</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Asphalt Tonnage (Live)</span>
                   <span className="text-xs font-bold text-blue-400">{totalAsphaltLogged.toLocaleString()} tons logged</span>
                 </div>
                 <div className="relative h-5 bg-white/5 rounded-full overflow-hidden">
@@ -583,7 +640,7 @@ export default async function MasterDashboard() {
               {/* Base Tonnage */}
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Base / GAB Tonnage (Jotform)</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Base / GAB Tonnage (Live)</span>
                   <span className="text-xs font-bold text-purple-400">{totalBaseLogged.toLocaleString()} tons logged</span>
                 </div>
                 <div className="relative h-5 bg-white/5 rounded-full overflow-hidden">
@@ -597,7 +654,7 @@ export default async function MasterDashboard() {
                 <div className="bg-black/20 rounded-xl p-3 text-center">
                   <p className="text-xs text-white/30 font-bold uppercase mb-1">Total Man-Hours</p>
                   <p className="text-2xl font-black text-amber-400">{totalManHours.toLocaleString()}</p>
-                  <p className="text-[10px] text-white/20">from Jotform reports</p>
+                  <p className="text-[10px] text-white/20">from field reports</p>
                 </div>
                 <div className="bg-black/20 rounded-xl p-3 text-center">
                   <p className="text-xs text-white/30 font-bold uppercase mb-1">Reported Jobs</p>
@@ -682,6 +739,132 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
+        {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ────────────────────── */}
+        {(() => {
+          // Compute velocity from scorecard data
+          const scorecards: any[] = [];
+          try {
+            const scPath = path.join(process.cwd(), 'data', 'Project_Scorecards.csv');
+            const scText = fs.readFileSync(scPath, 'utf-8');
+            const scLines = scText.trim().split('\n');
+            for (let i = 1; i < scLines.length; i++) {
+              const cols = scLines[i].split(',');
+              scorecards.push({
+                actStone: parseFloat(cols[4] || '0') || 0,
+                actBinder: parseFloat(cols[6] || '0') || 0,
+                actTopping: parseFloat(cols[8] || '0') || 0,
+                actDays: parseFloat(cols[10] || '0') || 0,
+              });
+            }
+          } catch {}
+
+          const activeJobs = scorecards.filter(sc => sc.actDays > 0);
+          const totalStoneTons = activeJobs.reduce((s, sc) => s + sc.actStone, 0);
+          const totalAsphaltTons = activeJobs.reduce((s, sc) => s + sc.actBinder + sc.actTopping, 0);
+          const totalDays = activeJobs.reduce((s, sc) => s + sc.actDays, 0);
+
+          const stoneVelocity = totalDays > 0 ? Math.round(totalStoneTons / totalDays) : 0;
+          const asphaltVelocity = totalDays > 0 ? Math.round(totalAsphaltTons / totalDays) : 0;
+          const isBehind = stoneVelocity > 0 && asphaltVelocity > 0 && stoneVelocity < asphaltVelocity * 1.2;
+          const maxVelocity = Math.max(stoneVelocity, asphaltVelocity, 1);
+
+          return (
+            <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
+              <div className="p-5 border-b border-white/5 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-sm font-black uppercase tracking-widest text-white/60">⚡ Throughput Bottleneck Tracker</h2>
+                  {isBehind && (
+                    <span className="text-[10px] font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
+                      ⚠️ BASE CREW BELOW PAVING THRESHOLD
+                    </span>
+                  )}
+                </div>
+                <span className="text-xs text-white/20 font-bold uppercase">Live Telemetry</span>
+              </div>
+              <div className="p-5">
+                <div className="grid grid-cols-2 gap-6">
+                  {/* Stone Base Velocity */}
+                  <div>
+                    <div className="flex justify-between items-end mb-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80">Stone Base Velocity</p>
+                        <p className="text-[9px] text-white/25 mt-0.5">Foremen: Juan · Martin · Julio</p>
+                      </div>
+                      <p className="text-3xl font-black text-amber-400">{stoneVelocity}<span className="text-sm text-amber-400/50 ml-1">t/day</span></p>
+                    </div>
+                    <div className="relative h-8 bg-white/5 rounded-lg overflow-hidden">
+                      <div
+                        className="absolute left-0 top-0 h-full rounded-lg transition-all bg-gradient-to-r from-amber-500/80 to-amber-400/60"
+                        style={{ width: `${Math.min(100, (stoneVelocity / maxVelocity) * 100)}%` }}
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">
+                        {totalStoneTons.toLocaleString()} tons / {totalDays} days
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Asphalt Velocity */}
+                  <div>
+                    <div className="flex justify-between items-end mb-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-400/80">Asphalt Paving Velocity</p>
+                        <p className="text-[9px] text-white/25 mt-0.5">Foreman: Rosendo Rubio</p>
+                      </div>
+                      <p className="text-3xl font-black text-blue-400">{asphaltVelocity}<span className="text-sm text-blue-400/50 ml-1">t/day</span></p>
+                    </div>
+                    <div className="relative h-8 bg-white/5 rounded-lg overflow-hidden">
+                      <div
+                        className="absolute left-0 top-0 h-full rounded-lg transition-all bg-gradient-to-r from-blue-500/80 to-blue-400/60"
+                        style={{ width: `${Math.min(100, (asphaltVelocity / maxVelocity) * 100)}%` }}
+                      />
+                      <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">
+                        {totalAsphaltTons.toLocaleString()} tons / {totalDays} days
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Alert Banner */}
+                {isBehind && (
+                  <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
+                    <span className="text-amber-400 text-lg shrink-0">⚠️</span>
+                    <div>
+                      <p className="text-amber-300 font-black text-xs">BASE CREW VELOCITY BELOW PAVING THRESHOLD</p>
+                      <p className="text-amber-200/50 text-[10px] mt-0.5">
+                        Stone crews are producing {stoneVelocity} t/day vs. {asphaltVelocity} t/day asphalt demand.
+                        Base must lead asphalt by ≥20% to prevent paving crew downtime. Contact Juan / Martin / Julio immediately.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ratio indicator */}
+                <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center">
+                  <div className="flex items-center gap-4">
+                    <div className="text-center">
+                      <p className="text-[9px] text-white/25 font-bold uppercase">Ratio</p>
+                      <p className={`text-lg font-black ${isBehind ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : '—'}x
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] text-white/25 font-bold uppercase">Required</p>
+                      <p className="text-lg font-black text-white/40">≥1.20x</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[9px] text-white/25 font-bold uppercase">Status</p>
+                      <p className={`text-xs font-black ${isBehind ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {isBehind ? '🔴 BEHIND' : '🟢 ON TRACK'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[9px] text-white/15 font-bold">{activeJobs.length} Active Jobs Reporting</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── ROW 4: JOB LIST + PORTFOLIO TABLE ─────────────────────────── */}
         <div className="grid grid-cols-12 gap-6">
 
@@ -730,7 +913,7 @@ export default async function MasterDashboard() {
           <div className="col-span-12 lg:col-span-8 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
             <div className="p-5 border-b border-white/5 flex justify-between items-center">
               <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Full Portfolio — {jobs.length} Jobs</h2>
-              <span className="text-xs text-white/20 font-bold uppercase">Google Sheets · Live</span>
+              <span className="text-xs text-white/20 font-bold uppercase">Live Data Feed</span>
             </div>
             <div className="overflow-x-auto overflow-y-auto custom-scrollbar" style={{ maxHeight: '440px' }}>
               <table className="w-full text-sm">

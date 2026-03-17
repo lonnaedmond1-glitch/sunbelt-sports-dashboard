@@ -87,6 +87,8 @@ export default function JobTabs({
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
   const [fullscreenDoc, setFullscreenDoc] = useState<string | null>(null);
+  const [surfaceReadyUploads, setSurfaceReadyUploads] = useState<Record<string, boolean>>({});
+  const [surfaceReadyAuthorized, setSurfaceReadyAuthorized] = useState<{ by: string; at: string } | null>(null);
 
   const pct = Math.round(job.Pct_Complete || 0);
   const pctColor = pct >= 80 ? '#20BC64' : pct >= 50 ? '#fb923c' : '#ef4444';
@@ -432,7 +434,7 @@ export default function JobTabs({
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Production Totals</h2>
-                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: SCORECARD + JOTFORM LIVE</span>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: SCORECARD + FIELD REPORTS</span>
               </div>
               {report ? (
                 <div className="space-y-5">
@@ -471,14 +473,14 @@ export default function JobTabs({
                     );
                   })}
                 </div>
-              ) : <p className="text-white/20 text-sm py-4">Awaiting Live Data — No Jotform submissions found for this job.</p>}
+              ) : <p className="text-white/20 text-sm py-4">Awaiting Live Data — No field reports submitted for this job.</p>}
             </div>
 
             {/* FIELD REPORT FEED — Daily submissions */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Daily Field Reports</h2>
-                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: JOTFORM API · {fieldReportFeed.length} Reports</span>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: FIELD REPORT API · {fieldReportFeed.length} Reports</span>
               </div>
               {fieldReportFeed.length > 0 ? (
                 <div className="space-y-3">
@@ -547,7 +549,7 @@ export default function JobTabs({
                 <div className="text-center py-6">
                   <p className="text-3xl mb-2">📋</p>
                   <p className="text-white/30 text-sm font-bold">Awaiting Live Data — No field reports submitted for this job.</p>
-                  <p className="text-white/15 text-xs mt-1">Foremen submit daily reports via Jotform. Reports appear here automatically.</p>
+                  <p className="text-white/15 text-xs mt-1">Foremen submit daily field reports. Reports appear here automatically.</p>
                 </div>
               )}
             </div>
@@ -731,7 +733,7 @@ export default function JobTabs({
               const hasMicromill = (job.Micromill || '').toLowerCase().includes('yes') || (job.Micromill || '').toLowerCase().includes('true');
               const hasMillCap = (job.Track_Surface || '').toLowerCase().includes('mill');
 
-              type PhaseInfo = { phase: string; emoji: string; color: string; borderColor: string; bgColor: string; items: string[] };
+              type PhaseInfo = { phase: string; emoji: string; color: string; borderColor: string; bgColor: string; items: string[]; surfaceReadyGate?: boolean };
 
               let activePhase: PhaseInfo;
 
@@ -759,6 +761,7 @@ export default function JobTabs({
                     'Mandatory 10-foot straightedge check for high spots and deviations.',
                     'Complete all necessary grinding and sweep residue before surfacing begins.',
                   ],
+                  surfaceReadyGate: true,
                 };
               } else if (binderActual > 0 || toppingActual > 0) {
                 activePhase = {
@@ -844,6 +847,102 @@ export default function JobTabs({
                   {activePhase.items.every((_, i) => qcDone[`sunbelt_${activePhase.phase}_${i}`]) && (
                     <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-center">
                       <p className="text-emerald-400 font-black text-xs">✅ ALL {activePhase.phase.toUpperCase()} QC ITEMS VERIFIED</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── 🔒 SURFACE READY QC GATE ─────────────────────────────────── */}
+            {(() => {
+              // Re-detect phase for gate rendering
+              const stoneAct2 = scorecard ? parseFloat(scorecard.Act_Stone_Tons) || 0 : (report?.GAB_Tonnage || 0);
+              const binderAct2 = scorecard ? parseFloat(scorecard.Act_Binder_Tons) || 0 : (report?.Binder_Tonnage || 0);
+              const toppingAct2 = scorecard ? parseFloat(scorecard.Act_Topping_Tons) || 0 : (report?.Topping_Tonnage || 0);
+              const toppingEst2 = scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0;
+              const isPostAsphalt = pct >= 85 && toppingAct2 > 0 && toppingEst2 > 0 && toppingAct2 >= toppingEst2 * 0.8;
+              if (!isPostAsphalt) return null;
+
+              const GATE_ITEMS = [
+                { id: 'straightedge', icon: '📸', label: '10-ft Straightedge Photo Verification', desc: 'Post-asphalt flatness inspection with physical straightedge.' },
+                { id: 'laser_grading', icon: '📄', label: 'Laser Grading Sign-Off', desc: 'Verified laser-level grade elevations meet spec.' },
+                { id: 'compaction', icon: '📄', label: 'Compaction Check Verification', desc: 'Nuclear density test results confirming 95%+ compaction.' },
+              ];
+              const allUploaded = GATE_ITEMS.every(item => surfaceReadyUploads[item.id]);
+              const uploadLink = jobFolder?.Job_Folder_Link || '#';
+
+              return (
+                <div className={`rounded-xl border-2 p-5 ${surfaceReadyAuthorized ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{surfaceReadyAuthorized ? '✅' : '🔒'}</span>
+                      <div>
+                        <h2 className="text-xs font-black uppercase tracking-widest text-red-400">Surface Ready QC Gate</h2>
+                        <p className="text-[10px] text-white/30 mt-0.5">Required before track surfacing (Beynon, AstroTurf, Geo Surfaces)</p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">THE SUNBELT WAY</span>
+                  </div>
+
+                  {/* Upload Slots */}
+                  <div className="space-y-3 mb-4">
+                    {GATE_ITEMS.map(item => {
+                      const done = surfaceReadyUploads[item.id];
+                      return (
+                        <div key={item.id} className={`p-4 rounded-xl border transition-all ${done ? 'bg-emerald-500/8 border-emerald-500/25' : 'bg-black/20 border-white/5'}`}>
+                          <div className="flex items-start gap-4">
+                            <button
+                              onClick={() => setSurfaceReadyUploads(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all font-black text-sm border ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-emerald-400'}`}>
+                              ✓
+                            </button>
+                            <div className="flex-1">
+                              <p className={`text-sm font-black ${done ? 'text-emerald-400' : 'text-white'}`}>
+                                {item.icon} {item.label}
+                              </p>
+                              <p className="text-xs text-white/40 mt-0.5">{item.desc}</p>
+                            </div>
+                            <a href={uploadLink} target="_blank" rel="noopener noreferrer"
+                              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-[10px] font-black hover:bg-[#20BC64]/20 transition-all">
+                              📤 Upload Proof
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Countersignature Lock */}
+                  {surfaceReadyAuthorized ? (
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-center">
+                      <p className="text-emerald-400 font-black text-sm">✅ SURFACE READY AUTHORIZED</p>
+                      <p className="text-emerald-300/50 text-[10px] mt-1">Authorized by {surfaceReadyAuthorized.by} on {surfaceReadyAuthorized.at}</p>
+                      <p className="text-emerald-300/30 text-[9px] mt-0.5">GANTT phase unlocked — surfacing contractor may proceed.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center gap-3 mb-3">
+                        <span className="text-red-400 text-lg shrink-0">🔒</span>
+                        <div>
+                          <p className="text-red-300 font-black text-xs">GANTT PHASE LOCKED — Awaiting QC Authorization</p>
+                          <p className="text-red-200/50 text-[10px] mt-0.5">All 3 uploads must be verified before authorization can proceed.</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {['Jefferson Reece', 'Pedro De Lara'].map(name => (
+                          <button
+                            key={name}
+                            disabled={!allUploaded}
+                            onClick={() => setSurfaceReadyAuthorized({ by: name, at: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}
+                            className={`p-3 rounded-xl border text-center transition-all ${
+                              allUploaded
+                                ? 'bg-emerald-500/10 border-emerald-500/25 hover:bg-emerald-500/20 cursor-pointer'
+                                : 'bg-white/5 border-white/10 cursor-not-allowed opacity-50'
+                            }`}>
+                            <p className={`text-xs font-black ${allUploaded ? 'text-emerald-400' : 'text-white/30'}`}>🔐 Authorize as {name}</p>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>

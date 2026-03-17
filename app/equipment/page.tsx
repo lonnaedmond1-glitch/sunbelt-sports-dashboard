@@ -45,8 +45,8 @@ export default async function EquipmentPage() {
     <div className="min-h-screen bg-[#2A2D31] text-white font-sans p-8">
       <header className="mb-6 flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-white mb-2">Equipment Fleet Tracking</h1>
-          <p className="text-white/40 text-sm">Global overview of all active rentals and burn rates.</p>
+          <h1 className="text-2xl font-black uppercase tracking-tight text-white mb-2">Active Rentals</h1>
+          <p className="text-white/40 text-sm">On-rent equipment tracking with daily burn rates and vendor breakdown.</p>
         </div>
       </header>
 
@@ -73,7 +73,7 @@ export default async function EquipmentPage() {
       {/* Main Table */}
       <div className="bg-[#1e2023] rounded-xl border border-white/5 overflow-hidden shadow-2xl">
         <div className="px-6 py-4 border-b border-white/5 bg-black/20">
-          <h2 className="text-sm font-black uppercase tracking-widest text-[#20BC64]">Full Active Fleet</h2>
+          <h2 className="text-sm font-black uppercase tracking-widest text-[#20BC64]">Active Rentals</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -96,7 +96,7 @@ export default async function EquipmentPage() {
                     <p className="text-xs text-white/40 mt-1">{r.Vendor}</p>
                   </td>
                   <td className="px-6 py-4">
-                    <Link href={`/jobs/${r.Job_Number}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
+                    <Link href={`/jobs/${encodeURIComponent(r.Job_Number.trim())}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
                       {r.Job_Number}
                     </Link>
                     <p className="text-xs text-white/60 mt-1">{r.jobName}</p>
@@ -120,6 +120,8 @@ export default async function EquipmentPage() {
                   <td className="px-6 py-4 text-center">
                     {r.isOverdue ? (
                       <span className="text-[10px] font-black tracking-widest uppercase text-red-500 flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> Overdue</span>
+                    ) : r.days > 14 && r.rate === 0 ? (
+                      <span className="text-[10px] font-black tracking-widest uppercase text-amber-400 flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> INACTIVE</span>
                     ) : (
                       <span className="text-[10px] font-black tracking-widest uppercase text-[#20BC64] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#20BC64]"></span> Active</span>
                     )}
