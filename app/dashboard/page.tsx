@@ -268,15 +268,21 @@ function computeRisks(
     }
   }
 
-  // ── CONDITION 4: Weather Risk (>40% rain during working hours) ───────────
+  // ── CONDITION 4: Weather Risk (≥40% rain during working hours) ───────────
   const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
   weatherAlerts
-    .filter((a: any) => a.date >= todayISO && a.date <= threeDaysOut && a.precipProb >= 40)
-    .slice(0, 5)
+    .filter((a: any) => a.date >= todayISO && a.date <= threeDaysOut)
+    .slice(0, 8)
     .forEach((wx: any) => {
-      const lvl = wx.precipProb >= 70 ? 'critical' as const : 'warning' as const;
-      risks.push({ level: lvl, job: wx.job, message: `WEATHER RISK: ${wx.icon || '🌧'} ${wx.precipProb}% rain chance at ${wx.jobName} on ${wx.date} — ${wx.high}°F, ${wx.wind}mph wind${wx.precip > 0 ? `, ${wx.precip}" expected` : ''}. PM: ${wx.pm}. Plan for possible delay.` });
+      const lvl = (wx.isToday || wx.severity === 'critical' || (wx.precipProb || 0) >= 70) ? 'critical' as const : 'warning' as const;
+      const todayTag = wx.isToday ? 'TODAY — ' : `${wx.date} — `;
+      risks.push({
+        level: lvl,
+        job: wx.job,
+        message: `WEATHER RISK: ⛈️ ${todayTag}${wx.condition || 'Rain'} at ${wx.jobName}: ${wx.precipProb}% rain chance, wind ${wx.wind}mph. PM: ${wx.pm || 'N/A'}. Plan for possible work stoppage.`,
+      });
     });
+
 
   // ── CONDITION 5: Vendor/Credit Account Missing ───────────────────────────
   // Uses Job Prep Board credit status as proxy for vendor account status
