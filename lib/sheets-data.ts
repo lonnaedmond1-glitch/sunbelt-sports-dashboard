@@ -135,6 +135,31 @@ export async function fetchLiveJobs() {
   } catch { return []; }
 }
 
+// ──────────────────────────── VISIONLINK ASSETS (CSV) ────────────────────────────
+
+export async function fetchVisionLinkAssets() {
+  try {
+    const fs = await import('fs');
+    const path = await import('path');
+    const csvPath = path.join(process.cwd(), 'data', 'VisionLink_Assets.csv');
+    if (!fs.existsSync(csvPath)) return [];
+    const csvText = fs.readFileSync(csvPath, 'utf-8');
+    const lines = csvText.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return [];
+    return lines.slice(1).map(line => {
+      const cols = parseCSVLine(line);
+      return {
+        Asset_ID: cols[0]?.trim() || '',
+        Make: cols[1]?.trim() || '',
+        Model: cols[2]?.trim() || '',
+        Serial: cols[3]?.trim() || '',
+        Hours: parseFloat(cols[4]?.trim() || '0') || 0,
+        Last_Reported: cols[5]?.trim() || '',
+      };
+    }).filter(a => a.Asset_ID || a.Serial);
+  } catch { return []; }
+}
+
 // ──────────────────────────── FIELD REPORTS (Jotform) ────────────────────────────
 
 const JOTFORM_API_KEY = process.env.JOTFORM_API_KEY || 'c02f5c097f06c28304f3a766d48f51e6';

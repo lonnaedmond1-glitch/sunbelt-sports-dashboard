@@ -17,6 +17,7 @@ interface JobTabsProps {
   baseCredit: string;
   hasCreditFlag: boolean;
   fieldReportFeed: any[];
+  vlAssets: any[];
 }
 
 const TABS = [
@@ -81,7 +82,7 @@ function extractDriveFileId(url: string): string | null {
 export default function JobTabs({
   jobNumber, job, report, prep, rentals, changeOrders, scorecard,
   jobFolder, vehicles, weatherDays, asphaltCredit, baseCredit, hasCreditFlag,
-  fieldReportFeed,
+  fieldReportFeed, vlAssets,
 }: JobTabsProps) {
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
@@ -104,7 +105,7 @@ export default function JobTabs({
     { id: 'straightedge', label: '10-ft Straightedge', icon: '📐', desc: 'Smoothness check before pave' },
   ];
 
-  const hasVisionLinkKey = false; // Will be true when VISIONLINK_API_KEY is added
+  const hasVisionLinkData = vlAssets && vlAssets.length > 0;
 
   // Google Drive folder ID for embeds
   const driveFolderId = jobFolder?.Job_Folder_Link ? extractDriveFolderId(jobFolder.Job_Folder_Link) : null;
@@ -293,39 +294,70 @@ export default function JobTabs({
                 )}
               </div>
 
-              {/* VisionLink Section */}
-              {!hasVisionLinkKey ? (
+              {/* VisionLink Fleet Section */}
+              {hasVisionLinkData ? (
+                <div className="mb-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-400/60">VISIONLINK Fleet — {vlAssets.length} Assets</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                    {vlAssets.map((a: any, i: number) => {
+                      const isReporting = !!a.Last_Reported;
+                      const icon = a.Make === 'BOBCAT' ? '🏗️' : a.Make === 'LEEBOY' ? '🛤️' : a.Make === 'SAKAI' ? '🔨' : a.Make === 'INTERNATIONAL' ? '🚛' : '🚜';
+                      return (
+                        <div key={i} className={`flex items-center gap-2 p-2.5 rounded-lg border transition-all ${
+                          isReporting ? 'bg-black/20 border-emerald-500/10' : 'bg-black/10 border-white/5 opacity-60'
+                        }`}>
+                          <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center text-sm shrink-0">{icon}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-white truncate">#{a.Asset_ID} · {a.Make} {a.Model}</p>
+                            <p className="text-[10px] text-white/30 truncate">{a.Hours > 0 ? `${a.Hours.toLocaleString()} hrs` : 'No data'}</p>
+                          </div>
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 ${isReporting ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
+                            {isReporting ? '● LIVE' : '○ OFF'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
                 <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15 mb-4">
                   <div className="flex items-center gap-3">
                     <span className="text-lg">🔗</span>
                     <div>
-                      <p className="text-xs font-black text-amber-400">Connection Required — Add VisionLink API Key</p>
-                      <p className="text-[10px] text-white/30 mt-0.5">Heavy equipment (CAT, Deere) will appear automatically once VISIONLINK_API_KEY is configured.</p>
+                      <p className="text-xs font-black text-amber-400">VisionLink — Pending API Provisioning</p>
+                      <p className="text-[10px] text-white/30 mt-0.5">Contact your Cat dealer to enable API access. Data scraped manually in the meantime.</p>
                     </div>
                   </div>
                 </div>
-              ) : null}
+              )}
 
               {/* Samsara Lowboy / Vehicle Section */}
-              {vehicles.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {vehicles.map((v: any, i: number) => (
-                    <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-blue-500/10">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sm shrink-0">🚛</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-black text-white truncate">{v.name?.replace?.(/\s*\(.*\)/, '') || v.name}</p>
-                        <p className="text-xs text-white/40 truncate">{v.address || 'Location active'}</p>
+              {vehicles.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">SAMSARA Vehicles — {vehicles.length} Near Site</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {vehicles.map((v: any, i: number) => (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-blue-500/10">
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sm shrink-0">🚛</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-black text-white truncate">{v.name?.replace?.(/\s*\(.*\)/, '') || v.name}</p>
+                          <p className="text-xs text-white/40 truncate">{v.address || 'Location active'}</p>
+                        </div>
+                        <span className={`text-[10px] font-black px-2 py-1 rounded-full shrink-0 ${v.speed > 2 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                          {v.speed > 2 ? `${v.speed} mph` : 'Parked'}
+                        </span>
                       </div>
-                      <span className={`text-[10px] font-black px-2 py-1 rounded-full shrink-0 ${v.speed > 2 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                        {v.speed > 2 ? `${v.speed} mph` : 'Parked'}
-                      </span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              ) : (
+              )}
+              {!hasVisionLinkData && vehicles.length === 0 && (
                 <div className="text-center py-4">
-                  <p className="text-white/20 text-sm">No Samsara vehicles tracked near this site.</p>
-                  <p className="text-white/10 text-xs mt-1">Vehicles within 15 miles appear automatically via Samsara GPS.</p>
+                  <p className="text-white/20 text-sm">No equipment data available.</p>
                 </div>
               )}
             </div>
