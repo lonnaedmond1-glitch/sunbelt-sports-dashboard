@@ -84,8 +84,9 @@ export default function LiveMap({ jobs, vehicles }: Props) {
       if (!mapRef.current) return;
 
       const map = L.map(mapRef.current, {
-        center: [33.0, -85.0], zoom: 6,
+        center: [33.5, -83.9], zoom: 8,
         zoomControl: true, attributionControl: false,
+        minZoom: 6, maxZoom: 18,
       });
       mapInstanceRef.current = map;
 
@@ -195,20 +196,20 @@ export default function LiveMap({ jobs, vehicles }: Props) {
           </div>`, { className: 'dark-popup' });
       });
 
-      // Fit bounds to all pins (jobs + vehicles) — stay zoomed to the region, never the whole globe
+      // Fit bounds to all pins (jobs + vehicles) — only US Southeast coordinates
+      const isValidCoord = (lat: number, lng: number) => lat >= 25 && lat <= 40 && lng >= -95 && lng <= -75;
       const allPoints: [number, number][] = [];
       validJobs.forEach(j => {
         const lat = parseFloat(j.Lat); const lng = parseFloat(j.Lng);
-        if (!isNaN(lat) && !isNaN(lng)) allPoints.push([lat, lng]);
+        if (!isNaN(lat) && !isNaN(lng) && isValidCoord(lat, lng)) allPoints.push([lat, lng]);
       });
       spreadVehicles.forEach(v => {
-        if (v.lat && v.lng) allPoints.push([v.lat, v.lng]);
+        if (v.lat && v.lng && isValidCoord(v.lat, v.lng)) allPoints.push([v.lat, v.lng]);
       });
       if (allPoints.length > 0) {
         const bounds = L.latLngBounds(allPoints);
-        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, minZoom: 7 });
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
       } else {
-        // Fallback: center on Georgia if no pins
         map.setView([33.5, -83.9], 8);
       }
 
