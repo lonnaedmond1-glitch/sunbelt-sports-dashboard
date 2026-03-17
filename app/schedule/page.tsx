@@ -77,13 +77,35 @@ export default async function SchedulePage() {
 
   // Resolve Job Links even when Gantt matching fails
   const resolveJobLink = (assignment: any) => {
+    const raw = (assignment.rawText || '').toLowerCase();
+    
+    // 1. Direct Job Number match
+    const numMatch = jobs.find((j: any) => j.Job_Number && raw.includes(j.Job_Number.toLowerCase()));
+    if (numMatch) return numMatch.Job_Number;
+
+    // 2. Strict longest substring match
+    let bestMatch = null;
+    let maxLen = 0;
+    for (const j of jobs) {
+      if (!j || !j.Job_Name) continue;
+      const jName = j.Job_Name.toLowerCase().replace(/ paving| base| hs/g, '').trim();
+      if (jName.length > 4 && raw.includes(jName) && jName.length > maxLen) {
+        maxLen = jName.length;
+        bestMatch = j;
+      }
+    }
+    if (bestMatch) return bestMatch.Job_Number;
+
+    // 3. Fallback to Gantt
     if (assignment.ganttMatch?.jobNumber) return assignment.ganttMatch.jobNumber;
+
+    // 4. First word fallback
     const ref = (assignment.decoded?.jobRef || '').toLowerCase();
-    const matchedJob = jobs.find((j: any) => {
+    const fallback = jobs.find((j: any) => {
       const nameWord = (j.Job_Name || '').toLowerCase().split(' ')[0];
       return nameWord && nameWord.length > 3 && ref.includes(nameWord);
     });
-    return matchedJob?.Job_Number || null;
+    return fallback?.Job_Number || null;
   };
 
   const renderWeekGrid = (week: any, label: string, isCurrent: boolean) => {
