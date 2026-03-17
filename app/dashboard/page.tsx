@@ -91,13 +91,57 @@ async function getCrossCheckData() {
 }
 
 async function getWeatherAlerts() {
+  const THRESHOLD = 40; // ≥40% rain = operational risk
+  const todayISO = new Date().toISOString().split('T')[0];
   try {
-    const res = await fetch(`${getBaseUrl()}/api/weather`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.alerts || [];
+    const jobs = await fetchLiveJobs();
+    // Dedupe locations
+    const seen = new Set<string>();
+    const locationJobs: { lat: number; lng: number; job: any }[] = [];
+    for (const job of jobs) {
+      if (!job) continue;
+      if (!job.Lat || !job.Lng) continue;
+      const lat = parseFloat(job.Lat);
+      const lng = parseFloat(job.Lng);
+      if (isNaN(lat) || isNaN(lng)) continue;
+      const key = `${lat.toFixed(1)},${lng.toFixed(1)}`;
+      if (!seen.has(key)) seen.add(key);
+      locationJobs.push({ lat, lng, job });
+    }
+
+    const alerts: any[] = [];
+    await Promise.all(locationJobs.slice(0, 15).map(async ({ lat, lng, job }) => {
+      try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,precipitation_probability_max,weathercode,windspeed_10m_max&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=America%2FNew_York&forecast_days=7`;
+        const res = await fetch(url, { next: { revalidate: 1800 } });
+        if (!res.ok) return;
+        const weather = await res.json();
+        const daily = weather.daily;
+        if (!daily?.time) return;
+        for (let i = 0; i < daily.time.length; i++) {
+          const dateStr = daily.time[i];
+          const precipProb = daily.precipitation_probability_max?.[i] || 0;
+          const wind = Math.round(daily.windspeed_10m_max?.[i] || 0);
+          const code = daily.weathercode?.[i] || 0;
+          const severe = code >= 51; // drizzle+ is a construction risk
+          const isToday = dateStr === todayISO;
+          if (precipProb >= THRESHOLD || severe || wind >= 30) {
+            const condLabel = code >= 95 ? 'Thunderstorm' : code >= 80 ? 'Rain Showers' : code >= 61 ? 'Rain' : code >= 51 ? 'Drizzle' : code >= 45 ? 'Fog' : 'Rain Risk';
+            alerts.push({
+              date: dateStr, isToday, severity: isToday ? 'critical' : 'warning',
+              job: job?.Job_Number, jobName: job?.Job_Name,
+              pm: job?.Project_Manager || '',
+              precipProb, wind, condition: condLabel,
+              message: `⛈️ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} — ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
+            });
+          }
+        }
+      } catch { /* skip bad coord */ }
+    }));
+    return alerts.sort((a, b) => (a.isToday === b.isToday ? a.date.localeCompare(b.date) : a.isToday ? -1 : 1));
   } catch { return []; }
 }
+
 
 
 // ─── Parse schedule date ────────────────────────────────────────────────────
