@@ -663,12 +663,11 @@ export default function JobTabs({
                 )}
               </div>
               {jobFolder ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   {[
                     { label: 'Contract', icon: '📄', link: jobFolder.Contract_Link || jobFolder.Job_Folder_Link, color: '#20BC64' },
                     { label: 'Work Order', icon: '📋', link: jobFolder.Work_Order_Link || jobFolder.Job_Folder_Link, color: '#60a5fa' },
                     { label: 'Plans', icon: '📐', link: jobFolder.Plans_Link || jobFolder.Job_Folder_Link, color: '#a78bfa' },
-                    { label: 'Materials', icon: '🏗️', link: jobFolder.Material_Resources_Link || jobFolder.Job_Folder_Link, color: '#fb923c' },
                   ].map(doc => (
                     <a key={doc.label} href={doc.link} target="_blank" rel="noopener noreferrer"
                       className="flex items-center gap-3 p-4 rounded-xl bg-black/20 border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group cursor-pointer">
@@ -686,6 +685,138 @@ export default function JobTabs({
                 </div>
               )}
             </div>
+
+            {/* ── 🚨 THE SUNBELT WAY: Dynamic Phase QC Checklist ─────────── */}
+            {(() => {
+              // Phase detection from production data
+              const stoneActual = scorecard ? parseFloat(scorecard.Act_Stone_Tons) || 0 : (report?.GAB_Tonnage || 0);
+              const stoneEst = scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0;
+              const binderActual = scorecard ? parseFloat(scorecard.Act_Binder_Tons) || 0 : (report?.Binder_Tonnage || 0);
+              const toppingActual = scorecard ? parseFloat(scorecard.Act_Topping_Tons) || 0 : (report?.Topping_Tonnage || 0);
+              const toppingEst = scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0;
+              const concActual = report?.Concrete_Actual || report?.Concrete_CY || 0;
+              const pctDone = pct;
+              const hasMicromill = (job.Micromill || '').toLowerCase().includes('yes') || (job.Micromill || '').toLowerCase().includes('true');
+              const hasMillCap = (job.Track_Surface || '').toLowerCase().includes('mill');
+
+              type PhaseInfo = { phase: string; emoji: string; color: string; borderColor: string; bgColor: string; items: string[] };
+
+              let activePhase: PhaseInfo;
+
+              if (hasMillCap || hasMicromill) {
+                activePhase = {
+                  phase: 'Mill & Cap',
+                  emoji: '🔄',
+                  color: 'text-orange-400',
+                  borderColor: 'border-orange-500/30',
+                  bgColor: 'bg-orange-500/5',
+                  items: [
+                    'Core a minimum of 12 random locations to verify existing thickness before mobilization.',
+                    'ZERO dump trucks/heavy equipment on the field without 3/4" plywood protection.',
+                  ],
+                };
+              } else if (pctDone >= 85 && toppingActual > 0 && toppingEst > 0 && toppingActual >= toppingEst * 0.8) {
+                activePhase = {
+                  phase: 'Post-Asphalt / QC',
+                  emoji: '✅',
+                  color: 'text-emerald-400',
+                  borderColor: 'border-emerald-500/30',
+                  bgColor: 'bg-emerald-500/5',
+                  items: [
+                    'Conduct a joint walkthrough with the track surfacing contractor.',
+                    'Mandatory 10-foot straightedge check for high spots and deviations.',
+                    'Complete all necessary grinding and sweep residue before surfacing begins.',
+                  ],
+                };
+              } else if (binderActual > 0 || toppingActual > 0) {
+                activePhase = {
+                  phase: 'Paving',
+                  emoji: '🚧',
+                  color: 'text-red-400',
+                  borderColor: 'border-red-500/30',
+                  bgColor: 'bg-red-500/5',
+                  items: [
+                    'Paint elevation marks at 30-foot intervals (remember asphalt is 25% thicker loose).',
+                    'Use a straightedge continuously to check flatness of the mat during paving.',
+                    'Use a digital level to verify proper cross slope.',
+                  ],
+                };
+              } else if (stoneActual > 0) {
+                activePhase = {
+                  phase: 'Aggregate Base',
+                  emoji: '🪨',
+                  color: 'text-amber-400',
+                  borderColor: 'border-amber-500/30',
+                  bgColor: 'bg-amber-500/5',
+                  items: [
+                    'Laser-grade subgrade before placing stone.',
+                    'Active water truck or hydrant MUST be present during installation to prevent segregation.',
+                    'Vibratory and 9-tire rollers MUST be used to seal rock against weather.',
+                  ],
+                };
+              } else if (concActual > 0) {
+                activePhase = {
+                  phase: 'Curbs & Drainage',
+                  emoji: '🧱',
+                  color: 'text-blue-400',
+                  borderColor: 'border-blue-500/30',
+                  bgColor: 'bg-blue-500/5',
+                  items: [
+                    'Curb tolerances: ±1/4 inch for both elevation and horizontal location.',
+                    'All concrete forms MUST be set using laser-guided elevations.',
+                    'Ensure landing areas do NOT have downhill throwing conditions (Max cross slope 1%).',
+                  ],
+                };
+              } else {
+                activePhase = {
+                  phase: 'Pre-Construction / Subgrade',
+                  emoji: '📐',
+                  color: 'text-purple-400',
+                  borderColor: 'border-purple-500/30',
+                  bgColor: 'bg-purple-500/5',
+                  items: [
+                    'Measure radius points to verify true 400m track layout.',
+                    'Set SINGLE hubs for inside and outside curbs to establish laser control.',
+                    'Verify subgrade elevation is within ±0.10 feet of design grade.',
+                  ],
+                };
+              }
+
+              return (
+                <div className={`rounded-xl border-2 ${activePhase.borderColor} ${activePhase.bgColor} p-5`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{activePhase.emoji}</span>
+                      <div>
+                        <h2 className="text-xs font-black uppercase tracking-widest text-amber-400">🚨 The Sunbelt Way</h2>
+                        <p className={`text-sm font-black mt-0.5 ${activePhase.color}`}>Active Phase: {activePhase.phase}</p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOP: JEFF REECE</span>
+                  </div>
+                  <div className="space-y-3">
+                    {activePhase.items.map((item, i) => {
+                      const qcKey = `sunbelt_${activePhase.phase}_${i}`;
+                      const done = qcDone[qcKey];
+                      return (
+                        <button key={i} onClick={() => setQcDone(prev => ({ ...prev, [qcKey]: !prev[qcKey] }))}
+                          className={`w-full text-left flex items-start gap-3 p-3 rounded-xl border transition-all ${done ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-black/15 border-white/5 hover:border-white/15'}`}>
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-xs font-black border transition-all ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-white/40'}`}>
+                            ✓
+                          </div>
+                          <p className={`text-sm leading-relaxed ${done ? 'text-emerald-400/80 line-through' : 'text-white/70'}`}>{item}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {activePhase.items.every((_, i) => qcDone[`sunbelt_${activePhase.phase}_${i}`]) && (
+                    <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-center">
+                      <p className="text-emerald-400 font-black text-xs">✅ ALL {activePhase.phase.toUpperCase()} QC ITEMS VERIFIED</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* QC Verification Checklist */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
