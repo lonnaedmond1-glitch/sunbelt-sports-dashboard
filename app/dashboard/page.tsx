@@ -264,7 +264,8 @@ function computeRisks(
   weatherAlerts: any[],
   scorecardEstimates: Record<string, { estTons: number; estDays: number }>,
   prepBoard: any[],
-  scheduledJobs: any[]
+  scheduledJobs: any[],
+  vehicles: any[]
 ) {
   // Display weather alerts for ALL active jobs, since schedule data might be missing current week
   const activeJobNums = new Set(jobs.filter(j => isJobScheduled(j)).map(j => j.Job_Number));
@@ -276,31 +277,25 @@ function computeRisks(
   const eastNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
 
-  // EST offset: UTC-5 (standard) / UTC-4 (daylight)
-  const estHour = now.getUTCHours() - 4; // approximate EDT
+  const estHour = eastNow.getHours();
+  const estMinute = eastNow.getMinutes();
+  const timeStr12 = `${estHour > 12 ? estHour - 12 : estHour || 12}:${estMinute.toString().padStart(2, '0')} ${estHour >= 12 ? 'PM' : 'AM'}`;
 
-  // ── CONDITION 1: Missing Field Report ────────────────────────────────────
-  // Crew scheduled today but zero field reports, after 10AM EST
-  const todayDays = (scheduleData?.currentWeek?.days || []).filter((d: any) => d.date === todayISO);
+  // ── CONDITION 1: Missing Field Report for Scheduled Job ────────────────
   if (estHour >= 10) {
-    for (const day of todayDays) {
-      const jobsScheduledToday = new Set<{ ref: string; jobNum?: string }>();
-      for (const assignment of (day.assignments || [])) {
-        if (!assignment.decoded?.isOff && assignment.crewType === 'primary') {
-          const ref = assignment.decoded?.jobRef;
-          if (ref) jobsScheduledToday.add({ ref: ref.toLowerCase(), jobNum: assignment.ganttMatch?.jobNumber });
-        }
-      }
-      for (const schedObj of Array.from(jobsScheduledToday)) {
-        let matchedJob = jobs.find(j => j.Job_Number === schedObj.jobNum);
-        if (!matchedJob) {
-          matchedJob = jobs.find(j => {
-            const nameWord = (j.Job_Name || '').toLowerCase().split(' ')[0];
-            return nameWord.length > 3 && schedObj.ref.includes(nameWord);
-          });
-        }
+    const todayAssignments = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
+    if (todayAssignments) {
+      for (const assignment of (todayAssignments.assignments || [])) {
+        if (assignment.decoded?.isOff) continue;
+        const crewName = assignment.crew;
+        const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+        const matchedJob = scheduledJobs.find((j: any) => {
+          if (!j.Job_Name) return false;
+          const jName = j.Job_Name.toLowerCase();
+          return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+        });
         if (matchedJob && !reportMap[matchedJob.Job_Number]) {
-          risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `MISSING FIELD REPORT: Crew scheduled at ${matchedJob.Job_Name} today but NO field report submitted as of ${estHour}:00 EST. PM: ${matchedJob.Project_Manager}. Action: Contact foreman immediately.` });
+          risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). None submitted by ${timeStr12}. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
         }
       }
     }
@@ -315,7 +310,7 @@ function computeRisks(
     if (actualTons > est.estTons) {
       const pctOver = Math.round(((actualTons - est.estTons) / est.estTons) * 100);
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `FINANCIAL RISK — MATERIAL OVERRUN: ${job.Job_Name} has consumed ${actualTons.toLocaleString()}t vs ${est.estTons.toLocaleString()}t estimated (${pctOver}% over). PM: ${job.Project_Manager}. Review material yield and adjust remaining quantities.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN — ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
@@ -328,7 +323,7 @@ function computeRisks(
     if (actualDays > est.estDays) {
       const daysOver = actualDays - est.estDays;
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `SCHEDULE RISK — DAYS OVERRUN: ${job.Job_Name} is ${daysOver}d over allotted days on site (${actualDays} logged vs ${est.estDays} estimated). PM: ${job.Project_Manager}. Verify equipment off-rent and escalate if needed.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN — ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
@@ -345,7 +340,7 @@ function computeRisks(
       risks.push({
         level: lvl,
         job: wx.job,
-        message: `WEATHER RISK: ⛈️ ${todayTag}${wx.condition || 'Rain'} at ${wx.jobName}: ${wx.precipProb}% rain chance, wind ${wx.wind}mph. PM: ${wx.pm || 'N/A'}. Plan for possible work stoppage.`,
+        message: `⛈️ WEATHER — ${wx.jobName} (${todayTag.replace(' — ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
       });
     });
 
@@ -360,7 +355,50 @@ function computeRisks(
       const job = jobs.find(j => j.Job_Number === prep.Job_Number);
       if (job) {
         const bad = [isBad(creditStatus) ? 'Asphalt Plant' : '', isBad(quarryStatus) ? 'Quarry' : ''].filter(Boolean).join(' & ');
-        risks.push({ level: 'warning', job: prep.Job_Number, message: `SUPPLY CHAIN RISK: ${job.Job_Name} — ${bad} account status is NOT active. PM: ${job.Project_Manager}. Resolve credit before mobilization.` });
+        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD — ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
+      }
+    }
+  }
+
+  // ── CONDITION 6: Schedule Deviation — truck GPS at wrong job ─────────────
+  // Map crew schedule names to Samsara vehicle names (first name match)
+  if (vehicles.length > 0) {
+    const todayAssignments = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
+    if (todayAssignments) {
+      for (const assignment of (todayAssignments.assignments || [])) {
+        if (assignment.decoded?.isOff) continue;
+        const crewName = (assignment.crew || '').toLowerCase().split(' ')[0]; // first name
+        if (!crewName || crewName.length < 3) continue;
+        // Find this crew's vehicle by first-name match
+        const vehicle = vehicles.find((v: any) => {
+          const vName = (v.name || '').toLowerCase();
+          return new RegExp(`\\b${crewName}\\b`).test(vName);
+        });
+        if (!vehicle || !vehicle.lat || !vehicle.lng) continue;
+        // Find what job this crew is scheduled at
+        const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+        const scheduledJob = jobs.find((j: any) => {
+          if (!j.Job_Name) return false;
+          const jName = j.Job_Name.toLowerCase();
+          return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+        });
+        if (!scheduledJob || !scheduledJob.Lat || !scheduledJob.Lng) continue;
+        const jLat = parseFloat(scheduledJob.Lat);
+        const jLng = parseFloat(scheduledJob.Lng);
+        if (isNaN(jLat) || isNaN(jLng)) continue;
+        const distToScheduled = haversineDistance(vehicle.lat, vehicle.lng, jLat, jLng);
+        if (distToScheduled > 2) {
+          // Check if they're at a different job instead
+          const atOtherJob = jobs.find((j: any) => {
+            if (j.Job_Number === scheduledJob.Job_Number) return false;
+            const oLat = parseFloat(j.Lat); const oLng = parseFloat(j.Lng);
+            if (isNaN(oLat) || isNaN(oLng)) return false;
+            return haversineDistance(vehicle.lat, vehicle.lng, oLat, oLng) <= 2;
+          });
+          if (atOtherJob) {
+            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION — ${assignment.crew}: GPS at ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
+          }
+        }
       }
     }
   }
@@ -429,7 +467,21 @@ export default async function MasterDashboard() {
   const totalManHours = fieldReports.reduce((s: number, r: any) => s + (r.Total_Man_Hours || 0), 0);
   const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
-  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs);
+  // ── Fleet at Jobsites: trucks within 2 miles of any job ──────────────────
+  const fleetAtJobsites = samsara.configured ? samsara.vehicles.filter((v: any) => {
+    if (!v.lat || !v.lng) return false;
+    return jobs.some((j: any) => {
+      const jLat = parseFloat(j.Lat); const jLng = parseFloat(j.Lng);
+      if (isNaN(jLat) || isNaN(jLng)) return false;
+      return haversineDistance(v.lat, v.lng, jLat, jLng) <= 2;
+    });
+  }) : [];
+
+  // ── Missing Reports: scheduled jobs with no field report yesterday ───────
+  const scheduledJobNames = scheduledJobs.map((j: any) => j.Job_Name).filter(Boolean);
+  const missingReportJobs = scheduledJobs.filter((j: any) => !reportMap[j.Job_Number]);
+
+  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs, samsara.vehicles || []);
 
 
   const criticalCount = risks.filter(r => r.level === 'critical').length;
@@ -481,19 +533,36 @@ export default async function MasterDashboard() {
 
         {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {[
-            { label: 'Scheduled Jobs', value: scheduledJobs.length.toString(), sub: 'Within ±7 day window', color: '#20BC64' },
-            { label: 'Portfolio Value', value: `$${(totalPortfolio / 1000000).toFixed(1)}M`, sub: 'Total contract value', color: '#60a5fa' },
-            { label: 'Billed To Date', value: `$${(totalBilled / 1000000).toFixed(1)}M`, sub: `${overallPct}% collected`, color: '#a78bfa' },
-            { label: 'Crews Live', value: samsara.configured ? samsara.vehicles.length.toString() : '—', sub: samsara.configured ? 'Samsara GPS' : 'No API key', color: '#fb923c' },
-            { label: 'Field Reports', value: fieldReports.length.toString(), sub: 'Jobs with field data', color: '#20BC64' },
-          ].map((kpi) => (
-            <div key={kpi.label} className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
-              <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">{kpi.label}</p>
-              <p className="text-4xl font-black" style={{ color: kpi.color }}>{kpi.value}</p>
-              <p className="text-xs text-white/30 mt-1">{kpi.sub}</p>
-            </div>
-          ))}
+          {/* Scheduled Jobs */}
+          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Scheduled Jobs</p>
+            <p className="text-4xl font-black text-[#20BC64]">{scheduledJobs.length}</p>
+            <p className="text-xs text-white/30 mt-1 leading-relaxed line-clamp-2">{scheduledJobNames.slice(0, 5).join(' · ') || 'None this week'}</p>
+          </div>
+          {/* Portfolio Value */}
+          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Portfolio Value</p>
+            <p className="text-4xl font-black text-[#60a5fa]">${(totalPortfolio / 1000000).toFixed(1)}M</p>
+            <p className="text-xs text-white/30 mt-1">Total contract value</p>
+          </div>
+          {/* Billed To Date */}
+          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Billed To Date</p>
+            <p className="text-4xl font-black text-[#a78bfa]">${(totalBilled / 1000000).toFixed(1)}M</p>
+            <p className="text-xs text-white/30 mt-1">{overallPct}% collected</p>
+          </div>
+          {/* Fleet Tracking */}
+          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Fleet at Jobsites</p>
+            <p className="text-4xl font-black text-[#fb923c]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
+            <p className="text-xs text-white/30 mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
+          </div>
+          {/* Missing Reports */}
+          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Missing Reports</p>
+            <p className={`text-4xl font-black ${missingReportJobs.length > 0 ? 'text-red-400' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
+            <p className="text-xs text-white/30 mt-1">{missingReportJobs.length > 0 ? 'Scheduled jobs without reports' : 'All reports submitted'}</p>
+          </div>
         </div>
 
         {/* ── ROW 2: MAP + RISK BOX ───────────────────────────────────────── */}
@@ -629,7 +698,7 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-white/5">
                       <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Driver</p>
-                      <p className="text-sm font-black text-white/70">{lowboyVehicle.driver || 'Jose De Lara'}</p>
+                      <p className="text-sm font-black text-white/70">Jose De Lara</p>
                     </div>
                   </div>
                   {lowboyVehicle.speed > 2 && (
@@ -917,7 +986,7 @@ export default async function MasterDashboard() {
           {/* LIVE MISSION PROGRESS */}
           <div className="col-span-12 lg:col-span-4 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl flex flex-col overflow-hidden" style={{ maxHeight: '500px' }}>
             <div className="p-5 border-b border-white/5 flex justify-between items-center flex-shrink-0">
-              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Live Mission Progress</h2>
+              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">This Week&apos;s Jobs</h2>
               <span className="text-xs text-white/20 font-bold uppercase">Click a job</span>
             </div>
             <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
@@ -965,7 +1034,7 @@ export default async function MasterDashboard() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-[#1e2023] z-10">
                   <tr className="border-b border-white/5">
-                    {['Job #', 'Name', 'GC', 'PM', 'State', 'Status', 'Contract', '% Complete', 'Health'].map(h => (
+                    {['Job #', 'Name', 'General Contractor', 'Project Manager', 'State', 'Status', 'Contract Value', 'Billed %', 'Health'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-widest text-white/30 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
