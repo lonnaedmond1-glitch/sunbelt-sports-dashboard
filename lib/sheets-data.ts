@@ -252,9 +252,10 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
 export function fetchLiveRentals() {
   return cached('liveRentals', 5 * 60 * 1000, async () => {
     try {
+      const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
       const [sunbeltRows, unitedRows] = await Promise.all([
-        fetchSheetByName(FLEET_SHEET_ID, 'Sunbelt Rentals Live'),
-        fetchSheetByName(FLEET_SHEET_ID, 'United Rentals Live'),
+        fetchSheetByName(RENTAL_SHEET_ID, 'Sunbelt Rentals Live'),
+        fetchSheetByName(RENTAL_SHEET_ID, 'United Rentals Live'),
       ]);
 
       const rentals: any[] = [];
