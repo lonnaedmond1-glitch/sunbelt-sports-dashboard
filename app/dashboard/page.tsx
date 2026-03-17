@@ -83,27 +83,16 @@ function parseJobDate(dateStr: string): Date | null {
 }
 
 
-// A job is SCHEDULED if it appears on ANY crew row in the master schedule
-// within the current week or next week (strict ±7 day window from schedule grid).
-// Source of truth: currentWeek and nextWeek parsed day assignments ONLY.
+// ─── Scheduled Jobs State Engine ─────────────────────────────────────────────
+// A job is SCHEDULED if it appears on a crew row in THIS WEEK's schedule grid.
+// Source of truth: currentWeek parsed day assignments ONLY (Mon–Fri this week).
 function isScheduledCurrently(job: any, scheduleData: any): boolean {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
-  const sevenDaysAhead = new Date(today); sevenDaysAhead.setDate(today.getDate() + 7);
-  const minISO = sevenDaysAgo.toISOString().split('T')[0];
-  const maxISO = sevenDaysAhead.toISOString().split('T')[0];
-
   const jobName = (job.Job_Name || '').toLowerCase();
   const jobNum = (job.Job_Number || '');
 
-  // Only scan current week and next week day-level assignments from the schedule grid
-  const allDays: any[] = [
-    ...(scheduleData?.currentWeek?.days || []),
-    ...(scheduleData?.nextWeek?.days || []),
-  ];
-  for (const day of allDays) {
-    const dayDate = day.date || '';
-    if (dayDate < minISO || dayDate > maxISO) continue;
+  // Scan only this week's schedule grid (Mon–Fri current week)
+  const currentWeekDays: any[] = scheduleData?.currentWeek?.days || [];
+  for (const day of currentWeekDays) {
     for (const assignment of (day.assignments || [])) {
       if (assignment.decoded?.isOff) continue;
       const ref = (assignment.decoded?.jobRef || '').toLowerCase();
