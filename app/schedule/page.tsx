@@ -75,6 +75,54 @@ export default async function SchedulePage() {
     jobNumber: j.Job_Number, name: j.Job_Name, lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
   }));
 
+  // Per-job weather icon lookup
+  const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
+    if (!jobRef) return null;
+    const ref = jobRef.toLowerCase();
+    for (const loc of (weather.locations || [])) {
+      const locJobs = (loc.jobs || []).map((j: any) => (j.Job_Name || '').toLowerCase());
+      const matches = locJobs.some((jn: string) => {
+        const word = jn.split(' ')[0];
+        return word.length > 3 && ref.includes(word);
+      });
+      if (matches) {
+        const forecasts = loc.forecasts || [];
+        const f = dateStr ? forecasts.find((fx: any) => fx.date === dateStr) : forecasts[0];
+        if (f && (f.precipProb >= 30 || f.severe)) {
+          return { icon: f.icon || '🌧️', prob: f.precipProb, severe: f.severe };
+        }
+      }
+    }
+    return null;
+  };
+
+  // Haversine for equipment grouping
+  const haversine = (lat1: number, lng1: number, lat2: number, lng2: number) => {
+    const R = 3959;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  };
+
+  // Group equipment by nearest job (within 2mi)
+  const equipmentByJob: Record<string, { job: any; vehicles: typeof equipmentLocations }> = {};
+  const unassignedEquipment: typeof equipmentLocations = [];
+  for (const eq of equipmentLocations) {
+    let nearestJob: any = null;
+    let minDist = Infinity;
+    for (const jl of jobLocations) {
+      const d = haversine(eq.lat, eq.lng, jl.lat, jl.lng);
+      if (d <= 2 && d < minDist) { minDist = d; nearestJob = jl; }
+    }
+    if (nearestJob) {
+      if (!equipmentByJob[nearestJob.jobNumber]) equipmentByJob[nearestJob.jobNumber] = { job: nearestJob, vehicles: [] };
+      equipmentByJob[nearestJob.jobNumber].vehicles.push(eq);
+    } else {
+      unassignedEquipment.push(eq);
+    }
+  }
+
   // Resolve Job Links even when Gantt matching fails
   const resolveJobLink = (assignment: any) => {
     const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
@@ -127,18 +175,9 @@ export default async function SchedulePage() {
                 <th className="text-left px-4 py-3 text-xs font-black uppercase tracking-widest text-white/30 sticky left-0 bg-[#1e2023] z-10 w-36 min-w-[144px]">Crew</th>
                 {dayNames.map(day => {
                   const dayData = week.days.find((d: any) => d.dayOfWeek === day);
-                  const dateStr = dayData?.date;
-                  const wx = dateStr ? getDayWeather(dateStr) : null;
                   return (
                     <th key={day} className={`text-left px-3 py-2 text-xs font-bold uppercase tracking-widest min-w-[185px] ${dayData?.isToday ? 'bg-[#20BC64]/5 text-[#20BC64]' : 'text-white/30'}`}>
-                      <div className="flex items-center justify-between">
-                        <span>{day}</span>
-                        {wx && (
-                          <span className={`text-[10px] font-medium ${wx.severe ? 'text-red-400' : 'text-white/30'}`} title={`${wx.label}: ${wx.high}°/${wx.low}°, ${wx.precipProb}% rain, ${wx.wind}mph wind`}>
-                            {wx.icon} {wx.high}° {wx.precipProb > 0 ? `${wx.precipProb}%💧` : ''}
-                          </span>
-                        )}
-                      </div>
+                      <span>{day}</span>
                       {dayData && (
                         <div className="text-[10px] text-white/20 font-normal mt-0.5">
                           {dayData.dateDisplay?.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '')}
@@ -175,7 +214,10 @@ export default async function SchedulePage() {
                               <div className="text-[10px] text-white/20 italic px-2 py-1">{assignment.decoded.jobRef}</div>
                             ) : linkJobId ? (
                               <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block rounded-lg px-2.5 py-2 text-[11px] border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
-                                <div className="font-bold leading-tight">{assignment.decoded?.jobRef || assignment.job}</div>
+                                <div className="font-bold leading-tight flex items-center gap-1">
+                                  {assignment.decoded?.jobRef || assignment.job}
+                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-red-400' : ''}>{wx.icon}</span> : null; })()}
+                                </div>
                                 {assignment.decoded?.activity && (
                                   <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
                                     <span className="uppercase font-bold">{assignment.decoded.activity}</span>
@@ -194,7 +236,10 @@ export default async function SchedulePage() {
                               </Link>
                             ) : (
                               <div className="rounded-lg px-2.5 py-2 text-[11px] border" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
-                                <div className="font-bold leading-tight">{assignment.decoded?.jobRef || assignment.job}</div>
+                                <div className="font-bold leading-tight flex items-center gap-1">
+                                  {assignment.decoded?.jobRef || assignment.job}
+                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-red-400' : ''}>{wx.icon}</span> : null; })()}
+                                </div>
                                 {assignment.decoded?.activity && (
                                   <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
                                     <span className="uppercase font-bold">{assignment.decoded.activity}</span>
@@ -304,41 +349,15 @@ export default async function SchedulePage() {
 
       <div className="max-w-[1920px] mx-auto p-6 flex flex-col gap-6">
 
-        {/* TOP ROW: Weather Alerts + Deliveries */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Weather Alerts */}
-          <div className="bg-[#1e2023] rounded-2xl border border-amber-400/10 shadow-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-white/5 bg-amber-400/5 flex items-center gap-2">
-              <span className="text-sm">⛈️</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-amber-400">Weather Alerts — Next 7 Days</h2>
-            </div>
-            <div className="p-4 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar">
-              {weatherAlerts.length > 0 ? weatherAlerts.map((alert: any, i: number) => (
-                <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-2 bg-white/[0.02] border border-white/5">
-                  <span className="text-lg flex-shrink-0">{alert.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-amber-400">{alert.date}</span>
-                      <span className="text-[10px] text-white/30">{alert.weather}</span>
-                    </div>
-                    <p className="text-[11px] text-white/60 mt-0.5 truncate">{alert.jobName}</p>
-                    <p className="text-[10px] text-white/30">{alert.high}°/{alert.low}° · {alert.precipProb}% rain{alert.precip > 0 ? ` · ${alert.precip}" expected` : ''} · {alert.wind}mph wind</p>
-                  </div>
-                </div>
-              )) : (
-                <p className="text-white/20 text-xs">No severe weather expected at job sites this week. ☀️</p>
-              )}
-            </div>
-          </div>
-
-          {/* Deliveries */}
+        {/* TOP ROW: Deliveries Only */}
+        {(schedule.deliveries || []).length > 0 && (
           <div className="bg-[#1e2023] rounded-2xl border border-blue-400/10 shadow-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-white/5 bg-blue-400/5 flex items-center gap-2">
               <span className="text-sm">🚚</span>
               <h2 className="text-xs font-black uppercase tracking-widest text-blue-400">Deliveries & Equipment Moves</h2>
             </div>
-            <div className="p-4 space-y-2 max-h-[220px] overflow-y-auto custom-scrollbar">
-              {(schedule.deliveries || []).length > 0 ? (schedule.deliveries || []).map((del: any, i: number) => (
+            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[180px] overflow-y-auto custom-scrollbar">
+              {(schedule.deliveries || []).map((del: any, i: number) => (
                 <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-2 bg-white/[0.02] border border-white/5">
                   <span className="text-lg flex-shrink-0">📦</span>
                   <div className="flex-1">
@@ -353,12 +372,10 @@ export default async function SchedulePage() {
                     <p className="text-[11px] text-white/60 mt-1">{del.description}</p>
                   </div>
                 </div>
-              )) : (
-                <p className="text-white/20 text-xs">No deliveries or equipment moves scheduled.</p>
-              )}
+              ))}
             </div>
           </div>
-        </div>
+        )}
 
         {/* ACTIVE PROJECTS TIMELINE (from Gantt sheet) */}
         {(schedule.activeGanttJobs || []).length > 0 && (
@@ -403,19 +420,50 @@ export default async function SchedulePage() {
         {/* NEXT WEEK CREW GRID */}
         {renderWeekGrid(schedule.nextWeek, 'Next Week', false)}
 
-        {/* EQUIPMENT & RESOURCE MAP */}
+        {/* EQUIPMENT */}
         <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <span className="text-sm">🗺️</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment & Crew Locations</h2>
+              <span className="text-sm">🚛</span>
+              <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment</h2>
             </div>
             <div className="flex items-center gap-3 text-[10px]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> Job Sites ({jobLocations.length})</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span> Vehicles ({equipmentLocations.length})</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> At Jobsites ({Object.values(equipmentByJob).reduce((s, g) => s + g.vehicles.length, 0)})</span>
+              {unassignedEquipment.length > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-white/30 inline-block"></span> Off-Site ({unassignedEquipment.length})</span>}
             </div>
           </div>
-          <div className="h-[400px]">
+          {/* Equipment grouped by job site */}
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {Object.values(equipmentByJob).map((group) => (
+              <div key={group.job.jobNumber} className="rounded-xl p-3 border border-[#20BC64]/20 bg-[#20BC64]/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64] mb-2">{group.job.name}</p>
+                <div className="space-y-1">
+                  {group.vehicles.map((v) => (
+                    <div key={v.name} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
+                      <span className="text-white/70 font-medium truncate">{v.name.replace(/\s*\(.*\)/, '')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {unassignedEquipment.length > 0 && (
+              <div className="rounded-xl p-3 border border-white/10 bg-white/[0.02]">
+                <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Off-Site / In Transit</p>
+                <div className="space-y-1">
+                  {unassignedEquipment.map((v) => (
+                    <div key={v.name} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0"></span>
+                      <span className="text-white/40 font-medium truncate">{v.name.replace(/\s*\(.*\)/, '')}</span>
+                      {v.address && <span className="text-[9px] text-white/15 truncate">· {v.address.split(',')[0]}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Map */}
+          <div className="h-[400px] border-t border-white/5">
             <MapWrapper
               jobs={jobLocations.map((j: any) => ({
                 Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
