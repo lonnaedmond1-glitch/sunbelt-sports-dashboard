@@ -477,9 +477,36 @@ export default async function MasterDashboard() {
     });
   }) : [];
 
-  // ── Missing Reports: scheduled jobs with no field report yesterday ───────
+  // ── Missing Reports: jobs assigned YESTERDAY with no field report ─────────
   const scheduledJobNames = scheduledJobs.map((j: any) => j.Job_Name).filter(Boolean);
-  const missingReportJobs = scheduledJobs.filter((j: any) => !reportMap[j.Job_Number]);
+  // Find yesterday's date in EST
+  const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const yesterday = new Date(estNow);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayISO = `${yesterday.getFullYear()}-${String(yesterday.getMonth()+1).padStart(2,'0')}-${String(yesterday.getDate()).padStart(2,'0')}`;
+  // Look through schedule weeks to find yesterday's assignments
+  const allWeekDays = [
+    ...(scheduleData?.currentWeek?.days || []),
+    ...(((scheduleData as any)?.previousWeek?.days) || []),
+  ];
+  const yesterdayDay = allWeekDays.find((d: any) => d.date === yesterdayISO);
+  const yesterdayJobNums = new Set<string>();
+  if (yesterdayDay) {
+    for (const assignment of (yesterdayDay.assignments || [])) {
+      if (assignment.decoded?.isOff) continue;
+      const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+      const matchedJob = jobs.find((j: any) => {
+        if (!j.Job_Name) return false;
+        const jName = j.Job_Name.toLowerCase();
+        return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+      });
+      if (matchedJob) yesterdayJobNums.add(matchedJob.Job_Number);
+    }
+  }
+  const missingReportJobs = Array.from(yesterdayJobNums)
+    .filter(jn => !reportMap[jn])
+    .map(jn => jobs.find((j: any) => j.Job_Number === jn))
+    .filter(Boolean);
 
   const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs, samsara.vehicles || []);
 
@@ -561,7 +588,7 @@ export default async function MasterDashboard() {
           <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
             <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Missing Reports</p>
             <p className={`text-4xl font-black ${missingReportJobs.length > 0 ? 'text-red-400' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
-            <p className="text-xs text-white/30 mt-1">{missingReportJobs.length > 0 ? 'Scheduled jobs without reports' : 'All reports submitted'}</p>
+            <p className="text-xs text-white/30 mt-1">{missingReportJobs.length > 0 ? 'From yesterday\u2019s schedule' : 'All yesterday\u2019s reports in'}</p>
           </div>
         </div>
 
