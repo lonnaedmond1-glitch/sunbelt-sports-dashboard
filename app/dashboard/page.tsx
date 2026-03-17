@@ -227,9 +227,9 @@ function computeRisks(
   prepBoard: any[],
   scheduledJobs: any[]
 ) {
-  // Limit weather alerts to only currently scheduled jobs
-  const scheduledJobNums = new Set(scheduledJobs.map((j: any) => j.Job_Number));
-  const scheduledWeatherAlerts = weatherAlerts.filter((a: any) => scheduledJobNums.has(a.job));
+  // Display weather alerts for ALL active jobs, since schedule data might be missing current week
+  const activeJobNums = new Set(jobs.filter(j => isJobScheduled(j)).map(j => j.Job_Number));
+  const scheduledWeatherAlerts = weatherAlerts.filter((a: any) => activeJobNums.has(a.job));
 
   const risks: { level: 'critical' | 'warning' | 'info'; job?: string; message: string }[] = [];
   const now = new Date();
@@ -245,18 +245,21 @@ function computeRisks(
   const todayDays = (scheduleData?.currentWeek?.days || []).filter((d: any) => d.date === todayISO);
   if (estHour >= 10) {
     for (const day of todayDays) {
-      const jobsScheduledToday = new Set<string>();
+      const jobsScheduledToday = new Set<{ ref: string; jobNum?: string }>();
       for (const assignment of (day.assignments || [])) {
         if (!assignment.decoded?.isOff && assignment.crewType === 'primary') {
           const ref = assignment.decoded?.jobRef;
-          if (ref) jobsScheduledToday.add(ref.toLowerCase());
+          if (ref) jobsScheduledToday.add({ ref: ref.toLowerCase(), jobNum: assignment.ganttMatch?.jobNumber });
         }
       }
-      for (const ref of Array.from(jobsScheduledToday)) {
-        const matchedJob = jobs.find(j => {
-          const nameWord = (j.Job_Name || '').toLowerCase().split(' ')[0];
-          return nameWord.length > 3 && ref.includes(nameWord);
-        });
+      for (const schedObj of Array.from(jobsScheduledToday)) {
+        let matchedJob = jobs.find(j => j.Job_Number === schedObj.jobNum);
+        if (!matchedJob) {
+          matchedJob = jobs.find(j => {
+            const nameWord = (j.Job_Name || '').toLowerCase().split(' ')[0];
+            return nameWord.length > 3 && schedObj.ref.includes(nameWord);
+          });
+        }
         if (matchedJob && !reportMap[matchedJob.Job_Number]) {
           risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `MISSING JOTFORM: Crew scheduled at ${matchedJob.Job_Name} today but NO field report submitted as of ${estHour}:00 EST. PM: ${matchedJob.Project_Manager}. Action: Contact foreman immediately.` });
         }

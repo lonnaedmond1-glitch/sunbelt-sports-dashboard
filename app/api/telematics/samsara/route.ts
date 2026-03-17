@@ -2,10 +2,10 @@ import { NextResponse } from 'next/server';
 
 const SAMSARA_API_KEY = process.env.SAMSARA_API_KEY || '';
 
-export async function GET() {
+export async function getGlobalSamsara() {
   // If no Samsara key is configured, return empty so the dashboard degrades gracefully
   if (!SAMSARA_API_KEY) {
-    return NextResponse.json({ vehicles: [], crews: [], configured: false });
+    return { vehicles: [], crews: [], configured: false };
   }
 
   try {
@@ -20,8 +20,8 @@ export async function GET() {
     let vehicles: any[] = [];
     if (vehicleRes.ok) {
       const vData = await vehicleRes.json();
-      // Only show key personnel: foremen, Jeff, David, and Lowboy
-      const KEY_NAMES = ['jeff', 'david', 'lowboy', 'foreman', 'foremen', 'dan lane'];
+      // Only show the 10 specific crew members requested by the user
+      const KEY_NAMES = ['rosendo', 'julio', 'martin', 'juan', 'cesar', 'pedro', 'jeff', 'david', 'lowboy 1', 'lowboy 2'];
       vehicles = (vData.data || [])
         .map((v: any) => ({
           id: v.id,
@@ -58,9 +58,15 @@ export async function GET() {
       }));
     }
 
-    return NextResponse.json({ vehicles, crews, configured: true, timestamp: new Date().toISOString() });
+    return { vehicles, crews, configured: true, timestamp: new Date().toISOString() };
   } catch (error) {
     console.error('[telematics/samsara] Error:', error);
-    return NextResponse.json({ vehicles: [], crews: [], configured: false, error: 'Samsara fetch failed' });
+    return { vehicles: [], crews: [], configured: false, error: 'Samsara fetch failed' };
   }
+}
+
+export async function GET() {
+  const data = await getGlobalSamsara();
+  if (data.error) return NextResponse.json(data, { status: 500 });
+  return NextResponse.json(data);
 }

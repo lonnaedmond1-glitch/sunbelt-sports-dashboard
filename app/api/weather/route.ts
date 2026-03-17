@@ -32,7 +32,7 @@ function weatherDesc(code: number): { label: string; icon: string; severe: boole
 // Alert fires if precip chance >= 40% OR severe weather code — matches operational Cancel threshold
 const WEATHER_ALERT_THRESHOLD = 40;
 
-export async function GET() {
+export async function getGlobalWeather() {
   try {
     // Direct data fetch — bypasses unreliable HTTP self-call in serverless
     const jobs = await fetchLiveJobs();
@@ -109,7 +109,7 @@ export async function GET() {
       weatherResults.push({ location: key, lat: loc.lat, lng: loc.lng, jobs: loc.jobs.map((j: any) => j.Job_Number), forecasts });
     }));
 
-    return NextResponse.json({
+    return {
       locations: weatherResults,
       alerts: alerts.sort((a, b) => {
         // Today first, then by date
@@ -119,9 +119,15 @@ export async function GET() {
       }),
       alertCount: alerts.length,
       timestamp: new Date().toISOString(),
-    });
+    };
   } catch (error) {
     console.error('[weather] Error:', error);
-    return NextResponse.json({ locations: [], alerts: [], alertCount: 0, error: 'Weather fetch failed' }, { status: 500 });
+    return { locations: [], alerts: [], alertCount: 0, error: 'Weather fetch failed' };
   }
+}
+
+export async function GET() {
+  const data = await getGlobalWeather();
+  if (data.error) return NextResponse.json(data, { status: 500 });
+  return NextResponse.json(data);
 }

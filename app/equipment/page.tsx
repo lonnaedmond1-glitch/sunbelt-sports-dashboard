@@ -1,14 +1,18 @@
 import React from 'react';
-import { getAllRentals, getAllJobs } from '@/lib/csv-parser';
+import Link from 'next/link';
+import { getAllRentals } from '@/lib/csv-parser';
+import { fetchLiveJobs } from '@/lib/sheets-data';
 
 export default async function EquipmentPage() {
   const rentals = getAllRentals();
-  const jobs = getAllJobs();
+  const jobs = await fetchLiveJobs();
 
   // Create lookup for Job Names
   const jobMap = new Map();
   jobs.forEach(j => {
-    jobMap.set(j.Job_Number.trim(), j.Job_Name);
+    if (j && j.Job_Number) {
+      jobMap.set(j.Job_Number.trim(), j.Job_Name);
+    }
   });
 
   // Calculate top-level stats
@@ -92,7 +96,9 @@ export default async function EquipmentPage() {
                     <p className="text-xs text-white/40 mt-1">{r.Vendor}</p>
                   </td>
                   <td className="px-6 py-4">
-                    <p className="font-bold text-[#60a5fa]">{r.Job_Number}</p>
+                    <Link href={`/jobs/${r.Job_Number}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
+                      {r.Job_Number}
+                    </Link>
                     <p className="text-xs text-white/60 mt-1">{r.jobName}</p>
                   </td>
                   <td className="px-6 py-4 text-center">

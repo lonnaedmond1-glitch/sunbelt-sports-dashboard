@@ -1,6 +1,9 @@
 import React from 'react';
+import Link from 'next/link';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchScheduleData } from '@/lib/sheets-data';
+import { fetchScheduleData, fetchLiveJobs } from '@/lib/sheets-data';
+import { getGlobalWeather } from '@/app/api/weather/route';
+import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,28 +17,15 @@ async function getScheduleData() {
 }
 
 async function getWeatherData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/weather`, { cache: 'no-store' });
-    if (!res.ok) return { locations: [], alerts: [] };
-    return await res.json();
-  } catch { return { locations: [], alerts: [] }; }
+  return getGlobalWeather();
 }
 
 async function getSamsaraData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/telematics/samsara`, { cache: 'no-store' });
-    if (!res.ok) return { vehicles: [] };
-    return await res.json();
-  } catch { return { vehicles: [] }; }
+  return getGlobalSamsara();
 }
 
 async function getJobsData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/sync/jobs`, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const json = await res.json();
-    return json.data || [];
-  } catch { return []; }
+  return fetchLiveJobs();
 }
 
 // Color palette for crews
@@ -43,11 +33,11 @@ const crewColors: Record<string, string> = {
   'Rosendo / P1': '#20BC64', 'Julio / B1': '#60a5fa', 'Martin / B2': '#fb923c',
   'Juan / B3': '#a78bfa', 'Cesar': '#f59e0b', 'Pedro': '#ec4899',
   'Jeff': '#10b981', 'David': '#6366f1', 'Lowboy 1': '#ef4444', 'Lowboy 2': '#f87171',
-  'Sergio': '#14b8a6', 'Shawn': '#8b5cf6', 'Giovany (NC)': '#06b6d4', 'Marcos (NC)': '#0ea5e9',
+  'Sergio': '#14b8a6', 'Shawn': '#8b5cf6',
   'Concrete Sub 1': '#9ca3af', 'Concrete Sub 2': '#6b7280', 'Bud': '#d946ef',
 };
 
-const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar', 'Pedro', 'Giovany (NC)', 'Marcos (NC)'];
+const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar', 'Pedro'];
 const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn', 'Concrete Sub 1', 'Concrete Sub 2', 'Bud'];
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -84,6 +74,17 @@ export default async function SchedulePage() {
   const jobLocations = jobs.filter((j: any) => j.Lat && j.Lng).map((j: any) => ({
     jobNumber: j.Job_Number, name: j.Job_Name, lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
   }));
+
+  // Resolve Job Links even when Gantt matching fails
+  const resolveJobLink = (assignment: any) => {
+    if (assignment.ganttMatch?.jobNumber) return assignment.ganttMatch.jobNumber;
+    const ref = (assignment.decoded?.jobRef || '').toLowerCase();
+    const matchedJob = jobs.find((j: any) => {
+      const nameWord = (j.Job_Name || '').toLowerCase().split(' ')[0];
+      return nameWord && nameWord.length > 3 && ref.includes(nameWord);
+    });
+    return matchedJob?.Job_Number || null;
+  };
 
   const renderWeekGrid = (week: any, label: string, isCurrent: boolean) => {
     if (!week?.days?.length) return null;
@@ -145,16 +146,18 @@ export default async function SchedulePage() {
                       const decoded = assignment?.decoded;
                       return (
                         <td key={day} className={`px-2 py-1.5 border-r border-white/5 align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
-                          {assignment ? (
-                            decoded?.isOff ? (
-                              <div className="text-[10px] text-white/20 italic px-2 py-1">{decoded.jobRef}</div>
-                            ) : (
-                              <div className="rounded-lg px-2.5 py-2 text-[11px] border" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
-                                <div className="font-bold leading-tight">{decoded?.jobRef || assignment.job}</div>
-                                {decoded?.activity && (
+                          {assignment ? (() => {
+                            const linkJobId = resolveJobLink(assignment);
+                            return (
+                            assignment.decoded?.isOff ? (
+                              <div className="text-[10px] text-white/20 italic px-2 py-1">{assignment.decoded.jobRef}</div>
+                            ) : linkJobId ? (
+                              <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block rounded-lg px-2.5 py-2 text-[11px] border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
+                                <div className="font-bold leading-tight">{assignment.decoded?.jobRef || assignment.job}</div>
+                                {assignment.decoded?.activity && (
                                   <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
-                                    <span className="uppercase font-bold">{decoded.activity}</span>
-                                    {decoded.state && <span className="opacity-50">· {decoded.state}</span>}
+                                    <span className="uppercase font-bold">{assignment.decoded.activity}</span>
+                                    {assignment.decoded.state && <span className="opacity-50">· {assignment.decoded.state}</span>}
                                   </div>
                                 )}
                                 {(assignment.pm || assignment.supplierFull) && (
@@ -163,14 +166,29 @@ export default async function SchedulePage() {
                                     {assignment.supplierFull && <span> · {assignment.supplierFull}</span>}
                                   </div>
                                 )}
-                                {assignment.ganttMatch && (
-                                  <div className="text-[9px] opacity-30 mt-0.5">
-                                    #{assignment.ganttMatch.jobNumber} · {assignment.ganttMatch.projectType}
+                                <div className="text-[9px] opacity-30 mt-0.5">
+                                  #{linkJobId} {assignment.ganttMatch?.projectType ? `· ${assignment.ganttMatch.projectType}` : ''}
+                                </div>
+                              </Link>
+                            ) : (
+                              <div className="rounded-lg px-2.5 py-2 text-[11px] border" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
+                                <div className="font-bold leading-tight">{assignment.decoded?.jobRef || assignment.job}</div>
+                                {assignment.decoded?.activity && (
+                                  <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
+                                    <span className="uppercase font-bold">{assignment.decoded.activity}</span>
+                                    {assignment.decoded.state && <span className="opacity-50">· {assignment.decoded.state}</span>}
+                                  </div>
+                                )}
+                                {(assignment.pm || assignment.supplierFull) && (
+                                  <div className="text-[9px] opacity-40 mt-0.5">
+                                    {assignment.pm && <span>PM: {assignment.pm}</span>}
+                                    {assignment.supplierFull && <span> · {assignment.supplierFull}</span>}
                                   </div>
                                 )}
                               </div>
                             )
-                          ) : (
+                            );
+                          })() : (
                             <span className="text-[10px] text-white/10 px-2">—</span>
                           )}
                         </td>
@@ -205,10 +223,17 @@ export default async function SchedulePage() {
                       const assignment = dayData?.assignments?.find((a: any) => a.crew === crewName);
                       return (
                         <td key={day} className={`px-2 py-1.5 border-r border-white/5 align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
-                          {assignment ? (
+                          {assignment ? (() => {
+                            const linkJobId = resolveJobLink(assignment);
+                            return (
                             <div className="text-[10px] text-white/40 px-2 py-1 rounded bg-white/[0.03]">
                               {assignment.decoded?.isOff ? (
                                 <span className="italic text-white/20">{assignment.decoded.jobRef}</span>
+                              ) : linkJobId ? (
+                                <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block hover:opacity-80 transition-opacity cursor-pointer">
+                                  <span className="font-medium text-white hover:text-[#20BC64] transition-colors">{assignment.decoded?.jobRef || assignment.job}</span>
+                                  {assignment.decoded?.activity && <span className="opacity-50 text-white/60"> · {assignment.decoded.activity}</span>}
+                                </Link>
                               ) : (
                                 <>
                                   <span className="font-medium">{assignment.decoded?.jobRef || assignment.job}</span>
@@ -216,7 +241,8 @@ export default async function SchedulePage() {
                                 </>
                               )}
                             </div>
-                          ) : <span className="text-[10px] text-white/10 px-2">—</span>}
+                            );
+                          })() : <span className="text-[10px] text-white/10 px-2">—</span>}
                         </td>
                       );
                     })}

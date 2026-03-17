@@ -61,8 +61,13 @@ async function getNearbyVehicles(lat: string, lng: string): Promise<any[]> {
     });
     if (!res.ok) return [];
     const data = await res.json();
+    const KEY_NAMES = ['rosendo', 'julio', 'martin', 'juan', 'cesar', 'pedro', 'jeff', 'david', 'lowboy 1', 'lowboy 2'];
     return (data.data || [])
       .filter((v: any) => v.location?.latitude && v.location?.longitude)
+      .filter((v: any) => {
+        const nameLower = (v.name || '').toLowerCase();
+        return KEY_NAMES.some(k => nameLower.includes(k));
+      })
       .map((v: any) => ({
         id: v.id,
         name: v.name,
@@ -73,13 +78,14 @@ async function getNearbyVehicles(lat: string, lng: string): Promise<any[]> {
         driver: v.staticAssignedDriver?.name || 'Unassigned',
         miles: distanceMiles(jobLat, jobLng, v.location.latitude, v.location.longitude),
       }))
-      .filter((v: any) => v.miles <= 15)
+      .filter((v: any) => v.miles <= 0.5)
       .sort((a: any, b: any) => a.miles - b.miles);
   } catch { return []; }
 }
 
 export default async function JobSnapshot({ params }: { params: Promise<{ id: string }> }) {
-  const { id: jobNumber } = await params;
+  const { id } = await params;
+  const jobNumber = decodeURIComponent(id);
   const [liveJob, liveReport] = await Promise.all([getLiveJobData(jobNumber), getLiveFieldReport(jobNumber)]);
 
   const csvJob = getJobByNumber(jobNumber);

@@ -1,5 +1,7 @@
 import React from 'react';
-import { getAllScorecards, getAllJobs } from '@/lib/csv-parser';
+import Link from 'next/link';
+import { getAllScorecards } from '@/lib/csv-parser';
+import { fetchLiveJobs } from '@/lib/sheets-data';
 
 function num(v: string): number { return parseFloat(v) || 0; }
 function pct(act: number, est: number): number { return est > 0 ? Math.round((act / est) * 100) : 0; }
@@ -25,10 +27,14 @@ function progressColor(act: number, est: number): string {
 
 export default async function ProjectScorecardPage() {
   const scorecards = getAllScorecards();
-  const jobs = getAllJobs();
+  const jobs = await fetchLiveJobs();
 
   const jobMap = new Map<string, string>();
-  jobs.forEach(j => jobMap.set(j.Job_Number.trim(), j.Job_Name));
+  jobs.forEach(j => {
+    if (j?.Job_Number) {
+      jobMap.set(j.Job_Number.trim(), j.Job_Name);
+    }
+  });
 
   // Portfolio Totals
   const totals = {
@@ -127,7 +133,9 @@ export default async function ProjectScorecardPage() {
                 return (
                   <tr key={i} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                     <td className="px-4 py-3 sticky left-0 bg-[#1e2023] z-10">
-                      <p className="font-bold text-[#60a5fa]">{sc.Job_Number}</p>
+                      <Link href={`/jobs/${encodeURIComponent(sc.Job_Number.trim())}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
+                        {sc.Job_Number}
+                      </Link>
                       <p className="text-[10px] text-white/30 mt-0.5 max-w-[140px] truncate">{jobMap.get(sc.Job_Number.trim()) || '—'}</p>
                     </td>
                     {/* Man Hours */}
