@@ -20,8 +20,8 @@ export async function getGlobalSamsara() {
     let vehicles: any[] = [];
     if (vehicleRes.ok) {
       const vData = await vehicleRes.json();
-      // Only show the 10 specific crew members requested by the user
-      const KEY_NAMES = ['rosendo', 'julio', 'martin', 'juan', 'cesar', 'pedro', 'jeff', 'david', 'lowboy 1', 'lowboy 2'];
+      // Only show the 8 specific vehicles requested by the user
+      const KEY_NAMES = ['alex', 'sergio', 'martin', 'julio', 'juan', 'david moctezuma', 'rosendo', 'lowboy'];
       vehicles = (vData.data || [])
         .map((v: any) => ({
           id: v.id,

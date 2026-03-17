@@ -61,7 +61,7 @@ async function getNearbyVehicles(lat: string, lng: string): Promise<any[]> {
     });
     if (!res.ok) return [];
     const data = await res.json();
-    const KEY_NAMES = ['rosendo', 'julio', 'martin', 'juan', 'cesar', 'pedro', 'jeff', 'david', 'lowboy 1', 'lowboy 2'];
+    const KEY_NAMES = ['alex', 'sergio', 'martin', 'julio', 'juan', 'david moctezuma', 'rosendo', 'lowboy'];
     return (data.data || [])
       .filter((v: any) => v.location?.latitude && v.location?.longitude)
       .filter((v: any) => {
