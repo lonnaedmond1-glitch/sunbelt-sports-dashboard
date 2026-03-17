@@ -82,53 +82,53 @@ function parseJobDate(dateStr: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// ─── Module 1: Active Job State Engine ──────────────────────────────────────
-// A job is ACTIVE if a crew was assigned to it in the SCHEDULE SHEET within
-// the last 14 days AND scope is not 100% done.
-// Source of truth: the weekly crew schedule (not the Gantt).
-function isRecentlyActive(job: any, scheduleData: any): boolean {
+// ─── Scheduled Jobs State Engine ─────────────────────────────────────────────
+// A job is SCHEDULED if it appears on ANY crew row in the master schedule
+// within a strict ±7 day rolling window (7 days back, 7 days forward).
+// Source of truth: the master schedule sheet ONLY.
+function isScheduledCurrently(job: any, scheduleData: any): boolean {
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const twoWeeksAgo = new Date(today); twoWeeksAgo.setDate(today.getDate() - 14);
-  const twoWeeksAgoISO = twoWeeksAgo.toISOString().split('T')[0];
+  const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
+  const sevenDaysAhead = new Date(today); sevenDaysAhead.setDate(today.getDate() + 7);
+  const minISO = sevenDaysAgo.toISOString().split('T')[0];
+  const maxISO = sevenDaysAhead.toISOString().split('T')[0];
 
   const jobName = (job.Job_Name || '').toLowerCase();
   const jobNum = (job.Job_Number || '');
 
-  // Only source: jobFirstOccurrences from the weekly crew schedule sheet.
-  // Each occurrence has a lastDate = most recent day this job appeared on a crew row.
-  const occurrences: any[] = scheduleData?.jobFirstOccurrences || [];
-  for (const occ of occurrences) {
-    const lastDate = occ.lastDate || occ.firstDate || '';
-    // Job must have appeared on the schedule within the last 14 days
-    if (lastDate < twoWeeksAgoISO) continue;
-    const ref = (occ.jobRef || '').toLowerCase();
-    // Match by Gantt job number (most reliable)
-    if (occ.ganttJobNumber && occ.ganttJobNumber === jobNum) return true;
-    // Match by name fragment (first meaningful word in schedule ref)
-    const refWord = ref.split(' ')[0];
-    const nameWord = jobName.split(' ')[0];
-    if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
-    if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
-  }
-
-  return false;
-}
-
-// Also check if on THIS WEEK for sub-label differentiation
-function isOnCurrentWeekSchedule(job: any, scheduleData: any): boolean {
-  const days: any[] = scheduleData?.currentWeek?.days || [];
-  const jobName = (job.Job_Name || '').toLowerCase();
-  for (const day of days) {
+  // Scan all days in both current week and next week (covers the +7 forward window)
+  const allDays: any[] = [
+    ...(scheduleData?.currentWeek?.days || []),
+    ...(scheduleData?.nextWeek?.days || []),
+  ];
+  for (const day of allDays) {
+    const dayDate = day.date || '';
+    if (dayDate < minISO || dayDate > maxISO) continue;
     for (const assignment of (day.assignments || [])) {
       if (assignment.decoded?.isOff) continue;
       const ref = (assignment.decoded?.jobRef || '').toLowerCase();
-      if (assignment.ganttMatch?.jobNumber && assignment.ganttMatch.jobNumber === job.Job_Number) return true;
+      if (assignment.ganttMatch?.jobNumber && assignment.ganttMatch.jobNumber === jobNum) return true;
       const refWord = ref.split(' ')[0];
       const nameWord = jobName.split(' ')[0];
       if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
       if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
     }
   }
+
+  // Also check jobFirstOccurrences for the -7 day back window
+  // (covers jobs that were on the schedule last week but not in current/next week parse)
+  const occurrences: any[] = scheduleData?.jobFirstOccurrences || [];
+  for (const occ of occurrences) {
+    const lastDate = occ.lastDate || occ.firstDate || '';
+    if (lastDate < minISO || lastDate > maxISO) continue;
+    const ref = (occ.jobRef || '').toLowerCase();
+    if (occ.ganttJobNumber && occ.ganttJobNumber === jobNum) return true;
+    const refWord = ref.split(' ')[0];
+    const nameWord = jobName.split(' ')[0];
+    if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
+    if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
+  }
+
   return false;
 }
 
@@ -278,21 +278,18 @@ export default async function MasterDashboard() {
   const reportMap: Record<string, any> = {};
   for (const r of fieldReports) reportMap[r.Job_Number] = r;
 
-  // ── Module 1: Active Job State Engine ──────────────────────────────────
-  // ActiveStatus = TRUE: on schedule within last 14 days OR Gantt still open, AND scope < 100%
-  const activeJobs = jobs.filter((j: any) =>
-    isRecentlyActive(j, scheduleData) && (j.Pct_Complete || 0) < 100
-  );
+  // ── Scheduled Jobs State Engine ──────────────────────────────────────────
+  // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
+  const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData));
 
-  // On this week's schedule but no field report = "Scheduled, Not Mobilized"
+  // On schedule this week but no field report yet
   const scheduledNotMobilized = jobs.filter((j: any) =>
-    isOnCurrentWeekSchedule(j, scheduleData) && !reportMap[j.Job_Number] && (j.Pct_Complete || 0) < 100
+    isScheduledCurrently(j, scheduleData) && !reportMap[j.Job_Number]
   );
 
-  // Not active this period
-  const upcomingJobs = jobs.filter((j: any) =>
-    !isRecentlyActive(j, scheduleData) || (j.Pct_Complete || 0) >= 100
-  );
+  // Not on current schedule window
+  const upcomingJobs = jobs.filter((j: any) => !isScheduledCurrently(j, scheduleData));
+
 
   const totalPortfolio = jobs.reduce((sum: number, j: any) => sum + (j.Contract_Amount || 0), 0);
   const totalBilled = jobs.reduce((sum: number, j: any) => sum + (j.Billed_To_Date || 0), 0);
@@ -311,7 +308,7 @@ export default async function MasterDashboard() {
 
   // Job health summary
   const healthCounts = { green: 0, amber: 0, red: 0 };
-  activeJobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
+  scheduledJobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
 
   const healthColor = { green: '#20BC64', amber: '#fb923c', red: '#ef4444' };
   const riskColor = { critical: '#ef4444', warning: '#fb923c', info: '#60a5fa' };
@@ -356,7 +353,7 @@ export default async function MasterDashboard() {
         {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label: 'Active Jobs', value: activeJobs.length.toString(), sub: scheduledNotMobilized.length > 0 ? `+${scheduledNotMobilized.length} scheduled, not mobilized` : 'On schedule with field reports', color: '#20BC64' },
+            { label: 'Scheduled Jobs', value: scheduledJobs.length.toString(), sub: 'Within ±7 day window', color: '#20BC64' },
             { label: 'Portfolio Value', value: `$${(totalPortfolio / 1000000).toFixed(1)}M`, sub: 'Total contract value', color: '#60a5fa' },
             { label: 'Billed To Date', value: `$${(totalBilled / 1000000).toFixed(1)}M`, sub: `${overallPct}% collected`, color: '#a78bfa' },
             { label: 'Vehicles Live', value: samsara.configured ? samsara.vehicles.length.toString() : '—', sub: samsara.configured ? 'Samsara GPS' : 'No API key', color: '#fb923c' },
@@ -385,13 +382,13 @@ export default async function MasterDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-[#20BC64] font-bold">{activeJobs.filter((j:any) => j.Lat && j.Lng).length} Pinned</span>
+                <span className="text-[#20BC64] font-bold">{scheduledJobs.filter((j:any) => j.Lat && j.Lng).length} Pinned</span>
                 {samsara.configured && <span className="text-blue-400 font-bold">{samsara.vehicles.length} Vehicles</span>}
               </div>
             </div>
             <div style={{ height: '460px' }}>
               <MapWrapper
-                jobs={activeJobs.map((j: any) => {
+                jobs={scheduledJobs.map((j: any) => {
                   const jobLat = parseFloat(j.Lat);
                   const jobLng = parseFloat(j.Lng);
                   // Module 2: Find nearest Samsara vehicle within 10 miles
@@ -552,7 +549,7 @@ export default async function MasterDashboard() {
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
-              {activeJobs.map((job: any) => {
+              {scheduledJobs.map((job: any) => {
                 const health = getJobHealth(job, reportMap[job.Job_Number]);
                 const pct = Math.round(job.Pct_Complete || 0);
                 const report = reportMap[job.Job_Number];
@@ -612,7 +609,7 @@ export default async function MasterDashboard() {
               <span className="text-xs text-white/20 font-bold uppercase">Click a job</span>
             </div>
             <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
-              {activeJobs.map((job: any) => {
+              {scheduledJobs.map((job: any) => {
                 const pct = Math.round(job.Pct_Complete || 0);
                 const report = reportMap[job.Job_Number];
                 const health = getJobHealth(job, report);
