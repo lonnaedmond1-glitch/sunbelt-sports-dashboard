@@ -221,12 +221,19 @@ function isScheduledCurrently(job: any, scheduleData: any): boolean {
   for (const day of currentWeekDays) {
     for (const assignment of (day.assignments || [])) {
       if (assignment.decoded?.isOff) continue;
+      // Priority 1: exact Gantt match by job number
+      if (assignment.ganttMatch?.jobNumber) {
+        if (assignment.ganttMatch.jobNumber === jobNum) return true;
+        // If gantt matched a DIFFERENT job, skip fuzzy — don't double-count
+        continue;
+      }
+      // Priority 2: fuzzy match only when no Gantt match exists
       const ref = (assignment.decoded?.jobRef || '').toLowerCase();
-      if (assignment.ganttMatch?.jobNumber && assignment.ganttMatch.jobNumber === jobNum) return true;
       const refWord = ref.split(' ')[0];
       const nameWord = jobName.split(' ')[0];
-      if (refWord && refWord.length > 3 && jobName.includes(refWord)) return true;
-      if (nameWord && nameWord.length > 3 && ref.includes(nameWord)) return true;
+      // First word must match at the START of the other string
+      if (refWord && refWord.length > 3 && jobName.startsWith(refWord)) return true;
+      if (nameWord && nameWord.length > 3 && ref.startsWith(nameWord)) return true;
     }
   }
 
