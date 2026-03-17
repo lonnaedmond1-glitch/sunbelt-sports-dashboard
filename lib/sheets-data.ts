@@ -147,6 +147,56 @@ export async function fetchLiveFieldReports() {
   } catch { return []; }
 }
 
+// ──────────────────────────── FIELD REPORT FEED (Individual Submissions) ────────────
+// Returns individual Jotform submissions for a specific job, sorted chronologically
+// Used by the Job Snapshot Production tab to show a daily report review feed
+
+export async function fetchFieldReportFeed(jobNumber: string): Promise<any[]> {
+  try {
+    const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const json = await res.json();
+    const submissions: JotformSubmission[] = json.content || [];
+    const feed: any[] = [];
+
+    for (const sub of submissions) {
+      // Match job number from multiple possible widgets
+      const jobWidget = getAnswer(sub, 'typeA56');
+      let jobNum = '';
+      if (jobWidget && jobWidget !== 'Job Name Not Listed') {
+        const parts = jobWidget.split('\t');
+        jobNum = parts[0]?.trim() || '';
+      }
+      if (!jobNum) jobNum = getAnswer(sub, 'jobNumber').trim();
+      if (!jobNum) {
+        const subName = getAnswer(sub, 'sjhb').trim();
+        if (subName && subName !== 'Job Name Not Listed') {
+          const parts = subName.split('\t');
+          jobNum = parts[0]?.trim() || '';
+        }
+      }
+      if (!jobNum || jobNum.trim() !== jobNumber.trim()) continue;
+
+      feed.push({
+        id: sub.id,
+        date: sub.created_at,
+        gabTons: safeNum(getAnswer(sub, 'gabTonnage')),
+        binderTons: safeNum(getAnswer(sub, 'tonnage27')),
+        toppingTons: safeNum(getAnswer(sub, 'tonnage28')),
+        concreteCY: safeNum(getAnswer(sub, 'concreteCy')),
+        crewCount: safeNum(getAnswer(sub, 'numberOf')),
+        truckCount: safeNum(getAnswer(sub, 'howMany')),
+        manHours: safeNum(getAnswer(sub, 'totalMan')),
+        summary: getAnswer(sub, 'jobSummary') || '',
+        difficulty: getAnswer(sub, 'howDifficult') || '',
+      });
+    }
+
+    return feed; // Already sorted DESC by created_at from API
+  } catch { return []; }
+}
+
 // ──────────────────────────── ESTIMATING (Google Sheets) ────────────────────────────
 
 const EST_SHEET_ID = '1uvHDu3GmBpJhXLNw_bm-rYqXGcQxO1tbBUBSvhsz2zw';

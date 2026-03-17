@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
-import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed } from '@/lib/sheets-data';
 import JobTabs from '@/components/JobTabs';
 
 export const dynamic = 'force-dynamic';
@@ -109,9 +109,10 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
     );
   }
 
-  const [weatherDays, vehicles] = await Promise.all([
+  const [weatherDays, vehicles, fieldReportFeed] = await Promise.all([
     getWeatherPeriods(job.Lat || '', job.Lng || ''),
     getNearbyVehicles(job.Lat || '', job.Lng || ''),
+    fetchFieldReportFeed(jobNumber),
   ]);
 
   const report = liveReport || (csvReport ? {
@@ -183,6 +184,7 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
         asphaltCredit={asphaltCredit}
         baseCredit={baseCredit}
         hasCreditFlag={hasCreditFlag}
+        fieldReportFeed={fieldReportFeed}
       />
     </div>
   );

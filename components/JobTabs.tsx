@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 
 interface JobTabsProps {
   jobNumber: string;
@@ -12,16 +11,17 @@ interface JobTabsProps {
   changeOrders: any[];
   scorecard: any;
   jobFolder: any;
-  vehicles: any[]; // Samsara vehicles nearby
+  vehicles: any[];
   weatherDays: any[];
   asphaltCredit: string;
   baseCredit: string;
   hasCreditFlag: boolean;
+  fieldReportFeed: any[];
 }
 
 const TABS = [
   { id: 'overview', label: 'Overview & Logistics', icon: '📍' },
-  { id: 'production', label: 'Production vs. Estimate', icon: '📊' },
+  { id: 'production', label: 'Production & Reports', icon: '📊' },
   { id: 'changeorders', label: 'Scope & Change Orders', icon: '📝' },
   { id: 'documents', label: 'Documents & QC', icon: '📂' },
 ];
@@ -39,30 +39,53 @@ function WeatherIcon({ short }: { short: string }) {
 function StatusBadge({ status }: { status: string }) {
   if (status === 'Approved') return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25">
-      <span className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0"></span>
+      <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
       <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">APPROVED — Scope Added to Contract</span>
     </div>
   );
   if (status === 'Pending') return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25 animate-pulse">
-      <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>
+      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
       <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">⛔ PENDING — DO NOT EXECUTE SCOPE</span>
     </div>
   );
   return (
     <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25">
-      <span className="w-2 h-2 rounded-full bg-red-400 flex-shrink-0"></span>
+      <span className="w-2 h-2 rounded-full bg-red-400 shrink-0"></span>
       <span className="text-[10px] font-black uppercase tracking-widest text-red-400">{status}</span>
     </div>
   );
 }
 
+// Extract Google Drive folder ID from URL
+function extractDriveFolderId(url: string): string | null {
+  if (!url) return null;
+  // folders/FOLDER_ID
+  const folderMatch = url.match(/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+  return null;
+}
+
+// Extract Google Drive file ID from URL for iframe embeds
+function extractDriveFileId(url: string): string | null {
+  if (!url) return null;
+  // /file/d/FILE_ID/
+  const fileMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) return fileMatch[1];
+  // /open?id=FILE_ID
+  const openMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (openMatch) return openMatch[1];
+  return null;
+}
+
 export default function JobTabs({
   jobNumber, job, report, prep, rentals, changeOrders, scorecard,
   jobFolder, vehicles, weatherDays, asphaltCredit, baseCredit, hasCreditFlag,
+  fieldReportFeed,
 }: JobTabsProps) {
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
+  const [fullscreenDoc, setFullscreenDoc] = useState<string | null>(null);
 
   const pct = Math.round(job.Pct_Complete || 0);
   const pctColor = pct >= 80 ? '#20BC64' : pct >= 50 ? '#fb923c' : '#ef4444';
@@ -81,12 +104,38 @@ export default function JobTabs({
     { id: 'straightedge', label: '10-ft Straightedge', icon: '📐', desc: 'Smoothness check before pave' },
   ];
 
+  const hasVisionLinkKey = false; // Will be true when VISIONLINK_API_KEY is added
+
+  // Google Drive folder ID for embeds
+  const driveFolderId = jobFolder?.Job_Folder_Link ? extractDriveFolderId(jobFolder.Job_Folder_Link) : null;
+
+  // Check for individual file links
+  const docLinks = [
+    { label: 'Contract', link: jobFolder?.Contract_Link, icon: '📄', color: '#20BC64' },
+    { label: 'Work Order', link: jobFolder?.Work_Order_Link, icon: '📋', color: '#60a5fa' },
+    { label: 'Plans', link: jobFolder?.Plans_Link, icon: '📐', color: '#a78bfa' },
+    { label: 'Materials', link: jobFolder?.Material_Resources_Link, icon: '🏗️', color: '#fb923c' },
+  ];
+
   return (
     <div className="flex flex-col min-h-0">
 
-      {/* ── Sticky KPI Bar ─────────────────────────────────────────────────── */}
+      {/* ── Fullscreen Doc Overlay ──────────────────────────────────────── */}
+      {fullscreenDoc && (
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
+          <div className="flex justify-between items-center px-4 py-3 bg-[#1e2023] border-b border-white/10">
+            <span className="text-white font-black text-sm">📄 Document Viewer</span>
+            <button onClick={() => setFullscreenDoc(null)}
+              className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 text-xs font-black hover:bg-red-500/30 transition-all">
+              ✕ Close
+            </button>
+          </div>
+          <iframe src={fullscreenDoc} className="flex-1 w-full" allow="autoplay" />
+        </div>
+      )}
+
+      {/* ── Sticky KPI Bar ─────────────────────────────────────────────── */}
       <div className="sticky top-[104px] z-40 bg-[#1a1c1f] border-b border-white/8 shadow-lg">
-        {/* Credit/Vendor Alert Banner */}
         {hasCreditFlag && (
           <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2">
             <span className="text-amber-400 text-sm">⚠️</span>
@@ -95,14 +144,13 @@ export default function JobTabs({
               {asphaltCredit !== 'Active' && ` Asphalt (${prep?.Nearest_Asphalt_Plant}): ${asphaltCredit}.`}
               {baseCredit !== 'Active' && ` Quarry (${prep?.Nearest_Quarry}): ${baseCredit}.`}
               {' '} Confirm before scheduling pave.
+              <span className="ml-2 text-amber-400/40 text-[9px]">SOURCE: JOB PREP BOARD (Manual)</span>
             </p>
           </div>
         )}
 
-        {/* KPIs + Weather strip */}
         <div className="flex items-center gap-4 px-4 py-3 overflow-x-auto no-scrollbar">
-          {/* % Complete pill */}
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
             <div className="relative w-10 h-10">
               <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
                 <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3"/>
@@ -117,15 +165,14 @@ export default function JobTabs({
             </div>
           </div>
 
-          <div className="w-px h-8 bg-white/10 flex-shrink-0"/>
+          <div className="w-px h-8 bg-white/10 shrink-0"/>
 
-          {/* Financial KPIs */}
           {[
             { label: 'Contract', value: `$${(originalContract).toLocaleString()}`, color: '#20BC64' },
             { label: 'Billed', value: `$${(job.Billed_To_Date || 0).toLocaleString()}`, color: '#60a5fa' },
             ...(approvedCOs > 0 ? [{ label: 'CO Added', value: `+$${approvedCOs.toLocaleString()}`, color: '#a78bfa' }] : []),
           ].map(kpi => (
-            <div key={kpi.label} className="flex-shrink-0">
+            <div key={kpi.label} className="shrink-0">
               <p className="text-[9px] font-bold uppercase tracking-widest text-white/30">{kpi.label}</p>
               <p className="text-xs font-black" style={{ color: kpi.color }}>{kpi.value}</p>
             </div>
@@ -133,15 +180,14 @@ export default function JobTabs({
 
           {weatherDays.length > 0 && (
             <>
-              <div className="w-px h-8 bg-white/10 flex-shrink-0"/>
-              {/* Weather strip — compact */}
+              <div className="w-px h-8 bg-white/10 shrink-0"/>
               {weatherDays.slice(0, 4).map((period: any, i: number) => {
                 const rawDay = (period.name || '').split(' ')[0];
                 const dayLabel = rawDay.toLowerCase() === 'tonight' || rawDay.toLowerCase() === 'today' ? 'TODAY'
                   : rawDay.toLowerCase() === 'this' ? 'TODAY'
                   : rawDay.slice(0, 3).toUpperCase();
                 return (
-                <div key={i} className={`flex-shrink-0 flex flex-col items-center px-2 py-1 rounded-lg ${i === 0 ? 'bg-white/8 border border-white/10' : ''}`}>
+                <div key={i} className={`shrink-0 flex flex-col items-center px-2 py-1 rounded-lg ${i === 0 ? 'bg-white/8 border border-white/10' : ''}`}>
                   <p className="text-[9px] font-bold text-white/30 uppercase">{dayLabel}</p>
                   <p className="text-base leading-none my-0.5"><WeatherIcon short={period.shortForecast || ''} /></p>
                   <p className="text-[9px] font-black text-white">{period.temperature}°</p>
@@ -155,7 +201,6 @@ export default function JobTabs({
           )}
         </div>
 
-        {/* Tab Nav */}
         <div className="flex border-t border-white/6">
           {TABS.map(tab => (
             <button
@@ -174,10 +219,10 @@ export default function JobTabs({
         </div>
       </div>
 
-      {/* ── Tab Content ────────────────────────────────────────────────────── */}
+      {/* ── Tab Content ────────────────────────────────────────────────── */}
       <div className="flex-1 p-4 md:p-6 space-y-5">
 
-        {/* ════ TAB 1: OVERVIEW & LOGISTICS ════════════════════════════════ */}
+        {/* ════ TAB 1: OVERVIEW & LOGISTICS ════════════════════════════ */}
         {activeTab === 'overview' && (
           <div className="space-y-5">
 
@@ -204,16 +249,18 @@ export default function JobTabs({
               </div>
             </div>
 
-            {/* Supply Chain */}
+            {/* Supply Chain / Vendor Credit */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Supply Chain Status</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Supply Chain Status</h2>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: JOB PREP BOARD (Manual)</span>
+              </div>
               {prep ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="flex justify-between items-center p-4 rounded-xl bg-black/20 border border-white/5">
                     <div>
                       <p className="text-[10px] font-black uppercase text-white/30 mb-1">Asphalt Plant</p>
                       <p className="text-sm font-bold text-white">{prep.Nearest_Asphalt_Plant}</p>
-                      {prep.Asphalt_Mix_Type && <p className="text-xs text-white/40 mt-0.5">Mix: {prep.Asphalt_Mix_Type}</p>}
                     </div>
                     <span className={`text-xs font-black px-3 py-1.5 rounded-full ${asphaltCredit === 'Active' ? 'bg-[#20BC64]/10 text-[#20BC64] border border-[#20BC64]/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
                       {asphaltCredit}
@@ -229,15 +276,15 @@ export default function JobTabs({
                     </span>
                   </div>
                 </div>
-              ) : <p className="text-white/20 text-sm">No supply chain data.</p>}
+              ) : <p className="text-white/20 text-sm">Awaiting Live Data — No supply chain data on file.</p>}
             </div>
 
-            {/* Box A: Owned Assets */}
+            {/* Box A: Owned Assets (VisionLink / Samsara) */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
                   📡 Owned Assets On Site
-                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">VISIONLINK</span>
+                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">VISIONLINK + SAMSARA</span>
                 </h2>
                 {vehicles.length > 0 && (
                   <span className="text-[10px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -245,30 +292,45 @@ export default function JobTabs({
                   </span>
                 )}
               </div>
+
+              {/* VisionLink Section */}
+              {!hasVisionLinkKey ? (
+                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15 mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">🔗</span>
+                    <div>
+                      <p className="text-xs font-black text-amber-400">Connection Required — Add VisionLink API Key</p>
+                      <p className="text-[10px] text-white/30 mt-0.5">Heavy equipment (CAT, Deere) will appear automatically once VISIONLINK_API_KEY is configured.</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Samsara Lowboy / Vehicle Section */}
               {vehicles.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {vehicles.map((v: any, i: number) => (
                     <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-blue-500/10">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sm flex-shrink-0">🚛</div>
+                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sm shrink-0">🚛</div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-black text-white truncate">{v.name?.replace?.(/\s*\(.*\)/, '') || v.name}</p>
                         <p className="text-xs text-white/40 truncate">{v.address || 'Location active'}</p>
                       </div>
-                      <span className={`text-[10px] font-black px-2 py-1 rounded-full flex-shrink-0 ${v.speed > 2 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                      <span className={`text-[10px] font-black px-2 py-1 rounded-full shrink-0 ${v.speed > 2 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
                         {v.speed > 2 ? `${v.speed} mph` : 'Parked'}
                       </span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-6">
-                  <p className="text-white/20 text-sm">No company assets tracked near this site.</p>
-                  <p className="text-white/10 text-xs mt-1">Equipment within 15 miles appears automatically via VisionLink.</p>
+                <div className="text-center py-4">
+                  <p className="text-white/20 text-sm">No Samsara vehicles tracked near this site.</p>
+                  <p className="text-white/10 text-xs mt-1">Vehicles within 15 miles appear automatically via Samsara GPS.</p>
                 </div>
               )}
             </div>
 
-            {/* Box B: Active Rentals — STRICTLY SEPARATE from Box A */}
+            {/* Box B: Active Rentals — STRICTLY SEPARATE */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
@@ -283,7 +345,6 @@ export default function JobTabs({
               </div>
               {rentals.length > 0 ? (
                 <div className="space-y-3">
-                  {/* Burn Rate Summary */}
                   {(() => {
                     const totalDailyBurn = rentals.reduce((sum, r) => sum + (parseFloat(r.Daily_Rate) || 0), 0);
                     const totalBurnToDate = rentals.reduce((sum, r) => sum + ((parseInt(r.Days_On_Site) || 0) * (parseFloat(r.Daily_Rate) || 0)), 0);
@@ -312,7 +373,7 @@ export default function JobTabs({
                             <p className="text-sm font-black text-white">{r.Equipment_Type}</p>
                             <p className="text-xs text-white/40 mt-0.5">{r.Vendor}</p>
                           </div>
-                          <div className="text-right ml-3 flex-shrink-0">
+                          <div className="text-right ml-3 shrink-0">
                             <p className="text-lg font-black text-amber-400">${rate.toLocaleString()}<span className="text-xs text-amber-400/50">/day</span></p>
                             <p className={`text-xs font-bold ${isOverdue ? 'text-red-400' : 'text-white/30'}`}>{days}d · ${burn.toLocaleString()} total</p>
                           </div>
@@ -325,19 +386,22 @@ export default function JobTabs({
                   })}
                 </div>
               ) : (
-                <p className="text-white/20 text-sm py-4 text-center">No rental equipment on file for this job.</p>
+                <p className="text-white/20 text-sm py-4 text-center">Awaiting Live Data — No rental equipment on file for this job.</p>
               )}
             </div>
           </div>
         )}
 
-        {/* ════ TAB 2: PRODUCTION VS. ESTIMATE ═════════════════════════════ */}
+        {/* ════ TAB 2: PRODUCTION & FIELD REPORTS ═════════════════════ */}
         {activeTab === 'production' && (
           <div className="space-y-5">
 
             {/* Production Totals */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Production Totals — Jotform Live</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Production Totals</h2>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: SCORECARD + JOTFORM LIVE</span>
+              </div>
               {report ? (
                 <div className="space-y-5">
                   {[
@@ -374,14 +438,86 @@ export default function JobTabs({
                       </div>
                     );
                   })}
-                  {report.Latest_Summary && (
-                    <div className="mt-2 p-4 rounded-xl bg-black/20 border border-white/5">
-                      <p className="text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Latest Field Summary</p>
-                      <p className="text-sm text-white/70 leading-relaxed">{report.Latest_Summary}</p>
-                    </div>
-                  )}
                 </div>
-              ) : <p className="text-white/20 text-sm py-4">No Jotform submissions found for this job.</p>}
+              ) : <p className="text-white/20 text-sm py-4">Awaiting Live Data — No Jotform submissions found for this job.</p>}
+            </div>
+
+            {/* FIELD REPORT FEED — Daily submissions */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Daily Field Reports</h2>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: JOTFORM API · {fieldReportFeed.length} Reports</span>
+              </div>
+              {fieldReportFeed.length > 0 ? (
+                <div className="space-y-3">
+                  {fieldReportFeed.map((entry: any, i: number) => {
+                    const d = new Date(entry.date);
+                    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    const hasProduction = entry.gabTons > 0 || entry.binderTons > 0 || entry.toppingTons > 0 || entry.concreteCY > 0;
+                    return (
+                      <div key={entry.id || i} className="p-4 rounded-xl bg-black/20 border border-white/5">
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                              📋 {dateStr}
+                            </span>
+                            {entry.difficulty && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-white/30">{entry.difficulty}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-white/30">
+                            {entry.crewCount > 0 && <span>👷 {entry.crewCount} crew</span>}
+                            {entry.manHours > 0 && <span>⏱ {entry.manHours}h</span>}
+                            {entry.truckCount > 0 && <span>🚛 {entry.truckCount} trucks</span>}
+                          </div>
+                        </div>
+
+                        {/* Production Grid */}
+                        {hasProduction && (
+                          <div className="grid grid-cols-4 gap-2 mb-3">
+                            {entry.gabTons > 0 && (
+                              <div className="p-2 rounded-lg bg-[#20BC64]/5 border border-[#20BC64]/15">
+                                <p className="text-[8px] font-black uppercase text-[#20BC64]/60">GAB</p>
+                                <p className="text-sm font-black text-[#20BC64]">{entry.gabTons.toLocaleString()}t</p>
+                              </div>
+                            )}
+                            {entry.binderTons > 0 && (
+                              <div className="p-2 rounded-lg bg-blue-500/5 border border-blue-500/15">
+                                <p className="text-[8px] font-black uppercase text-blue-400/60">Binder</p>
+                                <p className="text-sm font-black text-blue-400">{entry.binderTons.toLocaleString()}t</p>
+                              </div>
+                            )}
+                            {entry.toppingTons > 0 && (
+                              <div className="p-2 rounded-lg bg-purple-500/5 border border-purple-500/15">
+                                <p className="text-[8px] font-black uppercase text-purple-400/60">Topping</p>
+                                <p className="text-sm font-black text-purple-400">{entry.toppingTons.toLocaleString()}t</p>
+                              </div>
+                            )}
+                            {entry.concreteCY > 0 && (
+                              <div className="p-2 rounded-lg bg-pink-500/5 border border-pink-500/15">
+                                <p className="text-[8px] font-black uppercase text-pink-400/60">Concrete</p>
+                                <p className="text-sm font-black text-pink-400">{entry.concreteCY.toLocaleString()} CY</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Summary */}
+                        {entry.summary && entry.summary !== 'no' && (
+                          <p className="text-xs text-white/50 leading-relaxed border-t border-white/5 pt-2">{entry.summary}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-3xl mb-2">📋</p>
+                  <p className="text-white/30 text-sm font-bold">Awaiting Live Data — No field reports submitted for this job.</p>
+                  <p className="text-white/15 text-xs mt-1">Foremen submit daily reports via Jotform. Reports appear here automatically.</p>
+                </div>
+              )}
             </div>
 
             {/* Scorecard */}
@@ -423,11 +559,10 @@ export default function JobTabs({
           </div>
         )}
 
-        {/* ════ TAB 3: SCOPE & CHANGE ORDERS ═══════════════════════════════ */}
+        {/* ════ TAB 3: SCOPE & CHANGE ORDERS ═══════════════════════════ */}
         {activeTab === 'changeorders' && (
           <div className="space-y-5">
 
-            {/* Contract Value Summary */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <h2 className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Contract Value Summary</h2>
               <div className="grid grid-cols-3 gap-4">
@@ -439,14 +574,14 @@ export default function JobTabs({
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Approved COs</p>
                   <p className="text-xl font-black text-[#a78bfa]">+${approvedCOs.toLocaleString()}</p>
                 </div>
-                <div className="bg-black/20 rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5">
+                <div className="rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64]/60">Revised Contract</p>
                   <p className="text-xl font-black text-[#20BC64]">${revisedContract.toLocaleString()}</p>
                 </div>
               </div>
               {pendingCOs.length > 0 && (
                 <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
-                  <span className="text-amber-400 text-lg flex-shrink-0">⛔</span>
+                  <span className="text-amber-400 text-lg shrink-0">⛔</span>
                   <div>
                     <p className="text-amber-300 font-black text-xs">{pendingCOs.length} PENDING CHANGE ORDER{pendingCOs.length > 1 ? 'S' : ''} — DO NOT EXECUTE SCOPE</p>
                     <p className="text-amber-200/50 text-[10px] mt-0.5">Work associated with pending COs cannot be performed until approved by GC. Contact PM immediately.</p>
@@ -455,7 +590,6 @@ export default function JobTabs({
               )}
             </div>
 
-            {/* Pending COs */}
             {pendingCOs.length > 0 && (
               <div className="bg-[#1e2023] rounded-xl border border-amber-500/20 p-5">
                 <h2 className="text-xs font-black uppercase tracking-widest text-amber-400/70 mb-4">⛔ Pending — Awaiting Approval</h2>
@@ -471,9 +605,7 @@ export default function JobTabs({
                           <p className="text-sm text-white/70">{co.Description}</p>
                           {co.Notes && <p className="text-xs text-white/30 italic mt-1">{co.Notes}</p>}
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="text-lg font-black text-amber-400">{co.Amount}</p>
-                        </div>
+                        <p className="text-lg font-black text-amber-400 shrink-0">{co.Amount}</p>
                       </div>
                       <StatusBadge status="Pending" />
                     </div>
@@ -482,7 +614,6 @@ export default function JobTabs({
               </div>
             )}
 
-            {/* Approved COs */}
             {approvedCOList.length > 0 && (
               <div className="bg-[#1e2023] rounded-xl border border-emerald-500/15 p-5">
                 <h2 className="text-xs font-black uppercase tracking-widest text-emerald-400/60 mb-4">✅ Approved — Scope Added to Contract</h2>
@@ -498,7 +629,7 @@ export default function JobTabs({
                           <p className="text-sm text-white/70">{co.Description}</p>
                           {co.Notes && <p className="text-xs text-white/30 italic mt-1">{co.Notes}</p>}
                         </div>
-                        <p className="text-lg font-black text-emerald-400 flex-shrink-0">{co.Amount}</p>
+                        <p className="text-lg font-black text-emerald-400 shrink-0">{co.Amount}</p>
                       </div>
                       <StatusBadge status="Approved" />
                     </div>
@@ -516,43 +647,73 @@ export default function JobTabs({
           </div>
         )}
 
-        {/* ════ TAB 4: DOCUMENTS & QC ═══════════════════════════════════════ */}
+        {/* ════ TAB 4: DOCUMENTS & QC ═══════════════════════════════════ */}
         {activeTab === 'documents' && (
           <div className="space-y-5">
 
-            {/* Job Folder */}
+            {/* EMBEDDED DOCUMENT VIEWER */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Job Documents</h2>
-                {jobFolder?.Job_Folder_Link && (
-                  <a href={jobFolder.Job_Folder_Link} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-xs font-black hover:bg-[#20BC64]/20 transition-all">
-                    📂 Open Job Folder →
-                  </a>
-                )}
-              </div>
-              {jobFolder ? (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Contract', icon: '📄', link: jobFolder.Contract_Link || jobFolder.Job_Folder_Link, color: '#20BC64' },
-                    { label: 'Work Order', icon: '📋', link: jobFolder.Work_Order_Link || jobFolder.Job_Folder_Link, color: '#60a5fa' },
-                    { label: 'Plans', icon: '📐', link: jobFolder.Plans_Link || jobFolder.Job_Folder_Link, color: '#a78bfa' },
-                    { label: 'Materials', icon: '🏗️', link: jobFolder.Material_Resources_Link || jobFolder.Job_Folder_Link, color: '#fb923c' },
-                  ].map(doc => (
-                    <a key={doc.label} href={doc.link} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-3 p-4 rounded-xl bg-black/20 border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group">
-                      <span className="text-2xl">{doc.icon}</span>
-                      <div>
-                        <p className="text-sm font-black" style={{ color: doc.color }}>{doc.label}</p>
-                        <p className="text-[10px] text-white/30 group-hover:text-white/50">View in Drive →</p>
-                      </div>
+                <div className="flex items-center gap-2">
+                  {jobFolder?.Job_Folder_Link && (
+                    <a href={jobFolder.Job_Folder_Link} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 text-[10px] font-black hover:bg-white/10 transition-all">
+                      ↗ Open in Drive
                     </a>
-                  ))}
+                  )}
+                </div>
+              </div>
+
+              {/* Individual file embeds if links are populated */}
+              {docLinks.some(d => d.link) ? (
+                <div className="space-y-4">
+                  {docLinks.filter(d => d.link).map(doc => {
+                    const fileId = extractDriveFileId(doc.link);
+                    const iframeSrc = fileId
+                      ? `https://drive.google.com/file/d/${fileId}/preview`
+                      : doc.link;
+                    return (
+                      <div key={doc.label} className="rounded-xl border border-white/5 overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2 bg-black/30">
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">{doc.icon}</span>
+                            <span className="text-sm font-black" style={{ color: doc.color }}>{doc.label}</span>
+                          </div>
+                          <button onClick={() => setFullscreenDoc(iframeSrc)}
+                            className="text-[10px] font-black text-white/40 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-all">
+                            ⛶ Fullscreen
+                          </button>
+                        </div>
+                        <iframe src={iframeSrc} className="w-full h-[400px]" allow="autoplay" />
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : driveFolderId ? (
+                /* Folder embed when no individual file links exist */
+                <div className="rounded-xl border border-white/5 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 bg-black/30">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📁</span>
+                      <span className="text-sm font-black text-white/70">Job {jobNumber} Files</span>
+                    </div>
+                    <button onClick={() => setFullscreenDoc(`https://drive.google.com/embeddedfolderview?id=${driveFolderId}#list`)}
+                      className="text-[10px] font-black text-white/40 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-all">
+                      ⛶ Fullscreen
+                    </button>
+                  </div>
+                  <iframe
+                    src={`https://drive.google.com/embeddedfolderview?id=${driveFolderId}#list`}
+                    className="w-full h-[500px] bg-white"
+                    allow="autoplay"
+                  />
                 </div>
               ) : (
-                <div className="text-center py-4">
-                  <p className="text-white/20 text-sm">No Drive folder linked for job {jobNumber}.</p>
-                  <p className="text-white/10 text-xs mt-1">Add Job_Folder_Link to the Job_Folders CSV to enable this.</p>
+                <div className="text-center py-6">
+                  <p className="text-3xl mb-2">📂</p>
+                  <p className="text-white/30 text-sm font-bold">Awaiting Live Data — No Drive folder linked for job {jobNumber}.</p>
+                  <p className="text-white/15 text-xs mt-1">Add Job_Folder_Link to Job_Folders CSV to enable embedded viewing.</p>
                 </div>
               )}
             </div>
@@ -565,20 +726,18 @@ export default function JobTabs({
                   {Object.values(qcDone).filter(Boolean).length}/{QC_ITEMS.length} Complete
                 </span>
               </div>
-              <p className="text-xs text-white/30 mb-5">Required before every pave. Tap to mark complete and open upload.</p>
+              <p className="text-xs text-white/30 mb-5">Required before every pave. Tap to mark complete then upload proof photo.</p>
               <div className="space-y-3">
                 {QC_ITEMS.map(item => {
                   const done = qcDone[item.id];
-                  const uploadLink = jobFolder?.Job_Folder_Link
-                    ? `${jobFolder.Job_Folder_Link}`
-                    : '#';
+                  const uploadLink = jobFolder?.Job_Folder_Link || '#';
                   return (
                     <div key={item.id}
                       className={`p-4 rounded-xl border transition-all ${done ? 'bg-emerald-500/8 border-emerald-500/25' : 'bg-black/20 border-white/5 hover:border-white/15'}`}>
                       <div className="flex items-start gap-4">
                         <button
                           onClick={() => setQcDone(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all font-black text-sm border ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-emerald-400'}`}>
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all font-black text-sm border ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-emerald-400'}`}>
                           ✓
                         </button>
                         <div className="flex-1">
@@ -587,9 +746,8 @@ export default function JobTabs({
                           </p>
                           <p className="text-xs text-white/40 mt-0.5">{item.desc}</p>
                         </div>
-                        {/* Upload button → direct to job folder */}
                         <a href={uploadLink} target="_blank" rel="noopener noreferrer"
-                          className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-[10px] font-black hover:bg-[#20BC64]/20 transition-all">
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-[10px] font-black hover:bg-[#20BC64]/20 transition-all">
                           📤 Upload
                         </a>
                       </div>
@@ -602,20 +760,6 @@ export default function JobTabs({
                   <p className="text-emerald-400 font-black text-sm">✅ ALL QC CHECKS COMPLETE — Clear to pave.</p>
                 </div>
               )}
-            </div>
-
-            {/* Quick Jotform Link */}
-            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Field Reports</h2>
-              <a href="https://form.jotform.com/240915802348154" target="_blank" rel="noopener noreferrer"
-                className="flex items-center gap-4 p-5 rounded-xl bg-black/20 border border-white/5 hover:border-[#20BC64]/30 hover:bg-[#20BC64]/5 transition-all group">
-                <div className="w-12 h-12 rounded-xl bg-[#20BC64]/10 border border-[#20BC64]/20 flex items-center justify-center text-2xl flex-shrink-0">📋</div>
-                <div className="flex-1">
-                  <p className="text-sm font-black text-white group-hover:text-[#20BC64] transition-colors">Submit Field Report</p>
-                  <p className="text-xs text-white/30 mt-0.5">Jotform · Daily production, tonnage, crew count</p>
-                </div>
-                <span className="text-[#20BC64] text-lg group-hover:translate-x-1 transition-transform">→</span>
-              </a>
             </div>
           </div>
         )}
