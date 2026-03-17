@@ -76,7 +76,7 @@ export async function fetchLiveJobs() {
     const headerCols = parseCSVLine(lines[0]);
     const hdr: Record<string, number> = {};
     headerCols.forEach((h, i) => {
-      const clean = h.replace(/\n/g, ' ').trim().toLowerCase();
+      const clean = h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
       hdr[clean] = i;
     });
 
