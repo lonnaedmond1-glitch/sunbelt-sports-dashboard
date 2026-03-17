@@ -651,69 +651,38 @@ export default function JobTabs({
         {activeTab === 'documents' && (
           <div className="space-y-5">
 
-            {/* EMBEDDED DOCUMENT VIEWER */}
+            {/* Job Documents — Button Layout */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Job Documents</h2>
-                <div className="flex items-center gap-2">
-                  {jobFolder?.Job_Folder_Link && (
-                    <a href={jobFolder.Job_Folder_Link} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/50 text-[10px] font-black hover:bg-white/10 transition-all">
-                      ↗ Open in Drive
-                    </a>
-                  )}
-                </div>
+                {jobFolder?.Job_Folder_Link && (
+                  <a href={jobFolder.Job_Folder_Link} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-xs font-black hover:bg-[#20BC64]/20 transition-all">
+                    📂 Open Job Folder →
+                  </a>
+                )}
               </div>
-
-              {/* Individual file embeds if links are populated */}
-              {docLinks.some(d => d.link) ? (
-                <div className="space-y-4">
-                  {docLinks.filter(d => d.link).map(doc => {
-                    const fileId = extractDriveFileId(doc.link);
-                    const iframeSrc = fileId
-                      ? `https://drive.google.com/file/d/${fileId}/preview`
-                      : doc.link;
-                    return (
-                      <div key={doc.label} className="rounded-xl border border-white/5 overflow-hidden">
-                        <div className="flex items-center justify-between px-4 py-2 bg-black/30">
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">{doc.icon}</span>
-                            <span className="text-sm font-black" style={{ color: doc.color }}>{doc.label}</span>
-                          </div>
-                          <button onClick={() => setFullscreenDoc(iframeSrc)}
-                            className="text-[10px] font-black text-white/40 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-all">
-                            ⛶ Fullscreen
-                          </button>
-                        </div>
-                        <iframe src={iframeSrc} className="w-full h-[400px]" allow="autoplay" />
+              {jobFolder ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Contract', icon: '📄', link: jobFolder.Contract_Link || jobFolder.Job_Folder_Link, color: '#20BC64' },
+                    { label: 'Work Order', icon: '📋', link: jobFolder.Work_Order_Link || jobFolder.Job_Folder_Link, color: '#60a5fa' },
+                    { label: 'Plans', icon: '📐', link: jobFolder.Plans_Link || jobFolder.Job_Folder_Link, color: '#a78bfa' },
+                    { label: 'Materials', icon: '🏗️', link: jobFolder.Material_Resources_Link || jobFolder.Job_Folder_Link, color: '#fb923c' },
+                  ].map(doc => (
+                    <a key={doc.label} href={doc.link} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 rounded-xl bg-black/20 border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group cursor-pointer">
+                      <span className="text-2xl">{doc.icon}</span>
+                      <div>
+                        <p className="text-sm font-black" style={{ color: doc.color }}>{doc.label}</p>
+                        <p className="text-[10px] text-white/30 group-hover:text-white/50 transition-colors">View in Drive →</p>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : driveFolderId ? (
-                /* Folder embed when no individual file links exist */
-                <div className="rounded-xl border border-white/5 overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-2 bg-black/30">
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">📁</span>
-                      <span className="text-sm font-black text-white/70">Job {jobNumber} Files</span>
-                    </div>
-                    <button onClick={() => setFullscreenDoc(`https://drive.google.com/embeddedfolderview?id=${driveFolderId}#list`)}
-                      className="text-[10px] font-black text-white/40 hover:text-white px-2 py-1 rounded hover:bg-white/10 transition-all">
-                      ⛶ Fullscreen
-                    </button>
-                  </div>
-                  <iframe
-                    src={`https://drive.google.com/embeddedfolderview?id=${driveFolderId}#list`}
-                    className="w-full h-[500px] bg-white"
-                    allow="autoplay"
-                  />
+                    </a>
+                  ))}
                 </div>
               ) : (
-                <div className="text-center py-6">
-                  <p className="text-3xl mb-2">📂</p>
-                  <p className="text-white/30 text-sm font-bold">Awaiting Live Data — No Drive folder linked for job {jobNumber}.</p>
-                  <p className="text-white/15 text-xs mt-1">Add Job_Folder_Link to Job_Folders CSV to enable embedded viewing.</p>
+                <div className="text-center py-4">
+                  <p className="text-white/20 text-sm">No Drive folder linked for job {jobNumber}.</p>
                 </div>
               )}
             </div>
