@@ -51,15 +51,15 @@ async function getSamsaraData() {
   try {
     const headers = { Authorization: `Bearer ${SAMSARA_API_KEY}`, 'Content-Type': 'application/json' };
     const KEY_NAMES = [
-      'alex',      // Alex Sifuentes
-      'david',     // David Blaylock + David Moctezuma
-      'jeff',      // Jeff Reece
-      'juan',      // Juan De Lara
-      'pedro',     // Pedro De Lara
-      'julio',     // Julio Lopez
-      'martin',    // Martin De Lara
-      'rosendo',   // Rosendo Rubio
-      'sergio',    // Sergio Sifuentes
+      'alex',              // Alex Sifuentes
+      'sergio',            // Sergio Sifuentes
+      'martin',            // Martin De Lara
+      'julio',             // Julio Lopez
+      'juan',              // Juan De Lara
+      'cesar',             // Cesar
+      'david moctezuma',   // David Moctezuma (specific to avoid matching DeJuan, etc.)
+      'rosendo',           // Rosendo Rubio
+      'lowboy',            // Lowboy 1 & 2
     ];
 
 
