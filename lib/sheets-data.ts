@@ -600,7 +600,21 @@ export async function fetchScheduleData() {
         if (jobText) {
           const decoded = decodeAssignment(jobText);
           const supplierFull = SUPPLIER_MAP[decoded.supplier] || decoded.supplier;
-          const ganttMatch = ganttJobs.find((g: any) => decoded.jobRef.toLowerCase().split(' ')[0] && g.Job_Name.toLowerCase().includes(decoded.jobRef.toLowerCase().split(' ')[0]));
+          // Match against full cell text using longest-match to avoid false positives
+          const fullLower = jobText.toLowerCase();
+          let ganttMatch = null;
+          let bestLen = 0;
+          for (const g of ganttJobs) {
+            const gName = g.Job_Name.toLowerCase();
+            // Check if any significant word sequence from the gantt job name appears in the cell text
+            const gWords = gName.split(/\s+/).filter((w: string) => w.length > 3);
+            for (const w of gWords) {
+              if (fullLower.includes(w) && w.length > bestLen) {
+                bestLen = w.length;
+                ganttMatch = g;
+              }
+            }
+          }
           assignments.push({ crew: crew.name, crewType: crew.type, job: jobText, pm, decoded, supplierFull, ganttMatch: ganttMatch ? { jobNumber: ganttMatch.Job_Number, projectType: ganttMatch.Project_Type, start: ganttMatch.Start, end: ganttMatch.End } : null });
         }
       }

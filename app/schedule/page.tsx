@@ -77,7 +77,7 @@ export default async function SchedulePage() {
 
   // Resolve Job Links even when Gantt matching fails
   const resolveJobLink = (assignment: any) => {
-    const raw = (assignment.rawText || '').toLowerCase();
+    const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
     
     // 1. Direct Job Number match
     const numMatch = jobs.find((j: any) => j.Job_Number && raw.includes(j.Job_Number.toLowerCase()));
