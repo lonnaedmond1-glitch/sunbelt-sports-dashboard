@@ -332,7 +332,7 @@ export default async function MasterDashboard() {
             { label: 'Scheduled Jobs', value: scheduledJobs.length.toString(), sub: 'Within ±7 day window', color: '#20BC64' },
             { label: 'Portfolio Value', value: `$${(totalPortfolio / 1000000).toFixed(1)}M`, sub: 'Total contract value', color: '#60a5fa' },
             { label: 'Billed To Date', value: `$${(totalBilled / 1000000).toFixed(1)}M`, sub: `${overallPct}% collected`, color: '#a78bfa' },
-            { label: 'Vehicles Live', value: samsara.configured ? samsara.vehicles.length.toString() : '—', sub: samsara.configured ? 'Samsara GPS' : 'No API key', color: '#fb923c' },
+            { label: 'Crews Live', value: samsara.configured ? samsara.vehicles.length.toString() : '—', sub: samsara.configured ? 'Samsara GPS' : 'No API key', color: '#fb923c' },
             { label: 'Field Reports', value: fieldReports.length.toString(), sub: 'Jobs with Jotform data', color: '#20BC64' },
           ].map((kpi) => (
             <div key={kpi.label} className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
