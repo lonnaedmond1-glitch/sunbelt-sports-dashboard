@@ -195,10 +195,21 @@ export default function LiveMap({ jobs, vehicles }: Props) {
           </div>`, { className: 'dark-popup' });
       });
 
-      // Fit bounds to job sites
-      if (validJobs.length > 0) {
-        const bounds = L.latLngBounds(validJobs.map(j => [parseFloat(j.Lat), parseFloat(j.Lng)]));
-        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 9 });
+      // Fit bounds to all pins (jobs + vehicles) — stay zoomed to the region, never the whole globe
+      const allPoints: [number, number][] = [];
+      validJobs.forEach(j => {
+        const lat = parseFloat(j.Lat); const lng = parseFloat(j.Lng);
+        if (!isNaN(lat) && !isNaN(lng)) allPoints.push([lat, lng]);
+      });
+      spreadVehicles.forEach(v => {
+        if (v.lat && v.lng) allPoints.push([v.lat, v.lng]);
+      });
+      if (allPoints.length > 0) {
+        const bounds = L.latLngBounds(allPoints);
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12, minZoom: 7 });
+      } else {
+        // Fallback: center on Georgia if no pins
+        map.setView([33.5, -83.9], 8);
       }
 
       const style = document.createElement('style');
