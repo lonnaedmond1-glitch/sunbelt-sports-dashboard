@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic'; // Never cache this route at the edge
+
 const SAMSARA_API_KEY = process.env.SAMSARA_API_KEY || '';
 
 export async function getGlobalSamsara() {
