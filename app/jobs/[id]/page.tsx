@@ -66,7 +66,7 @@ async function getNearbyVehicles(lat: string, lng: string): Promise<any[]> {
       .filter((v: any) => v.location?.latitude && v.location?.longitude)
       .filter((v: any) => {
         const nameLower = (v.name || '').toLowerCase();
-        return KEY_NAMES.some(k => nameLower.includes(k));
+        return KEY_NAMES.some(k => new RegExp(`\\b${k}\\b`).test(nameLower));
       })
       .map((v: any) => ({
         id: v.id,

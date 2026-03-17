@@ -37,7 +37,7 @@ export async function getGlobalSamsara() {
         .filter((v: any) => v.lat && v.lng)
         .filter((v: any) => {
           const nameLower = (v.name || '').toLowerCase();
-          return KEY_NAMES.some(k => nameLower.includes(k));
+          return KEY_NAMES.some(k => new RegExp(`\\b${k}\\b`).test(nameLower));
         });
     }
 

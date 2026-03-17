@@ -78,7 +78,10 @@ async function getSamsaraData() {
             status: 'active', driver: v.staticAssignedDriver?.name || 'Unassigned',
           }))
           .filter((v: any) => v.lat && v.lng)
-          .filter((v: any) => KEY_NAMES.some(k => (v.name || '').toLowerCase().includes(k)))
+          .filter((v: any) => {
+            const nameLower = (v.name || '').toLowerCase();
+            return KEY_NAMES.some(k => new RegExp(`\\b${k}\\b`).test(nameLower));
+          })
       : [];
 
     const crews = driverRes.ok
