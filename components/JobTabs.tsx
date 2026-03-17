@@ -135,16 +135,22 @@ export default function JobTabs({
             <>
               <div className="w-px h-8 bg-white/10 flex-shrink-0"/>
               {/* Weather strip — compact */}
-              {weatherDays.slice(0, 4).map((period: any, i: number) => (
+              {weatherDays.slice(0, 4).map((period: any, i: number) => {
+                const rawDay = (period.name || '').split(' ')[0];
+                const dayLabel = rawDay.toLowerCase() === 'tonight' || rawDay.toLowerCase() === 'today' ? 'TODAY'
+                  : rawDay.toLowerCase() === 'this' ? 'TODAY'
+                  : rawDay.slice(0, 3).toUpperCase();
+                return (
                 <div key={i} className={`flex-shrink-0 flex flex-col items-center px-2 py-1 rounded-lg ${i === 0 ? 'bg-white/8 border border-white/10' : ''}`}>
-                  <p className="text-[9px] font-bold text-white/30 uppercase">{period.name?.split(' ')[0]?.slice(0,3)}</p>
+                  <p className="text-[9px] font-bold text-white/30 uppercase">{dayLabel}</p>
                   <p className="text-base leading-none my-0.5"><WeatherIcon short={period.shortForecast || ''} /></p>
                   <p className="text-[9px] font-black text-white">{period.temperature}°</p>
                   {period.probabilityOfPrecipitation?.value ? (
                     <p className="text-[8px] text-blue-400 font-bold">{period.probabilityOfPrecipitation.value}%</p>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
             </>
           )}
         </div>
@@ -231,7 +237,7 @@ export default function JobTabs({
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
                   📡 Owned Assets On Site
-                  <span className="ml-2 text-[9px] font-bold text-blue-400/60">SAMSARA LIVE</span>
+                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">VISIONLINK</span>
                 </h2>
                 {vehicles.length > 0 && (
                   <span className="text-[10px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
@@ -257,7 +263,7 @@ export default function JobTabs({
               ) : (
                 <div className="text-center py-6">
                   <p className="text-white/20 text-sm">No company assets tracked near this site.</p>
-                  <p className="text-white/10 text-xs mt-1">Vehicles within 15 miles appear automatically via Samsara GPS.</p>
+                  <p className="text-white/10 text-xs mt-1">Equipment within 15 miles appears automatically via VisionLink.</p>
                 </div>
               )}
             </div>
@@ -335,12 +341,12 @@ export default function JobTabs({
               {report ? (
                 <div className="space-y-5">
                   {[
-                    { label: 'GAB / Base', actual: report.Base_Actual || report.GAB_Tonnage, est: scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0, unit: 'tons', color: '#20BC64' },
-                    { label: 'Asphalt Binder', actual: report.Binder_Tonnage || 0, est: scorecard ? parseFloat(scorecard.Est_Binder_Tons) || 0 : 0, unit: 'tons', color: '#60a5fa' },
-                    { label: 'Asphalt Topping', actual: report.Topping_Tonnage || 0, est: scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0, unit: 'tons', color: '#a78bfa' },
+                    { label: 'GAB / Base', actual: scorecard ? parseFloat(scorecard.Act_Stone_Tons) || (report.Base_Actual || report.GAB_Tonnage || 0) : (report.Base_Actual || report.GAB_Tonnage || 0), est: scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0, unit: 'tons', color: '#20BC64' },
+                    { label: 'Asphalt Binder', actual: scorecard ? parseFloat(scorecard.Act_Binder_Tons) || (report.Binder_Tonnage || 0) : (report.Binder_Tonnage || 0), est: scorecard ? parseFloat(scorecard.Est_Binder_Tons) || 0 : 0, unit: 'tons', color: '#60a5fa' },
+                    { label: 'Asphalt Topping', actual: scorecard ? parseFloat(scorecard.Act_Topping_Tons) || (report.Topping_Tonnage || 0) : (report.Topping_Tonnage || 0), est: scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0, unit: 'tons', color: '#a78bfa' },
                     { label: 'Concrete', actual: report.Concrete_Actual || report.Concrete_CY, est: 0, unit: 'CY', color: '#f472b6' },
-                    { label: 'Total Man-Hours', actual: report.Total_Man_Hours, est: scorecard ? parseFloat(scorecard.Est_Man_Hours) || 0 : 0, unit: 'hrs', color: '#fb923c' },
-                    { label: 'Days Active', actual: report.Days_Active, est: scorecard ? parseFloat(scorecard.Est_Days_On_Site) || 0 : 0, unit: 'days', color: '#fbbf24' },
+                    { label: 'Total Man-Hours', actual: scorecard ? parseFloat(scorecard.Act_Man_Hours) || (report.Total_Man_Hours || 0) : (report.Total_Man_Hours || 0), est: scorecard ? parseFloat(scorecard.Est_Man_Hours) || 0 : 0, unit: 'hrs', color: '#fb923c' },
+                    { label: 'Days Active', actual: scorecard ? parseFloat(scorecard.Act_Days_On_Site) || (report.Days_Active || 0) : (report.Days_Active || 0), est: scorecard ? parseFloat(scorecard.Est_Days_On_Site) || 0 : 0, unit: 'days', color: '#fbbf24' },
                   ].map(m => {
                     const act = m.actual || 0;
                     const est = m.est;
