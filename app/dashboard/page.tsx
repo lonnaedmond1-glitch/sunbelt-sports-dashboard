@@ -212,32 +212,51 @@ function parseJobDate(dateStr: string): Date | null {
 // ─── Scheduled Jobs State Engine ─────────────────────────────────────────────
 // A job is SCHEDULED if it appears on a crew row in THIS WEEK's schedule grid.
 // Source of truth: currentWeek parsed day assignments ONLY (Mon–Fri this week).
-function isScheduledCurrently(job: any, scheduleData: any): boolean {
-  const jobName = (job.Job_Name || '').toLowerCase();
-  const jobNum = (job.Job_Number || '');
+// Resolve a schedule assignment to a job number (mirrors schedule page logic)
+function resolveAssignmentToJob(assignment: any, jobs: any[]): string | null {
+  if (assignment.decoded?.isOff) return null;
+  const raw = (assignment.job || assignment.decoded?.raw || assignment.decoded?.jobRef || '').toLowerCase();
+  if (!raw) return null;
 
-  // Scan only this week's schedule grid (Mon–Fri current week)
+  // 1. Direct job number match
+  const numMatch = jobs.find((j: any) => j.Job_Number && raw.includes(j.Job_Number.toLowerCase()));
+  if (numMatch) return numMatch.Job_Number;
+
+  // 2. Gantt match
+  if (assignment.ganttMatch?.jobNumber) return assignment.ganttMatch.jobNumber;
+
+  // 3. Longest substring match (most specific job name wins)
+  let bestMatch: any = null;
+  let maxLen = 0;
+  for (const j of jobs) {
+    if (!j?.Job_Name) continue;
+    const jName = j.Job_Name.toLowerCase().replace(/ paving| base| hs| \(.*\)/g, '').trim();
+    if (jName.length > 4 && raw.includes(jName) && jName.length > maxLen) {
+      maxLen = jName.length;
+      bestMatch = j;
+    }
+  }
+  if (bestMatch) return bestMatch.Job_Number;
+
+  return null;
+}
+
+// Build set of job numbers that appear on this week's schedule
+function getScheduledJobNumbers(scheduleData: any, jobs: any[]): Set<string> {
+  const scheduled = new Set<string>();
   const currentWeekDays: any[] = scheduleData?.currentWeek?.days || [];
   for (const day of currentWeekDays) {
     for (const assignment of (day.assignments || [])) {
-      if (assignment.decoded?.isOff) continue;
-      // Priority 1: exact Gantt match by job number
-      if (assignment.ganttMatch?.jobNumber) {
-        if (assignment.ganttMatch.jobNumber === jobNum) return true;
-        // If gantt matched a DIFFERENT job, skip fuzzy — don't double-count
-        continue;
-      }
-      // Priority 2: fuzzy match only when no Gantt match exists
-      const ref = (assignment.decoded?.jobRef || '').toLowerCase();
-      const refWord = ref.split(' ')[0];
-      const nameWord = jobName.split(' ')[0];
-      // First word must match at the START of the other string
-      if (refWord && refWord.length > 3 && jobName.startsWith(refWord)) return true;
-      if (nameWord && nameWord.length > 3 && ref.startsWith(nameWord)) return true;
+      const jobNum = resolveAssignmentToJob(assignment, jobs);
+      if (jobNum) scheduled.add(jobNum);
     }
   }
+  return scheduled;
+}
 
-  return false;
+function isScheduledCurrently(job: any, scheduleData: any, jobs: any[]): boolean {
+  const scheduledNums = getScheduledJobNumbers(scheduleData, jobs);
+  return scheduledNums.has(job.Job_Number || '');
 }
 
 
@@ -458,15 +477,15 @@ export default async function MasterDashboard() {
 
   // ── Scheduled Jobs State Engine ──────────────────────────────────────────
   // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
-  const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData));
+  const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData, jobs));
 
   // On schedule this week but no field report yet
   const scheduledNotMobilized = jobs.filter((j: any) =>
-    isScheduledCurrently(j, scheduleData) && !reportMap[j.Job_Number]
+    isScheduledCurrently(j, scheduleData, jobs) && !reportMap[j.Job_Number]
   );
 
   // Not on current schedule window
-  const upcomingJobs = jobs.filter((j: any) => !isScheduledCurrently(j, scheduleData));
+  const upcomingJobs = jobs.filter((j: any) => !isScheduledCurrently(j, scheduleData, jobs));
 
 
   const totalPortfolio = jobs.reduce((sum: number, j: any) => sum + (j.Contract_Amount || 0), 0);
