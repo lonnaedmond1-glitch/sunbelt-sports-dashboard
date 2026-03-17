@@ -46,12 +46,41 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
 }
 
 async function getSamsaraData() {
+  const SAMSARA_API_KEY = process.env.SAMSARA_API_KEY || '';
+  if (!SAMSARA_API_KEY) return { vehicles: [], crews: [], configured: false };
   try {
-    const res = await fetch(`${getBaseUrl()}/api/telematics/samsara`, { cache: 'no-store' });
-    if (!res.ok) return { vehicles: [], crews: [], configured: false };
-    return await res.json();
+    const headers = { Authorization: `Bearer ${SAMSARA_API_KEY}`, 'Content-Type': 'application/json' };
+    const KEY_NAMES = ['jeff', 'david', 'lowboy', 'foreman', 'dan lane', 'jose'];
+
+    const [vehicleRes, driverRes] = await Promise.all([
+      fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 60 } }),
+      fetch('https://api.samsara.com/fleet/drivers?driverActivationStatus=active', { headers, next: { revalidate: 300 } }),
+    ]);
+
+    const vehicles = vehicleRes.ok
+      ? ((await vehicleRes.json()).data || [])
+          .map((v: any) => ({
+            id: v.id, name: v.name,
+            lat: v.location?.latitude, lng: v.location?.longitude,
+            speed: v.location?.speed || 0, heading: v.location?.heading || 0,
+            address: v.location?.reverseGeo?.formattedLocation || '',
+            status: 'active', driver: v.staticAssignedDriver?.name || 'Unassigned',
+          }))
+          .filter((v: any) => v.lat && v.lng)
+          .filter((v: any) => KEY_NAMES.some(k => (v.name || '').toLowerCase().includes(k)))
+      : [];
+
+    const crews = driverRes.ok
+      ? ((await driverRes.json()).data || []).map((d: any) => ({
+          id: d.id, name: d.name, phone: d.phone || '',
+          status: d.eldExempt ? 'exempt' : 'on_duty',
+        }))
+      : [];
+
+    return { vehicles, crews, configured: true, timestamp: new Date().toISOString() };
   } catch { return { vehicles: [], crews: [], configured: false }; }
 }
+
 
 async function getCrossCheckData() {
   try {
