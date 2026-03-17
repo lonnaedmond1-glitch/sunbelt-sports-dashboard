@@ -70,24 +70,66 @@ export async function fetchLiveJobs() {
     if (!response.ok) return [];
     const csvText = await response.text();
     const lines = csvText.split('\r\n').filter(l => l.trim());
+    if (lines.length < 2) return [];
+
+    // Header-based column lookup (resilient to column reordering)
+    const headerCols = parseCSVLine(lines[0]);
+    const hdr: Record<string, number> = {};
+    headerCols.forEach((h, i) => {
+      const clean = h.replace(/\n/g, ' ').trim().toLowerCase();
+      hdr[clean] = i;
+    });
+
+    // Find column indices by header name (case-insensitive, flexible matching)
+    const col = (name: string): number => {
+      // Exact match first
+      if (hdr[name.toLowerCase()] !== undefined) return hdr[name.toLowerCase()];
+      // Partial match
+      const key = Object.keys(hdr).find(k => k.includes(name.toLowerCase()));
+      return key !== undefined ? hdr[key] : -1;
+    };
+
+    const iJobNum = col('job number');
+    const iCoords = col('coordinates');
+    const iState = col('state');
+    const iStatus = col('contract status');
+    const iStart = col('pending start');
+    const iFinish = col('finish');
+    const iGC = col('contractor');
+    const iContact = col('contractor scheduling');
+    const iPM = col('pm');
+    const iAmount = col('contract amount');
+    const iBilled = col('actual to date');
+    const iPct = col('% complete');
+    const iField = col('field events');
+    const iTrack = col('track surface');
+    const iMicromill = col('micromill');
+
+    // Job Name: check "job name" first, then "unhide", then fallback to col 1
+    let iName = col('job name');
+    if (iName < 0) iName = col('unhide');
+    if (iName < 0) iName = 2; // last resort
+
+    const g = (cols: string[], idx: number): string => (idx >= 0 && idx < cols.length) ? (cols[idx]?.trim() || '') : '';
+
     return lines.slice(2).map(line => {
       const cols = parseCSVLine(line);
-      const jobNumber = cols[0]?.trim();
+      const jobNumber = g(cols, iJobNum);
       if (!jobNumber || !jobNumber.match(/^\d{2}-\d{3}/)) return null;
-      const coordsRaw = cols[2]?.replace(/"/g, '').trim();
+      const coordsRaw = g(cols, iCoords).replace(/"/g, '');
       let lat = '', lng = '';
       if (coordsRaw) { const parts = coordsRaw.split(','); lat = parts[0]?.trim() || ''; lng = parts[1]?.trim() || ''; }
       return {
-        Job_Number: jobNumber, Job_Name: cols[1]?.trim() || '', Lat: lat, Lng: lng,
-        State: cols[3]?.trim() || '', Status: cols[5]?.trim() || 'Pending',
-        Start_Date: cols[6]?.trim() || '', Finish_Date: cols[7]?.trim() || '',
-        General_Contractor: cols[8]?.trim() || '', Point_Of_Contact: cols[9]?.trim() || '',
-        Project_Manager: cols[10]?.trim() || '',
-        Contract_Amount: parseFloat((cols[13] || '0').replace(/[$,\s]/g, '')) || 0,
-        Billed_To_Date: parseFloat((cols[14] || '0').replace(/[$,\s]/g, '')) || 0,
-        Pct_Complete: parseFloat((cols[16] || '0%').replace('%', '').trim()) || 0,
-        Location: cols[3]?.trim() || '',
-        Field_Events: cols[18]?.trim() || '', Track_Surface: cols[20]?.trim() || '', Micromill: cols[22]?.trim() || '',
+        Job_Number: jobNumber, Job_Name: g(cols, iName), Lat: lat, Lng: lng,
+        State: g(cols, iState), Status: g(cols, iStatus) || 'Pending',
+        Start_Date: g(cols, iStart), Finish_Date: g(cols, iFinish),
+        General_Contractor: g(cols, iGC), Point_Of_Contact: g(cols, iContact),
+        Project_Manager: g(cols, iPM),
+        Contract_Amount: parseFloat((g(cols, iAmount) || '0').replace(/[$,\s]/g, '')) || 0,
+        Billed_To_Date: parseFloat((g(cols, iBilled) || '0').replace(/[$,\s]/g, '')) || 0,
+        Pct_Complete: parseFloat((g(cols, iPct) || '0%').replace('%', '').trim()) || 0,
+        Location: g(cols, iState),
+        Field_Events: g(cols, iField), Track_Surface: g(cols, iTrack), Micromill: g(cols, iMicromill),
       };
     }).filter(Boolean);
   } catch { return []; }
