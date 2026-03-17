@@ -281,22 +281,27 @@ function computeRisks(
   const estMinute = eastNow.getMinutes();
   const timeStr12 = `${estHour > 12 ? estHour - 12 : estHour || 12}:${estMinute.toString().padStart(2, '0')} ${estHour >= 12 ? 'PM' : 'AM'}`;
 
-  // ── CONDITION 1: Missing Field Report for Scheduled Job ────────────────
-  if (estHour >= 10) {
-    const todayAssignments = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
-    if (todayAssignments) {
-      for (const assignment of (todayAssignments.assignments || [])) {
-        if (assignment.decoded?.isOff) continue;
-        const crewName = assignment.crew;
-        const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
-        const matchedJob = scheduledJobs.find((j: any) => {
-          if (!j.Job_Name) return false;
-          const jName = j.Job_Name.toLowerCase();
-          return jName.length > 4 && raw.includes(jName.split(' ')[0]);
-        });
-        if (matchedJob && !reportMap[matchedJob.Job_Number]) {
-          risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). None submitted by ${timeStr12}. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
-        }
+  // ── CONDITION 1: Missing Field Report from YESTERDAY's schedule ─────────
+  const yesterdayDate = new Date(eastNow);
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
+  const allDays = [
+    ...(scheduleData?.currentWeek?.days || []),
+    ...(((scheduleData as any)?.previousWeek?.days) || []),
+  ];
+  const yesterdaySchedule = allDays.find((d: any) => d.date === yesterdayStr);
+  if (yesterdaySchedule) {
+    for (const assignment of (yesterdaySchedule.assignments || [])) {
+      if (assignment.decoded?.isOff) continue;
+      const crewName = assignment.crew;
+      const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+      const matchedJob = scheduledJobs.find((j: any) => {
+        if (!j.Job_Name) return false;
+        const jName = j.Job_Name.toLowerCase();
+        return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+      });
+      if (matchedJob && !reportMap[matchedJob.Job_Number]) {
+        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
       }
     }
   }
