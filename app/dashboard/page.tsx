@@ -92,7 +92,10 @@ async function getCrossCheckData() {
 
 async function getWeatherAlerts() {
   const THRESHOLD = 40; // ≥40% rain = operational risk
-  const todayISO = new Date().toISOString().split('T')[0];
+  // Use Eastern time — UTC can be next day after 8PM EDT
+  const eastNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
+
   try {
     const jobs = await fetchLiveJobs();
     // Dedupe locations
@@ -219,7 +222,10 @@ function computeRisks(
 
   const risks: { level: 'critical' | 'warning' | 'info'; job?: string; message: string }[] = [];
   const now = new Date();
-  const todayISO = now.toISOString().split('T')[0];
+  // Use Eastern time — UTC can flip to next day after 8PM EDT
+  const eastNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
+
   // EST offset: UTC-5 (standard) / UTC-4 (daylight)
   const estHour = now.getUTCHours() - 4; // approximate EDT
 
@@ -274,9 +280,11 @@ function computeRisks(
   }
 
   // ── CONDITION 4: Weather Risk (≥40% rain during working hours) ───────────
-  const threeDaysOut = new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0];
+  // Look back 1 day (today in EST may already be tomorrow in UTC) and forward 3 days
+  const yesterdayISO = new Date(eastNow.getTime() - 86400000).toISOString().split('T')[0];
+  const threeDaysOut = new Date(eastNow.getTime() + 3 * 86400000).toISOString().split('T')[0];
   scheduledWeatherAlerts
-    .filter((a: any) => a.date >= todayISO && a.date <= threeDaysOut)
+    .filter((a: any) => a.date >= yesterdayISO && a.date <= threeDaysOut)
     .slice(0, 8)
     .forEach((wx: any) => {
       const lvl = (wx.isToday || wx.severity === 'critical' || (wx.precipProb || 0) >= 70) ? 'critical' as const : 'warning' as const;
