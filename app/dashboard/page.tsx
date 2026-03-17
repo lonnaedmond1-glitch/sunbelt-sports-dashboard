@@ -50,7 +50,18 @@ async function getSamsaraData() {
   if (!SAMSARA_API_KEY) return { vehicles: [], crews: [], configured: false };
   try {
     const headers = { Authorization: `Bearer ${SAMSARA_API_KEY}`, 'Content-Type': 'application/json' };
-    const KEY_NAMES = ['jeff', 'david', 'lowboy', 'foreman', 'dan lane', 'jose'];
+    const KEY_NAMES = [
+      'alex',      // Alex Sifuentes
+      'david',     // David Blaylock + David Moctezuma
+      'jeff',      // Jeff Reece
+      'juan',      // Juan De Lara
+      'pedro',     // Pedro De Lara
+      'julio',     // Julio Lopez
+      'martin',    // Martin De Lara
+      'rosendo',   // Rosendo Rubio
+      'sergio',    // Sergio Sifuentes
+    ];
+
 
     const [vehicleRes, driverRes] = await Promise.all([
       fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 60 } }),
