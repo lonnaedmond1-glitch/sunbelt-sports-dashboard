@@ -19,6 +19,7 @@ interface JobTabsProps {
   fieldReportFeed: any[];
   vlAssets: any[];
   fleetAssets: { equipment: any[]; vehicles: any[] };
+  liveRentals: any[];
 }
 
 const TABS = [
@@ -83,7 +84,7 @@ function extractDriveFileId(url: string): string | null {
 export default function JobTabs({
   jobNumber, job, report, prep, rentals, changeOrders, scorecard,
   jobFolder, vehicles, weatherDays, asphaltCredit, baseCredit, hasCreditFlag,
-  fieldReportFeed, vlAssets, fleetAssets,
+  fieldReportFeed, vlAssets, fleetAssets, liveRentals,
 }: JobTabsProps) {
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
@@ -375,60 +376,88 @@ export default function JobTabs({
               )}
             </div>
 
-            {/* Box B: Active Rentals — from Fleet Sheet rental items + CSV fallback */}
-            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
-                  💳 Active Rentals
-                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">SUNBELT · UNITED · HERC</span>
-                </h2>
-              </div>
-              {rentals.length > 0 ? (
-                <div className="space-y-3">
-                  {(() => {
-                    const totalDailyBurn = rentals.reduce((sum, r) => sum + (parseFloat(r.Daily_Rate) || 0), 0);
-                    const totalBurnToDate = rentals.reduce((sum, r) => sum + ((parseInt(r.Days_On_Site) || 0) * (parseFloat(r.Daily_Rate) || 0)), 0);
-                    return (
-                      <div className="flex gap-3 mb-4">
-                        <div className="flex-1 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/60">Daily Burn Rate</p>
-                          <p className="text-xl font-black text-amber-400">${totalDailyBurn.toLocaleString()}<span className="text-sm">/day</span></p>
-                        </div>
-                        <div className="flex-1 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-red-400/60">Total Burn</p>
-                          <p className="text-xl font-black text-red-400">${totalBurnToDate.toLocaleString()}</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  {rentals.map((r, i) => {
-                    const days = parseInt(r.Days_On_Site) || 0;
-                    const rate = parseFloat(r.Daily_Rate) || 0;
-                    const burn = days * rate;
-                    const isOverdue = days > 30;
-                    return (
-                      <div key={i} className={`p-4 rounded-xl border ${isOverdue ? 'bg-red-500/5 border-red-500/20' : 'bg-black/20 border-white/5'}`}>
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="text-sm font-black text-white">{r.Equipment_Type}</p>
-                            <p className="text-xs text-white/40 mt-0.5">{r.Vendor}</p>
+            {/* Box B: Active Rentals — from Gmail-synced sheets, falls back to CSV */}
+            {(() => {
+              // Use live rentals if available, otherwise fall back to CSV
+              const activeRentals = liveRentals.length > 0 ? liveRentals : rentals.map(r => ({
+                vendor: r.Vendor || 'Unknown',
+                equipmentType: r.Equipment_Type || '',
+                dayRate: parseFloat(r.Daily_Rate) || 0,
+                weekRate: 0,
+                fourWeekRate: 0,
+                daysOnRent: parseInt(r.Days_On_Site) || 0,
+                dateRented: '',
+                jobName: '',
+                contractNumber: '',
+              }));
+              const isLive = liveRentals.length > 0;
+              const totalDailyBurn = activeRentals.reduce((sum, r) => sum + (r.dayRate || 0), 0);
+              const totalBurnToDate = activeRentals.reduce((sum, r) => sum + ((r.daysOnRent || 0) * (r.dayRate || 0)), 0);
+
+              return (
+                <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
+                      💳 Active Rentals
+                      <span className={`ml-2 text-[9px] font-bold ${isLive ? 'text-[#20BC64]/60' : 'text-amber-400/60'}`}>
+                        {isLive ? 'LIVE FROM GMAIL' : 'STATIC DATA'}
+                      </span>
+                    </h2>
+                    {activeRentals.length > 0 && (
+                      <span className="text-[10px] font-black px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        {activeRentals.length} Units
+                      </span>
+                    )}
+                  </div>
+                  {activeRentals.length > 0 ? (
+                    <div className="space-y-3">
+                      {totalDailyBurn > 0 && (
+                        <div className="flex gap-3 mb-4">
+                          <div className="flex-1 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/60">Daily Burn Rate</p>
+                            <p className="text-xl font-black text-amber-400">${totalDailyBurn.toLocaleString()}<span className="text-sm">/day</span></p>
                           </div>
-                          <div className="text-right ml-3 shrink-0">
-                            <p className="text-lg font-black text-amber-400">${rate.toLocaleString()}<span className="text-xs text-amber-400/50">/day</span></p>
-                            <p className={`text-xs font-bold ${isOverdue ? 'text-red-400' : 'text-white/30'}`}>{days}d · ${burn.toLocaleString()} total</p>
+                          <div className="flex-1 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-red-400/60">Total Burn</p>
+                            <p className="text-xl font-black text-red-400">${totalBurnToDate.toLocaleString()}</p>
                           </div>
                         </div>
-                        {isOverdue && (
-                          <p className="text-[10px] text-red-400 font-black mt-2">⚠️ OVERDUE — {days - 30} days past 30-day mark. Confirm off-rent.</p>
-                        )}
-                      </div>
-                    );
-                  })}
+                      )}
+                      {activeRentals.map((r: any, i: number) => {
+                        const isOverdue = r.daysOnRent > 30;
+                        const vendorColor = r.vendor?.includes('Sunbelt') ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-green-400 bg-green-500/10 border-green-500/20';
+                        return (
+                          <div key={i} className={`p-4 rounded-xl border ${isOverdue ? 'bg-red-500/5 border-red-500/20' : 'bg-black/20 border-white/5'}`}>
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <p className="text-sm font-black text-white">{r.equipmentType}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${vendorColor}`}>{r.vendor}</span>
+                                  {r.contractNumber && <span className="text-[10px] text-white/30">#{r.contractNumber}</span>}
+                                </div>
+                              </div>
+                              <div className="text-right ml-3 shrink-0">
+                                {r.dayRate > 0 && <p className="text-lg font-black text-amber-400">${r.dayRate.toLocaleString()}<span className="text-xs text-amber-400/50">/day</span></p>}
+                                {r.weekRate > 0 && <p className="text-xs text-white/30">${r.weekRate.toLocaleString()}/wk</p>}
+                                <p className={`text-xs font-bold ${isOverdue ? 'text-red-400' : 'text-white/30'}`}>
+                                  {r.daysOnRent > 0 ? `${r.daysOnRent}d on rent` : ''}
+                                  {r.dateRented ? ` · since ${r.dateRented}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                            {isOverdue && (
+                              <p className="text-[10px] text-red-400 font-black mt-2">⚠️ OVERDUE — {r.daysOnRent - 30} days past 30-day mark. Confirm off-rent.</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-white/20 text-sm py-4 text-center">No rental equipment data. Set up Gmail sync to auto-pull from Sunbelt & United.</p>
+                  )}
                 </div>
-              ) : (
-                <p className="text-white/20 text-sm py-4 text-center">No rental equipment on file for this job.</p>
-              )}
-            </div>
+              );
+            })()}
           </div>
         )}
 

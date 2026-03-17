@@ -225,6 +225,112 @@ export function fetchFleetAssets() {
   });
 }
 
+// ──────────────────────────── LIVE RENTALS (Gmail → Google Sheets) ─────────────
+
+// These tab GIDs will be auto-created by the Gmail Apps Script.
+// Until then, we try to fetch by tab name using gid=0 as placeholder.
+// The Apps Script writes to tabs named "Sunbelt Rentals Live" and "United Rentals Live".
+
+async function fetchSheetByName(sheetId: string, tabName: string): Promise<string[][]> {
+  // Try fetching export with tab name — Google Sheets export by gid only,
+  // so we fetch the full spreadsheet metadata to find the gid dynamically.
+  // Simpler approach: export entire spreadsheet and filter, or use known gids.
+  // For now, we'll export specific gids once user runs the setup.
+  try {
+    // Use a direct sheets URL with the sheet name encoded
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      next: { revalidate: 300 },
+    });
+    if (!res.ok) return [];
+    const text = await res.text();
+    return parseCSV(text);
+  } catch { return []; }
+}
+
+export function fetchLiveRentals() {
+  return cached('liveRentals', 5 * 60 * 1000, async () => {
+    try {
+      const [sunbeltRows, unitedRows] = await Promise.all([
+        fetchSheetByName(FLEET_SHEET_ID, 'Sunbelt Rentals Live'),
+        fetchSheetByName(FLEET_SHEET_ID, 'United Rentals Live'),
+      ]);
+
+      const rentals: any[] = [];
+
+      // Parse Sunbelt tab (standardized columns from our Apps Script):
+      // Vendor, Contract_Number, Branch, Job_Name, Job_Location, Job_City, State,
+      // Ordered_By, Equipment_Type, Class_Name, Day_Rate, Week_Rate, FourWeek_Rate,
+      // Date_Rented, Days_On_Rent, Pickup_Date, Email_Date, Synced_At
+      if (sunbeltRows.length > 1) {
+        const headers = sunbeltRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+        for (let i = 1; i < sunbeltRows.length; i++) {
+          const r = sunbeltRows[i];
+          if (!r || r.length < 5) continue;
+          const getCol = (name: string) => {
+            const idx = headers.indexOf(name);
+            return idx >= 0 ? (r[idx] || '').trim() : '';
+          };
+          const equipType = getCol('equipment_type') || getCol('class_name');
+          if (!equipType) continue;
+          rentals.push({
+            vendor: 'Sunbelt Rentals',
+            contractNumber: getCol('contract_number'),
+            jobName: getCol('job_name'),
+            jobLocation: getCol('job_location'),
+            jobCity: getCol('job_city'),
+            equipmentType: equipType,
+            className: getCol('class_name'),
+            dayRate: parseMoney(getCol('day_rate')),
+            weekRate: parseMoney(getCol('week_rate')),
+            fourWeekRate: parseMoney(getCol('fourweek_rate')),
+            dateRented: getCol('date_rented'),
+            daysOnRent: parseInt(getCol('days_on_rent')) || 0,
+            pickupDate: getCol('pickup_date'),
+            emailDate: getCol('email_date'),
+          });
+        }
+      }
+
+      // Parse United Rentals tab (columns may vary — we handle dynamically)
+      if (unitedRows.length > 1) {
+        const headers = unitedRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+        for (let i = 1; i < unitedRows.length; i++) {
+          const r = unitedRows[i];
+          if (!r || r.every(c => !c?.trim())) continue;
+          const getCol = (name: string) => {
+            const idx = headers.findIndex(h => h.includes(name));
+            return idx >= 0 ? (r[idx] || '').trim() : '';
+          };
+          const equipType = getCol('description') || getCol('equipment') || getCol('class') || r[2]?.trim() || '';
+          if (!equipType) continue;
+          rentals.push({
+            vendor: 'United Rentals',
+            contractNumber: getCol('contract') || getCol('order') || r[0]?.trim() || '',
+            jobName: getCol('job') || getCol('site') || '',
+            jobLocation: getCol('location') || getCol('address') || '',
+            jobCity: '',
+            equipmentType: equipType,
+            className: '',
+            dayRate: parseMoney(getCol('daily') || getCol('day_rate') || getCol('rate') || ''),
+            weekRate: parseMoney(getCol('weekly') || getCol('week_rate') || ''),
+            fourWeekRate: parseMoney(getCol('monthly') || getCol('4_week') || ''),
+            dateRented: getCol('start') || getCol('rent_date') || getCol('date') || '',
+            daysOnRent: parseInt(getCol('days')) || 0,
+            pickupDate: '',
+            emailDate: getCol('email_date') || '',
+          });
+        }
+      }
+
+      return rentals;
+    } catch {
+      return [];
+    }
+  });
+}
+
 // ──────────────────────────── VISIONLINK ASSETS (CSV) ────────────────────────────
 
 export async function fetchVisionLinkAssets() {
