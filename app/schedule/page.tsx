@@ -5,7 +5,7 @@ import { fetchScheduleData, fetchLiveJobs } from '@/lib/sheets-data';
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 120;
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;

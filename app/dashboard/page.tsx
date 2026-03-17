@@ -5,7 +5,7 @@ import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData } from '@/lib/sheets-data';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 120; // ISR: regenerate page every 2 minutes instead of every request
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -93,33 +93,69 @@ async function getSamsaraData() {
 }
 
 
-async function getCrossCheckData() {
-  try {
-    const res = await fetch(`${getBaseUrl()}/api/cross-check/samsara-reports`, { cache: 'no-store' });
-    if (!res.ok) return { vehiclesOnSite: [], onSiteNoReport: [], scheduledNoActivity: [], configured: false };
-    return await res.json();
-  } catch { return { vehiclesOnSite: [], onSiteNoReport: [], scheduledNoActivity: [], configured: false }; }
+// Cross-check is now inlined — no more self-referencing fetch
+function computeCrossCheck(vehicles: any[], jobs: any[], reportMap: Record<string, any>) {
+  const PROXIMITY_MILES = 0.5;
+  const geoJobs = jobs
+    .filter((j: any) => j.Lat && j.Lng && !isNaN(parseFloat(j.Lat)))
+    .map((j: any) => ({
+      Job_Number: j.Job_Number, Job_Name: j.Job_Name,
+      lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
+      PM: j.Project_Manager, Status: j.Status,
+      Pct_Complete: j.Pct_Complete || 0, Start_Date: j.Start_Date,
+      hasReport: !!reportMap[j.Job_Number],
+    }));
+
+  const vehiclesOnSite: any[] = [];
+  const onSiteNoReport: any[] = [];
+  const scheduledNoActivity: any[] = [];
+
+  for (const vehicle of vehicles) {
+    if (!vehicle.lat || !vehicle.lng) continue;
+    for (const job of geoJobs) {
+      const dist = haversineDistance(vehicle.lat, vehicle.lng, job.lat, job.lng);
+      if (dist <= PROXIMITY_MILES) {
+        const match = { vehicle: vehicle.name, vehicleAddress: vehicle.address, job: job.Job_Number, jobName: job.Job_Name, pm: job.PM, distance: Math.round(dist * 5280), hasReport: job.hasReport };
+        vehiclesOnSite.push(match);
+        if (!job.hasReport) onSiteNoReport.push(match);
+      }
+    }
+  }
+
+  const today = new Date();
+  for (const job of geoJobs) {
+    if (!job.Start_Date) continue;
+    const parts = job.Start_Date.split('/');
+    if (parts.length < 3) continue;
+    let year = parseInt(parts[2]); if (year < 100) year += 2000;
+    const startDate = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
+    if (isNaN(startDate.getTime()) || startDate > today) continue;
+    const hasVehicle = vehiclesOnSite.some(v => v.job === job.Job_Number);
+    if (!hasVehicle && !job.hasReport) {
+      scheduledNoActivity.push({ job: job.Job_Number, jobName: job.Job_Name, pm: job.PM });
+    }
+  }
+
+  return { vehiclesOnSite, onSiteNoReport, scheduledNoActivity, configured: vehicles.length > 0 };
 }
 
-async function getWeatherAlerts() {
-  const THRESHOLD = 40; // ≥40% rain = operational risk
-  // Use Eastern time — UTC can be next day after 8PM EDT
+async function getWeatherAlerts(jobsPreloaded: any[]) {
+  const THRESHOLD = 40;
   const eastNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
 
   try {
-    const jobs = await fetchLiveJobs();
-    // Dedupe locations
+    // Dedupe locations — only fetch once per unique lat/lng rounded to 1 decimal
     const seen = new Set<string>();
     const locationJobs: { lat: number; lng: number; job: any }[] = [];
-    for (const job of jobs) {
-      if (!job) continue;
-      if (!job.Lat || !job.Lng) continue;
+    for (const job of jobsPreloaded) {
+      if (!job?.Lat || !job?.Lng) continue;
       const lat = parseFloat(job.Lat);
       const lng = parseFloat(job.Lng);
       if (isNaN(lat) || isNaN(lng)) continue;
       const key = `${lat.toFixed(1)},${lng.toFixed(1)}`;
-      if (!seen.has(key)) seen.add(key);
+      if (seen.has(key)) continue; // skip duplicate coords
+      seen.add(key);
       locationJobs.push({ lat, lng, job });
     }
 
@@ -331,13 +367,21 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, crossCheck, weatherAlerts, scheduleData] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
-    getCrossCheckData(),
-    getWeatherAlerts(),
     fetchScheduleData(),
+  ]);
+
+  // Build report map first — needed by both crossCheck and weather
+  const reportMap: Record<string, any> = {};
+  for (const r of fieldReports) reportMap[r.Job_Number] = r;
+
+  // Run weather + cross-check with pre-loaded data (eliminates 4+ duplicate fetches)
+  const [weatherAlerts, crossCheck] = await Promise.all([
+    getWeatherAlerts(jobs),
+    Promise.resolve(computeCrossCheck(samsara.vehicles || [], jobs, reportMap)),
   ]);
 
   // Load local estimates for risk engine
@@ -357,8 +401,7 @@ export default async function MasterDashboard() {
     });
   } catch { prepBoard = []; }
 
-  const reportMap: Record<string, any> = {};
-  for (const r of fieldReports) reportMap[r.Job_Number] = r;
+
 
   // ── Scheduled Jobs State Engine ──────────────────────────────────────────
   // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today

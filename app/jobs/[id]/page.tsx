@@ -4,7 +4,7 @@ import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, 
 import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed, fetchVisionLinkAssets } from '@/lib/sheets-data';
 import JobTabs from '@/components/JobTabs';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 120;
 
 async function getLiveJobData(jobNumber: string) {
   try {

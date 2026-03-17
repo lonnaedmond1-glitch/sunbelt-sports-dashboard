@@ -58,12 +58,24 @@ function parseMoney(val: string): number {
   return parseFloat(val.replace(/[$,\s"]/g, '')) || 0;
 }
 
+// ──────────────────────────── IN-MEMORY CACHE ─────────────────────────────────
+// Prevents redundant Google Sheets API calls across concurrent SSR renders.
+// TTL = 5 minutes. Wiped on cold start / new deploy.
+const _cache = new Map<string, { data: any; expires: number }>();
+function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  const entry = _cache.get(key);
+  if (entry && entry.expires > now) return Promise.resolve(entry.data as T);
+  return fn().then(data => { _cache.set(key, { data, expires: now + ttlMs }); return data; });
+}
+
 // ──────────────────────────── JOBS (Google Sheets) ────────────────────────────
 
 const JOB_LIST_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
 const JOB_LIST_GID = '623969002';
 
-export async function fetchLiveJobs() {
+export function fetchLiveJobs() {
+  return cached('liveJobs', 5 * 60 * 1000, async () => {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${JOB_LIST_SHEET_ID}/export?format=csv&gid=${JOB_LIST_GID}`;
     const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
@@ -133,6 +145,7 @@ export async function fetchLiveJobs() {
       };
     }).filter(Boolean);
   } catch { return []; }
+  });
 }
 
 // ──────────────────────────── VISIONLINK ASSETS (CSV) ────────────────────────────
