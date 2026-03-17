@@ -18,6 +18,7 @@ interface JobTabsProps {
   hasCreditFlag: boolean;
   fieldReportFeed: any[];
   vlAssets: any[];
+  fleetAssets: { equipment: any[]; vehicles: any[] };
 }
 
 const TABS = [
@@ -82,7 +83,7 @@ function extractDriveFileId(url: string): string | null {
 export default function JobTabs({
   jobNumber, job, report, prep, rentals, changeOrders, scorecard,
   jobFolder, vehicles, weatherDays, asphaltCredit, baseCredit, hasCreditFlag,
-  fieldReportFeed, vlAssets,
+  fieldReportFeed, vlAssets, fleetAssets,
 }: JobTabsProps) {
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
@@ -282,64 +283,79 @@ export default function JobTabs({
               ) : <p className="text-white/20 text-sm">Awaiting Live Data — No supply chain data on file.</p>}
             </div>
 
-            {/* Box A: Owned Assets (VisionLink / Samsara) */}
+            {/* Box A: Fleet Equipment (Live from Google Sheet) */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
-                  📡 Owned Assets On Site
-                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">VISIONLINK + SAMSARA</span>
+                  🚜 Fleet Equipment
+                  <span className="ml-2 text-[9px] font-bold text-[#20BC64]/60">LIVE FROM FLEET SHEET</span>
                 </h2>
-                {vehicles.length > 0 && (
+                {fleetAssets.equipment.length > 0 && (
                   <span className="text-[10px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                    {vehicles.length} Tracked
+                    {fleetAssets.equipment.length} Assets
                   </span>
                 )}
               </div>
 
-              {/* VisionLink Fleet Section */}
-              {hasVisionLinkData ? (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-400/60">VISIONLINK Fleet — {vlAssets.length} Assets</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
-                    {vlAssets.map((a: any, i: number) => {
-                      const isReporting = !!a.Last_Reported;
-                      const icon = a.Make === 'BOBCAT' ? '🏗️' : a.Make === 'LEEBOY' ? '🛤️' : a.Make === 'SAKAI' ? '🔨' : a.Make === 'INTERNATIONAL' ? '🚛' : '🚜';
-                      return (
-                        <div key={i} className={`flex items-center gap-2 p-2.5 rounded-lg border transition-all ${
-                          isReporting ? 'bg-black/20 border-emerald-500/10' : 'bg-black/10 border-white/5 opacity-60'
-                        }`}>
-                          <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center text-sm shrink-0">{icon}</div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-white truncate">#{a.Asset_ID} · {a.Make} {a.Model}</p>
-                            <p className="text-[10px] text-white/30 truncate">{a.Hours > 0 ? `${a.Hours.toLocaleString()} hrs` : 'No data'}</p>
+              {fleetAssets.equipment.length > 0 ? (
+                <div className="space-y-2">
+                  {/* Owned Equipment */}
+                  {(() => {
+                    const owned = fleetAssets.equipment.filter(e => !e.isRental);
+                    const rented = fleetAssets.equipment.filter(e => e.isRental);
+                    return (
+                      <>
+                        {owned.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-2">Owned ({owned.length})</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                              {owned.map((eq, i) => (
+                                <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-black/20 border border-white/5">
+                                  <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/15 flex items-center justify-center text-sm shrink-0">
+                                    {eq.category?.includes('PAVER') ? '🛤️' : eq.category?.includes('ROLLER') ? '🔨' : eq.category?.includes('TRUCK') ? '🚛' : eq.category?.includes('TRAILER') ? '🚚' : '🚜'}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-white truncate">{eq.displayName}</p>
+                                    <p className="text-[10px] text-white/30 truncate">
+                                      {eq.category}{eq.assetNum ? ` · #${eq.assetNum}` : ''}{eq.driver ? ` · ${eq.driver}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 ${isReporting ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                            {isReporting ? '● LIVE' : '○ OFF'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        )}
+                        {rented.length > 0 && (
+                          <div>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-2">Rented ({rented.length})</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {rented.map((eq, i) => (
+                                <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/15">
+                                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center text-sm shrink-0">💳</div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-white truncate">{eq.displayName}</p>
+                                    <p className="text-[10px] text-amber-400/60 truncate">
+                                      RENTAL · {eq.assetNum}{eq.description ? ` · ${eq.description}` : ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               ) : (
-                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15 mb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">🔗</span>
-                    <div>
-                      <p className="text-xs font-black text-amber-400">VisionLink — Pending API Provisioning</p>
-                      <p className="text-[10px] text-white/30 mt-0.5">Contact your Cat dealer to enable API access. Data scraped manually in the meantime.</p>
-                    </div>
-                  </div>
-                </div>
+                <p className="text-white/20 text-sm py-4 text-center">No fleet equipment data from sheet.</p>
               )}
 
-              {/* Samsara Lowboy / Vehicle Section */}
+              {/* Samsara Vehicles Near Site */}
               {vehicles.length > 0 && (
-                <div className="mt-3">
+                <div className="mt-4 pt-4 border-t border-white/5">
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">SAMSARA Vehicles — {vehicles.length} Near Site</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">SAMSARA — {vehicles.length} Near Site</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {vehicles.map((v: any, i: number) => (
@@ -357,25 +373,15 @@ export default function JobTabs({
                   </div>
                 </div>
               )}
-              {!hasVisionLinkData && vehicles.length === 0 && (
-                <div className="text-center py-4">
-                  <p className="text-white/20 text-sm">No equipment data available.</p>
-                </div>
-              )}
             </div>
 
-            {/* Box B: Active Rentals — STRICTLY SEPARATE */}
+            {/* Box B: Active Rentals — from Fleet Sheet rental items + CSV fallback */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
-                  💳 Active Rentals On Site
-                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">RENTAL TRACKER</span>
+                  💳 Active Rentals
+                  <span className="ml-2 text-[9px] font-bold text-amber-400/60">SUNBELT · UNITED · HERC</span>
                 </h2>
-                {rentals.length > 0 && (
-                  <span className="text-[10px] font-black px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                    {rentals.length} Units
-                  </span>
-                )}
               </div>
               {rentals.length > 0 ? (
                 <div className="space-y-3">
@@ -420,7 +426,7 @@ export default function JobTabs({
                   })}
                 </div>
               ) : (
-                <p className="text-white/20 text-sm py-4 text-center">Awaiting Live Data — No rental equipment on file for this job.</p>
+                <p className="text-white/20 text-sm py-4 text-center">No rental equipment on file for this job.</p>
               )}
             </div>
           </div>

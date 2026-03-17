@@ -148,6 +148,83 @@ export function fetchLiveJobs() {
   });
 }
 
+// ──────────────────────────── FLEET ASSETS (Google Sheets) ─────────────────────
+
+const FLEET_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+const FLEET_ASSETS_GID = '852503706';   // Sports Fleet Assets tab
+const FLEET_VEHICLES_GID = '1839763446'; // Sports Vehicle Fleet tab
+
+export function fetchFleetAssets() {
+  return cached('fleetAssets', 5 * 60 * 1000, async () => {
+    try {
+      const [assetsRes, vehiclesRes] = await Promise.all([
+        fetch(`https://docs.google.com/spreadsheets/d/${FLEET_SHEET_ID}/export?format=csv&gid=${FLEET_ASSETS_GID}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 },
+        }),
+        fetch(`https://docs.google.com/spreadsheets/d/${FLEET_SHEET_ID}/export?format=csv&gid=${FLEET_VEHICLES_GID}`, {
+          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 },
+        }),
+      ]);
+
+      const equipment: any[] = [];
+      const vehicles: any[] = [];
+
+      // Parse Sports Fleet Assets (columns: [owner], Category, Asset#, Year, Make, Model, Driver, Serial, ESN, Description)
+      if (assetsRes.ok) {
+        const text = await assetsRes.text();
+        const rows = parseCSV(text);
+        if (rows.length > 1) {
+          for (let i = 1; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r || r.length < 7) continue;
+            const category = (r[2] || '').trim();
+            const assetNum = (r[3] || '').trim();
+            const year = (r[4] || '').trim();
+            const make = (r[5] || '').trim();
+            const model = (r[6] || '').trim();
+            const driver = (r[7] || '').trim();
+            const serial = (r[8] || '').trim();
+            const description = (r[10] || '').trim();
+            if (!category && !assetNum && !make) continue;
+            const isRental = /rent/i.test(assetNum) || /sunbelt|united rental/i.test(description);
+            equipment.push({
+              category, assetNum, year, make, model, driver, serial, description, isRental,
+              displayName: `${year ? year + ' ' : ''}${make} ${model}`.trim(),
+            });
+          }
+        }
+      }
+
+      // Parse Sports Vehicle Fleet (columns: [county/location], Vehicles, YR, Make, Model, Driver, VIN)
+      if (vehiclesRes.ok) {
+        const text = await vehiclesRes.text();
+        const rows = parseCSV(text);
+        if (rows.length > 1) {
+          for (let i = 1; i < rows.length; i++) {
+            const r = rows[i];
+            if (!r || r.length < 6) continue;
+            const location = (r[1] || '').trim();
+            const yr = (r[2] || '').trim();
+            const make = (r[3] || '').trim();
+            const model = (r[4] || '').trim();
+            const driver = (r[5] || '').trim();
+            const vin = (r[6] || '').trim();
+            if (!make && !model) continue;
+            vehicles.push({
+              location, year: yr, make, model, driver, vin,
+              displayName: `${yr ? yr + ' ' : ''}${make} ${model}`.trim(),
+            });
+          }
+        }
+      }
+
+      return { equipment, vehicles };
+    } catch {
+      return { equipment: [], vehicles: [] };
+    }
+  });
+}
+
 // ──────────────────────────── VISIONLINK ASSETS (CSV) ────────────────────────────
 
 export async function fetchVisionLinkAssets() {

@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed, fetchVisionLinkAssets } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed, fetchVisionLinkAssets, fetchFleetAssets } from '@/lib/sheets-data';
 import JobTabs from '@/components/JobTabs';
 
 export const revalidate = 120;
@@ -115,11 +115,12 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
     );
   }
 
-  const [weatherDays, vehicles, fieldReportFeed, vlAssets] = await Promise.all([
+  const [weatherDays, vehicles, fieldReportFeed, vlAssets, fleetAssets] = await Promise.all([
     getWeatherPeriods(job.Lat || '', job.Lng || ''),
     getNearbyVehicles(job.Lat || '', job.Lng || ''),
     fetchFieldReportFeed(jobNumber),
     fetchVisionLinkAssets(),
+    fetchFleetAssets(),
   ]);
 
   const report = liveReport || (csvReport ? {
@@ -193,6 +194,7 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
         hasCreditFlag={hasCreditFlag}
         fieldReportFeed={fieldReportFeed}
         vlAssets={vlAssets}
+        fleetAssets={fleetAssets}
       />
     </div>
   );
