@@ -395,8 +395,14 @@ export default async function SchedulePage() {
           </div>
           <div className="h-[400px]">
             <MapWrapper
-              jobs={jobLocations.map((j: any) => ({ Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0 }))}
-              vehicles={equipmentLocations.map((v: any) => ({ name: v.name, lat: v.lat, lng: v.lng, address: v.address }))}
+              jobs={jobLocations.map((j: any) => ({
+                Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
+                Status: 'Active', General_Contractor: '', Contract_Amount: 0
+              }))}
+              vehicles={equipmentLocations.map((v: any) => ({
+                id: v.name, name: v.name, lat: v.lat, lng: v.lng, address: v.address,
+                speed: 0, driver: '', status: 'active'
+              }))}
             />
           </div>
         </div>
