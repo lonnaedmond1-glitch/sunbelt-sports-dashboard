@@ -238,9 +238,6 @@ function resolveAssignmentToJob(assignment: any, jobs: any[]): string | null {
   let maxLen = 0;
   for (const j of jobs) {
     if (!j?.Job_Name) continue;
-    // VERY EXPLICIT OVERRIDE: Prevent vendor names from matching labor-only jobs
-    if (j.Job_Number === '30-001' && !matchTarget.includes('30-001')) continue;
-    
     const jName = j.Job_Name.toLowerCase().replace(/ paving| base| hs| \(.*\)/g, '').trim();
     if (jName.length > 4 && matchTarget.includes(jName) && jName.length > maxLen) {
       maxLen = jName.length;
@@ -337,7 +334,6 @@ function computeRisks(
       const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
       const matchedJob = scheduledJobs.find((j: any) => {
         if (!j.Job_Name) return false;
-        if (j.Job_Number === '30-001' && !jobRef.includes('30-001')) return false; // EXPLICIT SCRUGGS BLOCK
         const jName = j.Job_Name.toLowerCase();
         return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
@@ -425,7 +421,6 @@ function computeRisks(
         const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
         const scheduledJob = jobs.find((j: any) => {
           if (!j.Job_Name) return false;
-          if (j.Job_Number === '30-001' && !jobRef.includes('30-001')) return false; // EXPLICIT SCRUGGS BLOCK
           const jName = j.Job_Name.toLowerCase();
           return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
         });
@@ -545,7 +540,6 @@ export default async function MasterDashboard() {
       const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
       const matchedJob = jobs.find((j: any) => {
         if (!j.Job_Name) return false;
-        if (j.Job_Number === '30-001' && !jobRef.includes('30-001')) return false; // EXPLICIT SCRUGGS BLOCK
         const jName = j.Job_Name.toLowerCase();
         return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
