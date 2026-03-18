@@ -607,7 +607,7 @@ export default async function MasterDashboard() {
           <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
             <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Scheduled Jobs</p>
             <p className="text-4xl font-black text-[#20BC64]">{scheduledJobs.length}</p>
-            <p className="text-xs text-white/30 mt-1 leading-relaxed line-clamp-2">{scheduledJobNames.slice(0, 5).join(' · ') || 'None this week'}</p>
+            <p className="text-xs text-white/30 mt-1 leading-relaxed">{scheduledJobNames.slice(0, 8).join(' · ') || 'None this week'}</p>
           </div>
           {/* Portfolio Value */}
           <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
@@ -631,7 +631,7 @@ export default async function MasterDashboard() {
           <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
             <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Missing Reports</p>
             <p className={`text-4xl font-black ${missingReportJobs.length > 0 ? 'text-red-400' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
-            <p className="text-xs text-white/30 mt-1">{missingReportJobs.length > 0 ? 'From yesterday\u2019s schedule' : 'All yesterday\u2019s reports in'}</p>
+            <p className="text-xs text-white/30 mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' · ') : 'All yesterday\u2019s reports in'}</p>
           </div>
         </div>
 
