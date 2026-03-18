@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting } from '@/lib/sheets-data';
+import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchVisionLinkAssets } from '@/lib/sheets-data';
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
@@ -46,12 +46,20 @@ const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
-  const [schedule, weather, samsara, jobs, level10] = await Promise.all([
-    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(), getLevel10Data()
+  const [schedule, weather, samsara, jobs, level10, vlAssets] = await Promise.all([
+    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(), getLevel10Data(), fetchVisionLinkAssets()
   ]);
 
   const weatherAlerts = (weather.alerts || []).slice(0, 8);
   const vehicles = samsara.vehicles || [];
+
+  // Build set of scheduled job names from current + next week
+  const scheduledJobRefs = new Set<string>();
+  [...(schedule.currentWeek?.days || []), ...(schedule.nextWeek?.days || [])].forEach((d: any) =>
+    (d.assignments || []).forEach((a: any) => {
+      if (!a.decoded?.isOff && a.decoded?.jobRef) scheduledJobRefs.add(a.decoded.jobRef.toLowerCase());
+    })
+  );
 
   // Build weather by date lookup
   const weatherByDate: Record<string, any[]> = {};
@@ -68,16 +76,6 @@ export default async function SchedulePage() {
     if (forecasts.length === 0) return null;
     return forecasts.reduce((worst: any, f: any) => (!worst || f.precipProb > worst.precipProb) ? f : worst, null);
   };
-
-  // Equipment locations from Samsara
-  const equipmentLocations = vehicles.filter((v: any) => v.lat && v.lng).map((v: any) => ({
-    name: v.name, lat: v.lat, lng: v.lng, address: v.address || '',
-  }));
-
-  // Job locations for map
-  const jobLocations = jobs.filter((j: any) => j.Lat && j.Lng).map((j: any) => ({
-    jobNumber: j.Job_Number, name: j.Job_Name, lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
-  }));
 
   // Per-job weather icon lookup
   const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
@@ -100,32 +98,51 @@ export default async function SchedulePage() {
     return null;
   };
 
-  // Haversine for equipment grouping
-  const haversine = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    const R = 3959;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  };
+  // Job locations for map
+  const jobLocations = jobs.filter((j: any) => j.Lat && j.Lng).map((j: any) => ({
+    jobNumber: j.Job_Number, name: j.Job_Name, lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
+  }));
+  const fs = await import('fs');
+  const path = await import('path');
+  let rentalEquipment: { jobNumber: string; type: string; vendor: string; daysOnSite: number; dailyRate: number }[] = [];
+  try {
+    const csvPath = path.join(process.cwd(), 'data', 'Equipment_On_Rent.csv');
+    if (fs.existsSync(csvPath)) {
+      const csvText = fs.readFileSync(csvPath, 'utf-8');
+      const lines = csvText.split('\n').filter(l => l.trim());
+      if (lines.length > 1) {
+        rentalEquipment = lines.slice(1).map(line => {
+          const cols = line.split(',');
+          return {
+            jobNumber: cols[0]?.trim() || '',
+            type: cols[1]?.trim() || '',
+            vendor: cols[2]?.trim() || '',
+            daysOnSite: parseInt(cols[3]?.trim() || '0') || 0,
+            dailyRate: parseFloat(cols[5]?.trim() || '0') || 0,
+          };
+        }).filter(r => r.jobNumber && r.type);
+      }
+    }
+  } catch {}
 
-  // Group equipment by nearest job (within 2mi)
-  const equipmentByJob: Record<string, { job: any; vehicles: typeof equipmentLocations }> = {};
-  const unassignedEquipment: typeof equipmentLocations = [];
-  for (const eq of equipmentLocations) {
-    let nearestJob: any = null;
-    let minDist = Infinity;
-    for (const jl of jobLocations) {
-      const d = haversine(eq.lat, eq.lng, jl.lat, jl.lng);
-      if (d <= 2 && d < minDist) { minDist = d; nearestJob = jl; }
+  // Group rental equipment by job
+  const equipByJob: Record<string, { job: any; items: typeof rentalEquipment }> = {};
+  for (const eq of rentalEquipment) {
+    const job = jobs.find((j: any) => j.Job_Number === eq.jobNumber);
+    if (!equipByJob[eq.jobNumber]) {
+      equipByJob[eq.jobNumber] = { job: job || { Job_Number: eq.jobNumber, Job_Name: eq.jobNumber }, items: [] };
     }
-    if (nearestJob) {
-      if (!equipmentByJob[nearestJob.jobNumber]) equipmentByJob[nearestJob.jobNumber] = { job: nearestJob, vehicles: [] };
-      equipmentByJob[nearestJob.jobNumber].vehicles.push(eq);
-    } else {
-      unassignedEquipment.push(eq);
-    }
+    equipByJob[eq.jobNumber].items.push(eq);
   }
+
+  // Filter job locations to only scheduled jobs
+  const scheduledJobLocations = jobLocations.filter((j: any) => {
+    const name = j.name.toLowerCase();
+    return Array.from(scheduledJobRefs).some(ref => {
+      const refWord = ref.split(' ')[0];
+      return refWord.length > 3 && name.includes(refWord);
+    });
+  });
 
   // Resolve Job Links even when Gantt matching fails
   // Use jobRef (just the job name portion) for name matching to avoid vendor false matches
@@ -441,59 +458,65 @@ export default async function SchedulePage() {
             </div>
           </div>
 
-          {/* EQUIPMENT */}
+          {/* EQUIPMENT — Rental equipment from Equipment_On_Rent + VisionLink */}
           <div className="lg:col-span-3 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <span className="text-sm">🚛</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment</h2>
+              <span className="text-sm">🏗️</span>
+              <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment on Rent</h2>
             </div>
             <div className="flex items-center gap-3 text-[10px]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> At Jobsites ({Object.values(equipmentByJob).reduce((s, g) => s + g.vehicles.length, 0)})</span>
-              {unassignedEquipment.length > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-white/30 inline-block"></span> Off-Site ({unassignedEquipment.length})</span>}
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> {rentalEquipment.length} Pieces</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> {vlAssets.length} VisionLink</span>
             </div>
           </div>
-          {/* Equipment grouped by job site */}
+          {/* Rental equipment grouped by job */}
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.values(equipmentByJob).map((group) => (
-              <div key={group.job.jobNumber} className="rounded-xl p-3 border border-[#20BC64]/20 bg-[#20BC64]/5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64] mb-2">{group.job.name}</p>
+            {Object.values(equipByJob).map((group) => (
+              <div key={group.job.Job_Number} className="rounded-xl p-3 border border-[#20BC64]/20 bg-[#20BC64]/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64] mb-2">{group.job.Job_Name}</p>
                 <div className="space-y-1">
-                  {group.vehicles.map((v) => (
-                    <div key={v.name} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
-                      <span className="text-white/70 font-medium truncate">{v.name.replace(/\s*\(.*\)/, '')}</span>
+                  {group.items.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between text-[11px]">
+                      <span className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
+                        <span className="text-white/70 font-medium truncate">{item.type}</span>
+                      </span>
+                      <span className="text-white/30 text-[10px]">{item.vendor} · {item.daysOnSite}d</span>
                     </div>
                   ))}
                 </div>
               </div>
             ))}
-            {unassignedEquipment.length > 0 && (
-              <div className="rounded-xl p-3 border border-white/10 bg-white/[0.02]">
-                <p className="text-[10px] font-black uppercase tracking-widest text-white/30 mb-2">Off-Site / In Transit</p>
-                <div className="space-y-1">
-                  {unassignedEquipment.map((v) => (
-                    <div key={v.name} className="flex items-center gap-2 text-[11px]">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0"></span>
-                      <span className="text-white/40 font-medium truncate">{v.name.replace(/\s*\(.*\)/, '')}</span>
-                      {v.address && <span className="text-[9px] text-white/15 truncate">· {v.address.split(',')[0]}</span>}
-                    </div>
-                  ))}
-                </div>
+            {rentalEquipment.length === 0 && (
+              <div className="col-span-full text-center py-6 opacity-40">
+                <span className="text-2xl block mb-2">🏗️</span>
+                <p className="text-xs font-bold uppercase tracking-widest">No rental equipment on file</p>
               </div>
             )}
           </div>
-          {/* Map */}
+          {/* VisionLink Assets */}
+          {vlAssets.length > 0 && (
+            <div className="p-4 border-t border-white/5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-2">VisionLink Fleet — {vlAssets.length} Assets</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                {vlAssets.map((a: any) => (
+                  <div key={a.Asset_ID} className="rounded-lg p-2 border border-blue-400/10 bg-blue-400/5 text-[10px]">
+                    <p className="font-bold text-white/80">{a.Make} {a.Model}</p>
+                    <p className="text-white/30">#{a.Asset_ID} · {a.Hours}h</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Map — scheduled jobs only */}
           <div className="h-[400px] border-t border-white/5">
             <MapWrapper
-              jobs={jobLocations.map((j: any) => ({
+              jobs={scheduledJobLocations.map((j: any) => ({
                 Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
                 Status: 'Active', General_Contractor: '', Contract_Amount: 0
               }))}
-              vehicles={equipmentLocations.map((v: any) => ({
-                id: v.name, name: v.name, lat: v.lat, lng: v.lng, address: v.address,
-                speed: 0, driver: '', status: 'active'
-              }))}
+              vehicles={[]}
             />
           </div>
         </div>
