@@ -124,20 +124,23 @@ export default async function SchedulePage() {
   }
 
   // Resolve Job Links even when Gantt matching fails
+  // Use jobRef (just the job name portion) for name matching to avoid vendor false matches
   const resolveJobLink = (assignment: any) => {
     const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+    const jobRef = (assignment.decoded?.jobRef || '').toLowerCase();
     
-    // 1. Direct Job Number match
+    // 1. Direct Job Number match (safe to check full raw)
     const numMatch = jobs.find((j: any) => j.Job_Number && raw.includes(j.Job_Number.toLowerCase()));
     if (numMatch) return numMatch.Job_Number;
 
-    // 2. Strict longest substring match
+    // 2. Strict longest substring match (use jobRef to avoid vendor false matches)
+    const matchTarget = jobRef || raw;
     let bestMatch = null;
     let maxLen = 0;
     for (const j of jobs) {
       if (!j || !j.Job_Name) continue;
       const jName = j.Job_Name.toLowerCase().replace(/ paving| base| hs/g, '').trim();
-      if (jName.length > 4 && raw.includes(jName) && jName.length > maxLen) {
+      if (jName.length > 4 && matchTarget.includes(jName) && jName.length > maxLen) {
         maxLen = jName.length;
         bestMatch = j;
       }

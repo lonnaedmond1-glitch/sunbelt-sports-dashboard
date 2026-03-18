@@ -213,25 +213,33 @@ function parseJobDate(dateStr: string): Date | null {
 // A job is SCHEDULED if it appears on a crew row in THIS WEEK's schedule grid.
 // Source of truth: currentWeek parsed day assignments ONLY (Mon–Fri this week).
 // Resolve a schedule assignment to a job number (mirrors schedule page logic)
+// IMPORTANT: Format is "Job Name - Scope - State - Vendor"
+// We must use decoded.jobRef (just the job name) for name matching, NOT raw text
+// which includes the vendor name and could cause false matches (e.g. Scruggs as vendor
+// matching to a Scruggs job when the actual job is Chateau Elan)
 function resolveAssignmentToJob(assignment: any, jobs: any[]): string | null {
   if (assignment.decoded?.isOff) return null;
   const raw = (assignment.job || assignment.decoded?.raw || assignment.decoded?.jobRef || '').toLowerCase();
   if (!raw) return null;
 
-  // 1. Direct job number match
+  // Use jobRef (just the job name portion) for name matching to avoid vendor false matches
+  const jobRef = (assignment.decoded?.jobRef || '').toLowerCase();
+
+  // 1. Direct job number match (safe to check full raw for numbers)
   const numMatch = jobs.find((j: any) => j.Job_Number && raw.includes(j.Job_Number.toLowerCase()));
   if (numMatch) return numMatch.Job_Number;
 
   // 2. Gantt match
   if (assignment.ganttMatch?.jobNumber) return assignment.ganttMatch.jobNumber;
 
-  // 3. Longest substring match (most specific job name wins)
+  // 3. Longest substring match using jobRef ONLY (not vendor/supplier)
+  const matchTarget = jobRef || raw;
   let bestMatch: any = null;
   let maxLen = 0;
   for (const j of jobs) {
     if (!j?.Job_Name) continue;
     const jName = j.Job_Name.toLowerCase().replace(/ paving| base| hs| \(.*\)/g, '').trim();
-    if (jName.length > 4 && raw.includes(jName) && jName.length > maxLen) {
+    if (jName.length > 4 && matchTarget.includes(jName) && jName.length > maxLen) {
       maxLen = jName.length;
       bestMatch = j;
     }
@@ -406,12 +414,12 @@ function computeRisks(
           return new RegExp(`\\b${crewName}\\b`).test(vName);
         });
         if (!vehicle || !vehicle.lat || !vehicle.lng) continue;
-        // Find what job this crew is scheduled at
-        const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+        // Find what job this crew is scheduled at (use jobRef to avoid vendor matches)
+        const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
         const scheduledJob = jobs.find((j: any) => {
           if (!j.Job_Name) return false;
           const jName = j.Job_Name.toLowerCase();
-          return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+          return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
         });
         if (!scheduledJob || !scheduledJob.Lat || !scheduledJob.Lng) continue;
         const jLat = parseFloat(scheduledJob.Lat);
@@ -525,11 +533,12 @@ export default async function MasterDashboard() {
   if (yesterdayDay) {
     for (const assignment of (yesterdayDay.assignments || [])) {
       if (assignment.decoded?.isOff) continue;
-      const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+      // Use jobRef (job name only) to avoid vendor false matches
+      const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
       const matchedJob = jobs.find((j: any) => {
         if (!j.Job_Name) return false;
         const jName = j.Job_Name.toLowerCase();
-        return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+        return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
       if (matchedJob) yesterdayJobNums.add(matchedJob.Job_Number);
     }
