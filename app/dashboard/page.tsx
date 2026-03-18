@@ -578,14 +578,14 @@ export default async function MasterDashboard() {
           </div>
           <div className="flex items-center gap-4">
             {criticalCount > 0 && (
-              <span className="flex items-center gap-1.5 text-xs font-black text-red-400 bg-red-400/10 border border-red-400/20 rounded-full px-3 py-1">
+              <a href="#risk-alerts" className="flex items-center gap-1.5 text-xs font-black text-red-400 bg-red-400/10 border border-red-400/20 rounded-full px-3 py-1 hover:bg-red-400/20 transition-colors cursor-pointer">
                 🔴 {criticalCount} Critical
-              </span>
+              </a>
             )}
             {warningCount > 0 && (
-              <span className="flex items-center gap-1.5 text-xs font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-3 py-1">
+              <a href="#risk-alerts" className="flex items-center gap-1.5 text-xs font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-3 py-1 hover:bg-amber-400/20 transition-colors cursor-pointer">
                 ⚠️ {warningCount} Warnings
-              </span>
+              </a>
             )}
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-[#20BC64] animate-pulse"></div>
@@ -690,7 +690,7 @@ export default async function MasterDashboard() {
           </div>
 
           {/* RISK BOX */}
-          <div className="col-span-12 lg:col-span-4 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl flex flex-col overflow-hidden">
+          <div id="risk-alerts" className="col-span-12 lg:col-span-4 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl flex flex-col overflow-hidden scroll-mt-32">
             <div className="p-5 border-b border-white/5 flex justify-between items-center flex-shrink-0">
               <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Risk & Alerts</h2>
               <div className="flex gap-2">
