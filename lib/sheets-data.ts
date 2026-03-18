@@ -841,16 +841,18 @@ export async function fetchScheduleData() {
         if (jobText) {
           const decoded = decodeAssignment(jobText);
           const supplierFull = SUPPLIER_MAP[decoded.supplier] || decoded.supplier;
-          // Match against full cell text using longest-match to avoid false positives
-          const fullLower = jobText.toLowerCase();
+          // Match against jobRef ONLY (not full cell text which includes vendor/activity)
+          // Using full text caused false matches e.g. "paving" from "Scruggs Paving" matching
+          // in "Chateau Elan - Paving - GA - Scruggs"
+          const refLower = decoded.jobRef.toLowerCase();
           let ganttMatch = null;
           let bestLen = 0;
           for (const g of ganttJobs) {
             const gName = g.Job_Name.toLowerCase();
-            // Check if any significant word sequence from the gantt job name appears in the cell text
+            // Check if any significant word from the gantt job name appears in the jobRef
             const gWords = gName.split(/\s+/).filter((w: string) => w.length > 3);
             for (const w of gWords) {
-              if (fullLower.includes(w) && w.length > bestLen) {
+              if (refLower.includes(w) && w.length > bestLen) {
                 bestLen = w.length;
                 ganttMatch = g;
               }
