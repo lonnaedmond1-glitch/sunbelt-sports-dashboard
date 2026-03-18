@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchScheduleData, fetchLiveJobs } from '@/lib/sheets-data';
+import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting } from '@/lib/sheets-data';
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
@@ -28,6 +28,10 @@ async function getJobsData() {
   return fetchLiveJobs();
 }
 
+async function getLevel10Data() {
+  return fetchLevel10Meeting();
+}
+
 // Color palette for crews
 const crewColors: Record<string, string> = {
   'Rosendo / P1': '#20BC64', 'Julio / B1': '#60a5fa', 'Martin / B2': '#fb923c',
@@ -42,8 +46,8 @@ const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
-  const [schedule, weather, samsara, jobs] = await Promise.all([
-    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(),
+  const [schedule, weather, samsara, jobs, level10] = await Promise.all([
+    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(), getLevel10Data()
   ]);
 
   const weatherAlerts = (weather.alerts || []).slice(0, 8);
@@ -350,32 +354,18 @@ export default async function SchedulePage() {
         </div>
       </header>
 
-      <div className="max-w-[1920px] mx-auto p-6 flex flex-col gap-6">
-
-        {/* TOP ROW: Deliveries Only */}
-        {(schedule.deliveries || []).length > 0 && (
-          <div className="bg-[#1e2023] rounded-2xl border border-blue-400/10 shadow-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-white/5 bg-blue-400/5 flex items-center gap-2">
-              <span className="text-sm">🚚</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-blue-400">Deliveries & Equipment Moves</h2>
-            </div>
-            <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[180px] overflow-y-auto custom-scrollbar">
-              {(schedule.deliveries || []).map((del: any, i: number) => (
-                <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-2 bg-white/[0.02] border border-white/5">
-                  <span className="text-lg flex-shrink-0">📦</span>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-blue-400">{del.dayOfWeek} {del.date}</span>
-                      {del.isCurrentWeek ? (
-                        <span className="text-[9px] font-black text-[#20BC64] bg-[#20BC64]/15 px-1.5 py-0.5 rounded">THIS WEEK</span>
-                      ) : (
-                        <span className="text-[9px] font-bold text-white/20 bg-white/5 px-1.5 py-0.5 rounded">NEXT WEEK</span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-white/60 mt-1">{del.description}</p>
-                  </div>
-                </div>
-              ))}
+      <div className="max-w-[1920px] mx-auto px-8 py-8 space-y-8">
+        {/* CUSTOMERS SCREAMING BANNER */}
+        {level10.screaming?.length > 0 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-start gap-4 shadow-xl">
+            <div className="text-3xl">😱</div>
+            <div>
+              <h2 className="text-red-400 font-black uppercase tracking-widest text-xs mb-2">What Customers Are Screaming</h2>
+              <ul className="list-disc pl-4 space-y-1">
+                {level10.screaming.map((s, i) => (
+                  <li key={i} className="text-sm font-bold text-white/90">{s}</li>
+                ))}
+              </ul>
             </div>
           </div>
         )}
@@ -423,9 +413,37 @@ export default async function SchedulePage() {
         {/* NEXT WEEK CREW GRID */}
         {renderWeekGrid(schedule.nextWeek, 'Next Week', false)}
 
-        {/* EQUIPMENT */}
-        <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center">
+        {/* 2-COLUMN BOTTOM: LEVEL 10 LOOSE ENDS & EQUIPMENT */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          
+          {/* LOOSE ENDS (Level 10) */}
+          <div className="lg:col-span-1 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden flex flex-col h-full">
+            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">📝</span>
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Tie Up Loose Ends</h2>
+              </div>
+            </div>
+            <div className="p-4 space-y-3 flex-1 overflow-y-auto">
+              {level10.looseEnds?.length > 0 ? (
+                level10.looseEnds.map((end, i) => (
+                  <div key={i} className="rounded-xl p-3 border border-white/5 bg-white/[0.02]">
+                    <p className="text-xs font-bold text-white mb-1 leading-tight">{end.details}</p>
+                    {end.who && <p className="text-[10px] text-amber-400 font-bold uppercase">Who: {end.who}</p>}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-8 opacity-40">
+                  <span className="text-2xl block mb-2">✅</span>
+                  <p className="text-xs font-bold uppercase tracking-widest">No loose ends</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* EQUIPMENT */}
+          <div className="lg:col-span-3 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <span className="text-sm">🚛</span>
               <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment</h2>
@@ -480,6 +498,7 @@ export default async function SchedulePage() {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

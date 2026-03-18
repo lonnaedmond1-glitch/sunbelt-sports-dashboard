@@ -74,6 +74,63 @@ function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T>
 const JOB_LIST_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
 const JOB_LIST_GID = '623969002';
 
+// ──────────────────────────── LEVEL 10 MEETING ────────────────────────────
+export function fetchLevel10Meeting() {
+  return cached('level10Meeting', 15 * 60 * 1000, async () => {
+    try {
+      const L10_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+      const MEETING_GID = '683987594'; // Specifically the Level 10 meeting tabs sheet
+      const url = `https://docs.google.com/spreadsheets/d/${L10_SHEET_ID}/export?format=csv&gid=${MEETING_GID}`;
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+      if (!response.ok) return { screaming: [], looseEnds: [] };
+      const csvText = await response.text();
+      const lines = csvText.split('\r\n');
+      
+      let screaming: string[] = [];
+      let looseEnds: { task: string, who: string, details: string }[] = [];
+      
+      let inScreaming = false;
+      let inLooseEnds = false;
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const cols = parseCSVLine(line);
+        if (cols.length < 2) continue;
+        
+        // Screaming Customers Section
+        if (cols[1] === 'Customer / Employee / Company Headlines') inScreaming = true;
+        if (inScreaming && cols[1] === 'On Rent') inScreaming = false;
+        if (inScreaming && cols[1] && cols[1] !== 'What customers are screaming?' && cols[1] !== 'Customer / Employee / Company Headlines' && cols[1] !== 'Any rain days for crews this week? Recorded on daily report?') {
+           screaming.push(cols[1]); // It appears in col B for headlines sometimes
+        }
+        if (inScreaming && cols[2] && cols[2].trim() && cols[2] !== 'What customers are screaming?') {
+           screaming.push(cols[2]);
+        }
+        
+        // Loose Ends Section
+        if (cols[2] === 'Long Term To-do List') inLooseEnds = true;
+        if (inLooseEnds && (cols[1] === '30 Minutes' || cols.join('').includes('Internal Scorecard'))) inLooseEnds = false;
+        
+        if (inLooseEnds && cols[2] === 'Tie Up Loose Ends') {
+          looseEnds.push({
+            task: cols[2].replace(/"/g, ''),
+            who: cols[3]?.replace(/"/g, '') || '',
+            details: cols[4]?.replace(/"/g, '') || ''
+          });
+        }
+      }
+      
+      return { 
+        screaming: Array.from(new Set(screaming)).filter(Boolean),
+        looseEnds 
+      };
+    } catch (err) {
+      console.error('Error fetching Level10:', err);
+      return { screaming: [], looseEnds: [] };
+    }
+  });
+}
+
 export function fetchLiveJobs() {
   return cached('liveJobs', 5 * 60 * 1000, async () => {
   try {

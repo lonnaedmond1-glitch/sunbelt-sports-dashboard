@@ -84,14 +84,21 @@ function parseDateStr(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Level 10 Meeting Notes (Most Recent Tab)
+const L10_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+const L10_GID = '683987594';
+
 export async function GET() {
   try {
-    // Fetch schedule tab and Gantt sheet in parallel
-    const [schedRes, ganttRes] = await Promise.all([
+    // Fetch schedule tab, Gantt sheet, and L10 Most Recent tab in parallel
+    const [schedRes, ganttRes, l10Res] = await Promise.all([
       fetch(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SCHEDULE_GID}`, {
         headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
       }),
       fetch(`https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=${GANTT_GID}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+      }),
+      fetch(`https://docs.google.com/spreadsheets/d/${L10_SHEET_ID}/export?format=csv&gid=${L10_GID}`, {
         headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
       }),
     ]);
@@ -259,6 +266,45 @@ export async function GET() {
       })
     );
 
+    // --- Parse L10 Notes for Screaming/Loose Ends ---
+    let screaming = '';
+    const looseEnds: { text: string; who: string }[] = [];
+    if (l10Res && l10Res.ok) {
+      const l10CSV = await l10Res.text();
+      const l10Lines = l10CSV.split('\n').map((l: string) => l.replace(/\r$/, ''));
+      let inLooseEnds = false;
+
+      for (let i = 0; i < l10Lines.length; i++) {
+        const cols = parseCSVLine(l10Lines[i]);
+        if (!cols.length) continue;
+
+        // Banner: "What customers/employees are screaming about?"
+        if (cols[0]?.toLowerCase().includes('screaming')) {
+          screaming = (cols[1] || '').trim();
+        }
+
+        // Loose Ends section
+        if (cols[0]?.toLowerCase().includes('long term to-do list') || cols[0]?.toLowerCase().includes('loose ends')) {
+          inLooseEnds = true;
+          continue; // skip header row
+        }
+        
+        if (inLooseEnds) {
+          // If we hit an empty row or the next big section, stop
+          if (!cols[0] && !cols[1]) {
+            inLooseEnds = false;
+            continue;
+          }
+          // Some sheets have checkboxes in col 0, text in col 1, who in col 2
+          const text = cols[1]?.trim() || cols[0]?.trim();
+          const who = cols[2]?.trim() || cols[1]?.trim() || '';
+          if (text && text.toLowerCase() !== 'complete' && text.toLowerCase() !== 'who') {
+            looseEnds.push({ text, who });
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       currentWeek: {
         weekOf: thisMonday.toISOString().split('T')[0],
@@ -275,6 +321,10 @@ export async function GET() {
       jobFirstOccurrences,
       scheduledJobCount: scheduledJobs.size,
       ganttJobCount: ganttJobs.length,
+      l10: {
+        screaming,
+        looseEnds,
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

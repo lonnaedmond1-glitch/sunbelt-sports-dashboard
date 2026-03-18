@@ -238,6 +238,9 @@ function resolveAssignmentToJob(assignment: any, jobs: any[]): string | null {
   let maxLen = 0;
   for (const j of jobs) {
     if (!j?.Job_Name) continue;
+    // VERY EXPLICIT OVERRIDE: Prevent vendor names from matching labor-only jobs
+    if (j.Job_Number === '30-001' && !matchTarget.includes('30-001')) continue;
+    
     const jName = j.Job_Name.toLowerCase().replace(/ paving| base| hs| \(.*\)/g, '').trim();
     if (jName.length > 4 && matchTarget.includes(jName) && jName.length > maxLen) {
       maxLen = jName.length;
@@ -249,11 +252,14 @@ function resolveAssignmentToJob(assignment: any, jobs: any[]): string | null {
   return null;
 }
 
-// Build set of job numbers that appear on this week's schedule
+// Build set of job numbers that appear on this week's and next week's schedule
 function getScheduledJobNumbers(scheduleData: any, jobs: any[]): Set<string> {
   const scheduled = new Set<string>();
-  const currentWeekDays: any[] = scheduleData?.currentWeek?.days || [];
-  for (const day of currentWeekDays) {
+  const allDays = [
+    ...(scheduleData?.currentWeek?.days || []),
+    ...(scheduleData?.nextWeek?.days || [])
+  ];
+  for (const day of allDays) {
     for (const assignment of (day.assignments || [])) {
       const jobNum = resolveAssignmentToJob(assignment, jobs);
       if (jobNum) scheduled.add(jobNum);
@@ -328,11 +334,12 @@ function computeRisks(
     for (const assignment of (yesterdaySchedule.assignments || [])) {
       if (assignment.decoded?.isOff) continue;
       const crewName = assignment.crew;
-      const raw = (assignment.job || assignment.decoded?.raw || '').toLowerCase();
+      const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
       const matchedJob = scheduledJobs.find((j: any) => {
         if (!j.Job_Name) return false;
+        if (j.Job_Number === '30-001' && !jobRef.includes('30-001')) return false; // EXPLICIT SCRUGGS BLOCK
         const jName = j.Job_Name.toLowerCase();
-        return jName.length > 4 && raw.includes(jName.split(' ')[0]);
+        return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
       if (matchedJob && !reportMap[matchedJob.Job_Number]) {
         risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
@@ -418,6 +425,7 @@ function computeRisks(
         const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
         const scheduledJob = jobs.find((j: any) => {
           if (!j.Job_Name) return false;
+          if (j.Job_Number === '30-001' && !jobRef.includes('30-001')) return false; // EXPLICIT SCRUGGS BLOCK
           const jName = j.Job_Name.toLowerCase();
           return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
         });
@@ -537,6 +545,7 @@ export default async function MasterDashboard() {
       const jobRef = (assignment.decoded?.jobRef || assignment.job || '').toLowerCase();
       const matchedJob = jobs.find((j: any) => {
         if (!j.Job_Name) return false;
+        if (j.Job_Number === '30-001' && !jobRef.includes('30-001')) return false; // EXPLICIT SCRUGGS BLOCK
         const jName = j.Job_Name.toLowerCase();
         return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
