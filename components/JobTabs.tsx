@@ -20,6 +20,7 @@ interface JobTabsProps {
   vlAssets: any[];
   fleetAssets: { equipment: any[]; vehicles: any[] };
   liveRentals: any[];
+  scheduleData: any;
 }
 
 const TABS = [
@@ -84,7 +85,7 @@ function extractDriveFileId(url: string): string | null {
 export default function JobTabs({
   jobNumber, job, report, prep, rentals, changeOrders, scorecard,
   jobFolder, vehicles, weatherDays, asphaltCredit, baseCredit, hasCreditFlag,
-  fieldReportFeed, vlAssets, fleetAssets, liveRentals,
+  fieldReportFeed, vlAssets, fleetAssets, liveRentals, scheduleData,
 }: JobTabsProps) {
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
@@ -284,102 +285,102 @@ export default function JobTabs({
               ) : <p className="text-white/20 text-sm">Awaiting Live Data — No supply chain data on file.</p>}
             </div>
 
-            {/* Box A: Fleet Equipment (Live from Google Sheet) */}
+            {/* Box A: Assets on Site — Filtered by Schedule + Proximity */}
             <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
-                  🚜 Fleet Equipment
-                  <span className="ml-2 text-[9px] font-bold text-[#20BC64]/60">LIVE FROM FLEET SHEET</span>
-                </h2>
-                {fleetAssets.equipment.length > 0 && (
-                  <span className="text-[10px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                    {fleetAssets.equipment.length} Assets
-                  </span>
-                )}
-              </div>
+              {(() => {
+                const today = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
+                const todayCrews = today?.crews?.filter((c: any) => 
+                  c.assignments?.some((a: any) => 
+                    a.jobNumber === jobNumber || 
+                    (a.jobRef && a.jobRef.toLowerCase().includes(job.Job_Name.toLowerCase()))
+                  )
+                ).map((c: any) => c.crewName.toLowerCase().trim()) || [];
 
-              {fleetAssets.equipment.length > 0 ? (
-                <div className="space-y-2">
-                  {/* Owned Equipment */}
-                  {(() => {
-                    const owned = fleetAssets.equipment.filter(e => !e.isRental);
-                    const rented = fleetAssets.equipment.filter(e => e.isRental);
-                    return (
-                      <>
-                        {owned.length > 0 && (
-                          <div className="mb-3">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-2">Owned ({owned.length})</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
-                              {owned.map((eq, i) => (
-                                <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-black/20 border border-white/5">
-                                  <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/15 flex items-center justify-center text-sm shrink-0">
-                                    {eq.category?.includes('PAVER') ? '🛤️' : eq.category?.includes('ROLLER') ? '🔨' : eq.category?.includes('TRUCK') ? '🚛' : eq.category?.includes('TRAILER') ? '🚚' : '🚜'}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-bold text-white truncate">{eq.displayName}</p>
-                                    <p className="text-[10px] text-white/30 truncate">
-                                      {eq.category}{eq.assetNum ? ` · #${eq.assetNum}` : ''}{eq.driver ? ` · ${eq.driver}` : ''}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {rented.length > 0 && (
-                          <div>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/60 mb-2">Rented ({rented.length})</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {rented.map((eq, i) => (
-                                <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-500/5 border border-amber-500/15">
-                                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/15 flex items-center justify-center text-sm shrink-0">💳</div>
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-bold text-white truncate">{eq.displayName}</p>
-                                    <p className="text-[10px] text-amber-400/60 truncate">
-                                      RENTAL · {eq.assetNum}{eq.description ? ` · ${eq.description}` : ''}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              ) : (
-                <p className="text-white/20 text-sm py-4 text-center">No fleet equipment data from sheet.</p>
-              )}
+                // Filter fleet assets by scheduled crews
+                const scheduledEquipment = fleetAssets.equipment.filter(e => {
+                  const driver = (e.driver || '').toLowerCase().trim();
+                  return todayCrews.some((c: string) => driver.includes(c) || c.includes(driver));
+                });
 
-              {/* Samsara Vehicles Near Site */}
-              {vehicles.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-white/5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">SAMSARA — {vehicles.length} Near Site</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {vehicles.map((v: any, i: number) => (
-                      <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-black/20 border border-blue-500/10">
-                        <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-sm shrink-0">🚛</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-black text-white truncate">{v.name?.replace?.(/\s*\(.*\)/, '') || v.name}</p>
-                          <p className="text-xs text-white/40 truncate">{v.address || 'Location active'}</p>
-                        </div>
-                        <span className={`text-[10px] font-black px-2 py-1 rounded-full shrink-0 ${v.speed > 2 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                          {v.speed > 2 ? `${v.speed} mph` : 'Parked'}
+                // Also show vehicles that are physically nearby (from Samsara/GPS)
+                const nearbyVehicles = vehicles || [];
+
+                const allOnSite = [
+                  ...scheduledEquipment.map(e => ({ ...e, type: 'EQUIPMENT', source: 'SCHEDULE' })),
+                  ...nearbyVehicles.map((v: any) => ({
+                    displayName: v.name,
+                    assetNum: v.id,
+                    type: 'VEHICLE',
+                    source: 'GPS',
+                    driver: v.driverName || 'Unknown',
+                    isRental: false,
+                  }))
+                ];
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
+                        🚜 Assets on Site
+                        <span className="ml-2 text-[9px] font-bold text-[#20BC64]/60">LIVE TRACKING</span>
+                      </h2>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] font-black px-2 py-1 rounded-full bg-[#20BC64]/10 text-[#20BC64] border border-[#20BC64]/20">
+                          {allOnSite.length} Active
                         </span>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                    </div>
+
+                    {allOnSite.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {allOnSite.map((item, i) => {
+                          const isGPS = item.source === 'GPS';
+                          const isRental = item.isRental;
+                          return (
+                            <div key={i} className="p-4 rounded-xl bg-black/20 border border-white/5 flex items-center gap-4">
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${isRental ? 'bg-amber-500/10 text-amber-400' : 'bg-[#20BC64]/10 text-[#20BC64]'}`}>
+                                {item.type === 'VEHICLE' ? '🚛' : '🚜'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-black text-white truncate">{item.displayName}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {item.assetNum && <span className="text-[10px] font-bold text-white/40">{item.assetNum}</span>}
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${isGPS ? 'border-[#20BC64]/30 text-[#20BC64]' : 'border-white/10 text-white/30'}`}>
+                                    {isGPS ? 'GPS CONFIRMED' : 'SCHEDULED'}
+                                  </span>
+                                  {isRental && <span className="text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-400 uppercase">Rental</span>}
+                                </div>
+                                {item.driver && <p className="text-[10px] text-white/30 mt-1 font-bold">Assigned: {item.driver}</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center bg-black/10 rounded-xl border border-dashed border-white/5">
+                        <p className="text-white/20 text-sm font-bold">No assets currently reported on site.</p>
+                        <p className="text-[10px] text-white/10 mt-1 px-4">Assets appear here when crews are scheduled or GPS units are detected within 0.5 miles.</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Box B: Active Rentals — from Gmail-synced sheets, falls back to CSV */}
             {(() => {
+              // Filter live rentals for THIS job
+              const matchedLive = liveRentals.filter(r => {
+                const searchStr = `${r.jobName} ${r.jobLocation}`.toLowerCase();
+                const jNum = (jobNumber || '').toLowerCase().trim();
+                const jName = (job.Job_Name || '').toLowerCase().trim();
+                return searchStr.includes(jNum) || 
+                       searchStr.includes(jName) || 
+                       jName.includes(r.jobName.toLowerCase().trim());
+              });
+
               // Use live rentals if available, otherwise fall back to CSV
-              const activeRentals = liveRentals.length > 0 ? liveRentals : rentals.map(r => ({
+              const activeRentals = matchedLive.length > 0 ? matchedLive : rentals.map(r => ({
                 vendor: r.Vendor || 'Unknown',
                 equipmentType: r.Equipment_Type || '',
                 dayRate: parseFloat(r.Daily_Rate) || 0,
@@ -390,7 +391,7 @@ export default function JobTabs({
                 jobName: '',
                 contractNumber: '',
               }));
-              const isLive = liveRentals.length > 0;
+              const isLive = matchedLive.length > 0;
               const totalDailyBurn = activeRentals.reduce((sum, r) => sum + (r.dayRate || 0), 0);
               const totalBurnToDate = activeRentals.reduce((sum, r) => sum + ((r.daysOnRent || 0) * (r.dayRate || 0)), 0);
 

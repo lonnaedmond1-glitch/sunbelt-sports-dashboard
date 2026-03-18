@@ -1,11 +1,24 @@
 import React from 'react';
 import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
-import { fetchLiveJobs } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveRentals } from '@/lib/sheets-data';
 
 export default async function EquipmentPage() {
-  const rentals = getAllRentals();
+  const csvRentals = getAllRentals();
   const jobs = await fetchLiveJobs();
+  const liveRentals = await fetchLiveRentals();
+
+  const isLive = liveRentals.length > 0;
+  const rentals = isLive ? liveRentals.map(r => ({
+    Job_Number: r.jobName || 'Unknown',
+    Equipment_Type: r.equipmentType,
+    Vendor: r.vendor,
+    Days_On_Site: r.daysOnRent.toString(),
+    Target_Off_Rent: r.pickupDate || '',
+    Daily_Rate: r.dayRate.toString(),
+    Contract_Number: r.contractNumber,
+    isLive: true
+  })) : csvRentals.map(r => ({ ...r, isLive: false }));
 
   // Create lookup for Job Names
   const jobMap = new Map();
@@ -53,7 +66,9 @@ export default async function EquipmentPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <div className="bg-[#1e2023] rounded-xl p-5 border border-white/5 shadow-lg relative overflow-hidden">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#20BC64] mb-1">Active Rentals</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#20BC64] mb-1">
+            Active Rentals {isLive && <span className="ml-1 text-[8px] px-1 bg-[#20BC64]/20 rounded tracking-normal">LIVE</span>}
+          </p>
           <p className="text-4xl font-black">{totalActive}</p>
           <div className="absolute right-[-20px] bottom-[-20px] text-[#20BC64]/10 text-8xl font-black">🚜</div>
         </div>
@@ -96,10 +111,14 @@ export default async function EquipmentPage() {
                     <p className="text-xs text-white/40 mt-1">{r.Vendor}</p>
                   </td>
                   <td className="px-6 py-4">
-                    <Link href={`/jobs/${encodeURIComponent(r.Job_Number.trim())}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
-                      {r.Job_Number}
-                    </Link>
-                    <p className="text-xs text-white/60 mt-1">{r.jobName}</p>
+                    {r.isLive ? (
+                      <p className="font-bold text-white truncate max-w-[150px]">{r.Job_Number}</p>
+                    ) : (
+                      <Link href={`/jobs/${encodeURIComponent(r.Job_Number.trim())}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
+                        {r.Job_Number}
+                      </Link>
+                    )}
+                    <p className="text-xs text-white/60 mt-1 truncate max-w-[150px]">{r.jobName}</p>
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className={`inline-block px-3 py-1 rounded border font-black text-xs ${r.isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-black/20 text-white/60 border-white/10'}`}>
