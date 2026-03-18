@@ -607,7 +607,7 @@ export default async function MasterDashboard() {
           <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
             <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Scheduled Jobs</p>
             <p className="text-4xl font-black text-[#20BC64]">{scheduledJobs.length}</p>
-            <p className="text-xs text-white/30 mt-1 leading-relaxed">{scheduledJobNames.slice(0, 8).join(' · ') || 'None this week'}</p>
+            <div className="text-xs text-white/30 mt-1 leading-relaxed">{scheduledJobNames.length > 0 ? scheduledJobNames.slice(0, 8).map((name, i) => (<div key={i}>{name}</div>)) : 'None this week'}</div>
           </div>
           {/* Portfolio Value */}
           <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
