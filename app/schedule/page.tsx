@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchVisionLinkAssets } from '@/lib/sheets-data';
+import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchVisionLinkAssets, fetchLiveRentals } from '@/lib/sheets-data';
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
@@ -46,8 +46,8 @@ const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
-  const [schedule, weather, samsara, jobs, level10, vlAssets] = await Promise.all([
-    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(), getLevel10Data(), fetchVisionLinkAssets()
+  const [schedule, weather, samsara, jobs, level10, vlAssets, liveRentals] = await Promise.all([
+    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(), getLevel10Data(), fetchVisionLinkAssets(), fetchLiveRentals()
   ]);
 
   const weatherAlerts = (weather.alerts || []).slice(0, 8);
@@ -102,37 +102,22 @@ export default async function SchedulePage() {
   const jobLocations = jobs.filter((j: any) => j.Lat && j.Lng).map((j: any) => ({
     jobNumber: j.Job_Number, name: j.Job_Name, lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
   }));
-  const fs = await import('fs');
-  const path = await import('path');
-  let rentalEquipment: { jobNumber: string; type: string; vendor: string; daysOnSite: number; dailyRate: number }[] = [];
-  try {
-    const csvPath = path.join(process.cwd(), 'data', 'Equipment_On_Rent.csv');
-    if (fs.existsSync(csvPath)) {
-      const csvText = fs.readFileSync(csvPath, 'utf-8');
-      const lines = csvText.split('\n').filter(l => l.trim());
-      if (lines.length > 1) {
-        rentalEquipment = lines.slice(1).map(line => {
-          const cols = line.split(',');
-          return {
-            jobNumber: cols[0]?.trim() || '',
-            type: cols[1]?.trim() || '',
-            vendor: cols[2]?.trim() || '',
-            daysOnSite: parseInt(cols[3]?.trim() || '0') || 0,
-            dailyRate: parseFloat(cols[5]?.trim() || '0') || 0,
-          };
-        }).filter(r => r.jobNumber && r.type);
-      }
-    }
-  } catch {}
 
-  // Group rental equipment by job
-  const equipByJob: Record<string, { job: any; items: typeof rentalEquipment }> = {};
+  // Rental equipment from live Google Sheets (Sunbelt + United)
+  const rentalEquipment = (liveRentals || []).map((r: any) => ({
+    jobName: r.jobName || '',
+    type: r.equipmentType || r.className || '',
+    vendor: r.vendor || '',
+    daysOnRent: r.daysOnRent || 0,
+    dailyRate: r.dayRate || 0,
+  })).filter((r: any) => r.type);
+
+  // Group rental equipment by job name
+  const equipByJob: Record<string, { jobName: string; items: typeof rentalEquipment }> = {};
   for (const eq of rentalEquipment) {
-    const job = jobs.find((j: any) => j.Job_Number === eq.jobNumber);
-    if (!equipByJob[eq.jobNumber]) {
-      equipByJob[eq.jobNumber] = { job: job || { Job_Number: eq.jobNumber, Job_Name: eq.jobNumber }, items: [] };
-    }
-    equipByJob[eq.jobNumber].items.push(eq);
+    const key = eq.jobName || 'Unassigned';
+    if (!equipByJob[key]) equipByJob[key] = { jobName: key, items: [] };
+    equipByJob[key].items.push(eq);
   }
 
   // Map Make/Model to readable equipment type
@@ -148,18 +133,6 @@ export default async function SchedulePage() {
     if (m === 'INTERNATIONAL') return 'Service Truck';
     return `${make} ${model}`;
   };
-
-  // Build equipment map pins from rental equipment assigned to jobs with coordinates
-  const equipmentMapPins = rentalEquipment.map(eq => {
-    const job = jobs.find((j: any) => j.Job_Number === eq.jobNumber);
-    if (!job || !job.Lat || !job.Lng) return null;
-    return {
-      name: eq.type,
-      lat: parseFloat(job.Lat),
-      lng: parseFloat(job.Lng),
-      address: job.Job_Name || '',
-    };
-  }).filter(Boolean) as { name: string; lat: number; lng: number; address: string }[];
 
   // Filter job locations to only scheduled jobs
   const scheduledJobLocations = jobLocations.filter((j: any) => {
@@ -499,16 +472,16 @@ export default async function SchedulePage() {
           {/* Rental equipment grouped by job */}
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {Object.values(equipByJob).map((group) => (
-              <div key={group.job.Job_Number} className="rounded-xl p-3 border border-[#20BC64]/20 bg-[#20BC64]/5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64] mb-2">{group.job.Job_Name}</p>
+              <div key={group.jobName} className="rounded-xl p-3 border border-[#20BC64]/20 bg-[#20BC64]/5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64] mb-2">{group.jobName || 'Unassigned'}</p>
                 <div className="space-y-1">
-                  {group.items.map((item, i) => (
+                  {group.items.map((item: any, i: number) => (
                     <div key={i} className="flex items-center justify-between text-[11px]">
                       <span className="flex items-center gap-2">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
                         <span className="text-white/70 font-medium truncate">{item.type}</span>
                       </span>
-                      <span className="text-white/30 text-[10px]">{item.vendor} · {item.daysOnSite}d</span>
+                      <span className="text-white/30 text-[10px]">{item.vendor} · {item.daysOnRent}d</span>
                     </div>
                   ))}
                 </div>
@@ -542,10 +515,7 @@ export default async function SchedulePage() {
                 Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
                 Status: 'Active', General_Contractor: '', Contract_Amount: 0
               }))}
-              vehicles={equipmentMapPins.map((eq: any) => ({
-                id: eq.name, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
-                speed: 0, driver: '', status: 'active'
-              }))}
+              vehicles={[]}
             />
           </div>
         </div>
