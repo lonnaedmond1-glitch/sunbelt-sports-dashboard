@@ -1094,56 +1094,18 @@ export default async function MasterDashboard() {
             </div>
           </div>
 
-          {/* FULL PORTFOLIO TABLE */}
+          {/* FULL PORTFOLIO — moved to /portfolio */}
           <div className="col-span-12 lg:col-span-8 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-            <div className="p-5 border-b border-white/5 flex justify-between items-center">
-              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Full Portfolio — {jobs.length} Jobs</h2>
-              <span className="text-xs text-white/20 font-bold uppercase">Live Data Feed</span>
-            </div>
-            <div className="overflow-x-auto overflow-y-auto custom-scrollbar" style={{ maxHeight: '440px' }}>
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-[#1e2023] z-10">
-                  <tr className="border-b border-white/5">
-                    {['Job #', 'Name', 'General Contractor', 'Project Manager', 'State', 'Status', 'Contract Value', 'Billed %', 'Health'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-widest text-white/30 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map((job: any, i: number) => {
-                    const pct = Math.round(job.Pct_Complete || 0);
-                    const health = getJobHealth(job, reportMap[job.Job_Number]);
-                    const statusColor = job.Status === 'Executed' ? '#20BC64' : job.Status === 'Signed' ? '#60a5fa' : job.Status === 'Received' ? '#fb923c' : '#9ca3af';
-                    return (
-                      <tr key={job.Job_Number} className={`border-b border-white/5 hover:bg-white/5 transition-colors ${i % 2 === 0 ? 'bg-transparent' : 'bg-white/[0.02]'}`}>
-                        <td className="px-4 py-3">
-                          <Link href={`/jobs/${job.Job_Number}`} className="text-[#20BC64] font-bold hover:text-white transition-colors text-xs">{job.Job_Number}</Link>
-                        </td>
-                        <td className="px-4 py-3 font-medium text-white/80 max-w-[180px] truncate text-xs">{job.Job_Name}</td>
-                        <td className="px-4 py-3 text-white/40 text-xs truncate max-w-[120px]">{job.General_Contractor}</td>
-                        <td className="px-4 py-3 text-white/40 text-xs">{job.Project_Manager}</td>
-                        <td className="px-4 py-3"><span className="text-xs bg-white/5 rounded px-2 py-0.5 text-white/50">{job.State}</span></td>
-                        <td className="px-4 py-3"><span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: statusColor, backgroundColor: `${statusColor}15` }}>{job.Status}</span></td>
-                        <td className="px-4 py-3 text-white/60 text-xs font-mono whitespace-nowrap">${(job.Contract_Amount || 0).toLocaleString()}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 bg-white/5 rounded-full h-1.5 overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: healthColor[health] }} />
-                            </div>
-                            <span className="text-xs text-white/40">{pct}%</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-black" style={{ color: healthColor[health] }}>
-                            {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <Link href="/portfolio" className="block p-8 hover:bg-white/5 transition-colors group">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-white/60 mb-2">Full Portfolio</h2>
+                  <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
+                  <p className="text-xs text-white/30 mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
+                </div>
+                <span className="text-2xl text-white/20 group-hover:text-white/50 transition-colors">→</span>
+              </div>
+            </Link>
           </div>
         </div>
 
