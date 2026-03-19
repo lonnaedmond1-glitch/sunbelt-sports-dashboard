@@ -78,14 +78,23 @@ export default async function SchedulePage() {
   };
 
   // Per-job weather icon lookup — always shows weather when data available
+  // Weather API returns loc.jobs as array of Job_Number strings (e.g. ["26-040", "25-300"])
   const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
     if (!jobRef) return null;
     const ref = jobRef.toLowerCase();
     for (const loc of (weather.locations || [])) {
-      const locJobs = (loc.jobs || []).map((j: any) => (j.Job_Name || '').toLowerCase());
-      const matches = locJobs.some((jn: string) => {
-        const word = jn.split(' ')[0];
-        return word.length > 3 && ref.includes(word);
+      const locJobNums = (loc.jobs || []).map((j: any) => typeof j === 'string' ? j : (j.Job_Number || j));
+      // Check if any job at this weather location matches the assignment
+      const matches = locJobNums.some((jobNum: string) => {
+        // Direct job number match (e.g. ref contains "26-040")
+        if (ref.includes(jobNum.toLowerCase())) return true;
+        // Look up job name from the number and match by first word
+        const jobObj = jobs.find((j: any) => j.Job_Number === jobNum);
+        if (jobObj) {
+          const nameWord = (jobObj.Job_Name || '').toLowerCase().split(' ')[0];
+          return nameWord.length > 3 && ref.includes(nameWord);
+        }
+        return false;
       });
       if (matches) {
         const forecasts = loc.forecasts || [];
@@ -97,7 +106,7 @@ export default async function SchedulePage() {
           else if (prob >= 60) icon = '🌧️';
           else if (prob >= 30) icon = '🌦️';
           else if (prob >= 10) icon = '⛅';
-          return { icon: f.icon || icon, prob, severe: f.severe, temp: f.tempHigh || f.temp };
+          return { icon: f.icon || icon, prob, severe: f.severe, temp: f.high || 0 };
         }
       }
     }
