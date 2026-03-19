@@ -219,10 +219,10 @@ export default async function SchedulePage() {
     if (!week?.days?.length) return null;
 
     return (
-      <div className={`bg-[#1e2023] rounded-2xl border shadow-xl overflow-hidden ${isCurrent ? 'border-[#20BC64]/30' : 'border-white/5'}`}>
-        <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center" style={{ background: isCurrent ? 'rgba(32,188,100,0.04)' : 'transparent' }}>
+      <div className={`bg-white rounded-md border shadow-sm overflow-hidden ${isCurrent ? 'border-[#20BC64]/30' : 'border-[#F1F3F4]'}`}>
+        <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center" style={{ background: isCurrent ? 'rgba(32,188,100,0.04)' : 'transparent' }}>
           <div className="flex items-center gap-3">
-            <h2 className="text-sm font-black uppercase tracking-widest text-white/70">{week.label || label}</h2>
+            <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]">{week.label || label}</h2>
             {isCurrent && <span className="text-[10px] font-black text-[#20BC64] bg-[#20BC64]/15 px-2 py-0.5 rounded-full">THIS WEEK</span>}
           </div>
         </div>
@@ -230,15 +230,15 @@ export default async function SchedulePage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b border-white/5">
-                <th className="text-left px-4 py-3 text-xs font-black uppercase tracking-widest text-white/30 sticky left-0 bg-[#1e2023] z-10 w-36 min-w-[144px]">Crew</th>
+              <tr className="border-b border-[#F1F3F4]">
+                <th className="text-left px-4 py-3 text-xs font-black uppercase tracking-widest text-[#757A7F] sticky left-0 bg-white z-10 w-36 min-w-[144px]">Crew</th>
                 {dayNames.map(day => {
                   const dayData = week.days.find((d: any) => d.dayOfWeek === day);
                   return (
-                    <th key={day} className={`text-left px-3 py-2 text-xs font-bold uppercase tracking-widest min-w-[185px] ${dayData?.isToday ? 'bg-[#20BC64]/5 text-[#20BC64]' : 'text-white/30'}`}>
+                    <th key={day} className={`text-left px-3 py-2 text-xs font-bold uppercase tracking-widest min-w-[185px] ${dayData?.isToday ? 'bg-[#20BC64]/5 text-[#20BC64]' : 'text-[#757A7F]'}`}>
                       <span>{day}</span>
                       {dayData && (
-                        <div className="text-[10px] text-white/20 font-normal mt-0.5">
+                        <div className="text-[10px] text-[#757A7F]/60 font-normal mt-0.5">
                           {dayData.dateDisplay?.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '')}
                         </div>
                       )}
@@ -253,11 +253,11 @@ export default async function SchedulePage() {
                 const color = crewColors[crewName] || '#9ca3af';
                 const hasWork = week.days.some((d: any) => d.assignments?.some((a: any) => a.crew === crewName && !a.decoded?.isOff));
                 return (
-                  <tr key={crewName} className={`border-b border-white/5 ${ci % 2 === 0 ? '' : 'bg-white/[0.015]'}`}>
-                    <td className="px-4 py-3 sticky left-0 bg-[#1e2023] z-10 border-r border-white/5">
+                  <tr key={crewName} className={`border-b border-[#F1F3F4] ${ci % 2 === 0 ? '' : 'bg-[#F1F3F4]/40'}`}>
+                    <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r border-[#F1F3F4]">
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: hasWork ? color : '#4b5563' }}></span>
-                        <span className="text-xs font-bold text-white/70 whitespace-nowrap">{crewName}</span>
+                        <span className="text-xs font-bold text-[#3C4043] whitespace-nowrap">{crewName}</span>
                       </div>
                     </td>
                     {dayNames.map(day => {
@@ -265,17 +265,17 @@ export default async function SchedulePage() {
                       const assignment = dayData?.assignments?.find((a: any) => a.crew === crewName);
                       const decoded = assignment?.decoded;
                       return (
-                        <td key={day} className={`px-2 py-1.5 border-r border-white/5 align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
+                        <td key={day} className={`px-2 py-1.5 border-r border-[#F1F3F4] align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
                           {assignment ? (() => {
                             const linkJobId = resolveJobLink(assignment);
                             return (
                             assignment.decoded?.isOff ? (
-                              <div className="text-[10px] text-white/20 italic px-2 py-1">{assignment.decoded.jobRef}</div>
+                              <div className="text-[10px] text-[#757A7F]/60 italic px-2 py-1">{assignment.decoded.jobRef}</div>
                             ) : linkJobId ? (
                               <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block rounded-lg px-2.5 py-2 text-[11px] border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
                                 <div className="font-bold leading-tight flex items-center gap-1">
                                   {assignment.decoded?.jobRef || assignment.job}
-                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-red-400' : ''}>{wx.icon}</span> : null; })()}
+                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-[#E04343]' : ''}>{wx.icon}</span> : null; })()}
                                 </div>
                                 {assignment.decoded?.activity && (
                                   <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
@@ -297,7 +297,7 @@ export default async function SchedulePage() {
                               <div className="rounded-lg px-2.5 py-2 text-[11px] border" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
                                 <div className="font-bold leading-tight flex items-center gap-1">
                                   {assignment.decoded?.jobRef || assignment.job}
-                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-red-400' : ''}>{wx.icon}</span> : null; })()}
+                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-[#E04343]' : ''}>{wx.icon}</span> : null; })()}
                                 </div>
                                 {assignment.decoded?.activity && (
                                   <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
@@ -315,7 +315,7 @@ export default async function SchedulePage() {
                             )
                             );
                           })() : (
-                            <span className="text-[10px] text-white/10 px-2">—</span>
+                            <span className="text-[10px] text-[#757A7F]/40 px-2">—</span>
                           )}
                         </td>
                       );
@@ -325,9 +325,9 @@ export default async function SchedulePage() {
               })}
 
               {/* Support separator */}
-              <tr className="border-b-2 border-white/10">
-                <td colSpan={8} className="px-4 py-1.5 bg-white/[0.02]">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-white/20">Support & Logistics</span>
+              <tr className="border-b-2 border-[#3C4043]/15">
+                <td colSpan={8} className="px-4 py-1.5 bg-[#F1F3F4]/50">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#757A7F]/60">Support & Logistics</span>
                 </td>
               </tr>
 
@@ -337,28 +337,28 @@ export default async function SchedulePage() {
                 const hasWork = week.days.some((d: any) => d.assignments?.some((a: any) => a.crew === crewName));
                 if (!hasWork) return null;
                 return (
-                  <tr key={crewName} className={`border-b border-white/5 ${ci % 2 === 0 ? '' : 'bg-white/[0.015]'}`}>
-                    <td className="px-4 py-3 sticky left-0 bg-[#1e2023] z-10 border-r border-white/5">
+                  <tr key={crewName} className={`border-b border-[#F1F3F4] ${ci % 2 === 0 ? '' : 'bg-[#F1F3F4]/40'}`}>
+                    <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r border-[#F1F3F4]">
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }}></span>
-                        <span className="text-xs font-medium text-white/50 whitespace-nowrap">{crewName}</span>
+                        <span className="text-xs font-medium text-[#757A7F] whitespace-nowrap">{crewName}</span>
                       </div>
                     </td>
                     {dayNames.map(day => {
                       const dayData = week.days.find((d: any) => d.dayOfWeek === day);
                       const assignment = dayData?.assignments?.find((a: any) => a.crew === crewName);
                       return (
-                        <td key={day} className={`px-2 py-1.5 border-r border-white/5 align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
+                        <td key={day} className={`px-2 py-1.5 border-r border-[#F1F3F4] align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
                           {assignment ? (() => {
                             const linkJobId = resolveJobLink(assignment);
                             return (
-                            <div className="text-[10px] text-white/40 px-2 py-1 rounded bg-white/[0.03]">
+                            <div className="text-[10px] text-[#757A7F] px-2 py-1 rounded bg-[#F1F3F4]/60">
                               {assignment.decoded?.isOff ? (
-                                <span className="italic text-white/20">{assignment.decoded.jobRef}</span>
+                                <span className="italic text-[#757A7F]/60">{assignment.decoded.jobRef}</span>
                               ) : linkJobId ? (
                                 <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block hover:opacity-80 transition-opacity cursor-pointer">
-                                  <span className="font-medium text-white hover:text-[#20BC64] transition-colors">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50 text-white/60"> · {assignment.decoded.activity}</span>}
+                                  <span className="font-medium text-[#3C4043] hover:text-[#20BC64] transition-colors">{assignment.decoded?.jobRef || assignment.job}</span>
+                                  {assignment.decoded?.activity && <span className="opacity-50 text-[#3C4043]/70"> · {assignment.decoded.activity}</span>}
                                 </Link>
                               ) : (
                                 <>
@@ -368,7 +368,7 @@ export default async function SchedulePage() {
                               )}
                             </div>
                             );
-                          })() : <span className="text-[10px] text-white/10 px-2">—</span>}
+                          })() : <span className="text-[10px] text-[#757A7F]/40 px-2">—</span>}
                         </td>
                       );
                     })}
@@ -383,22 +383,22 @@ export default async function SchedulePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#2A2D31] text-white font-sans pb-10 antialiased">
+    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body pb-10 antialiased">
       {/* Header */}
-      <header className="bg-[#1e2023] px-8 py-5 border-b border-white/5 shadow-xl">
+      <header className="bg-white px-8 py-5 border-b border-[#F1F3F4] shadow-sm">
         <div className="flex justify-between items-center max-w-[1920px] mx-auto">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tight">Weekly Schedule</h1>
-            <p className="text-xs text-white/30 mt-1">Live from Level 10 · Schedule & Project Timeline · {schedule.scheduledJobCount || 0} Active Jobs</p>
+            <p className="text-xs text-[#757A7F] mt-1">Live from Level 10 · Schedule & Project Timeline · {schedule.scheduledJobCount || 0} Active Jobs</p>
           </div>
           <div className="flex items-center gap-3">
             {weatherAlerts.length > 0 && (
-              <span className="text-xs font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-3 py-1.5">
+              <span className="text-xs font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 rounded-full px-3 py-1.5">
                 ⛈️ {weatherAlerts.length} Weather Alerts
               </span>
             )}
             {schedule.deliveries?.length > 0 && (
-              <span className="text-xs font-black text-blue-400 bg-blue-400/10 border border-blue-400/20 rounded-full px-3 py-1.5">
+              <span className="text-xs font-black text-blue-600 bg-blue-600/10 border border-blue-400/20 rounded-full px-3 py-1.5">
                 🚚 {schedule.deliveries.length} Deliveries
               </span>
             )}
@@ -409,13 +409,13 @@ export default async function SchedulePage() {
       <div className="max-w-[1920px] mx-auto px-8 py-8 space-y-8">
         {/* CUSTOMERS SCREAMING BANNER */}
         {level10.screaming?.length > 0 && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-start gap-4 shadow-xl">
+          <div className="bg-[#E04343]/10 border border-red-500/30 rounded-md p-4 flex items-start gap-4 shadow-sm">
             <div className="text-3xl">😱</div>
             <div>
-              <h2 className="text-red-400 font-black uppercase tracking-widest text-xs mb-2">What Customers Are Screaming</h2>
+              <h2 className="text-[#E04343] font-black uppercase tracking-widest text-xs mb-2">What Customers Are Screaming</h2>
               <ul className="list-disc pl-4 space-y-1">
                 {level10.screaming.map((s, i) => (
-                  <li key={i} className="text-sm font-bold text-white/90">{s}</li>
+                  <li key={i} className="text-sm font-bold text-[#3C4043]">{s}</li>
                 ))}
               </ul>
             </div>
@@ -424,10 +424,10 @@ export default async function SchedulePage() {
 
         {/* ACTIVE PROJECTS TIMELINE (from Gantt sheet) */}
         {(schedule.activeGanttJobs || []).length > 0 && (
-          <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-            <div className="px-5 py-3 border-b border-white/5 flex items-center gap-2">
+          <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-[#F1F3F4] flex items-center gap-2">
               <span className="text-sm">📋</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Active Projects — Timeline</h2>
+              <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Active Projects — Timeline</h2>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {(schedule.activeGanttJobs || []).map((job: any) => {
@@ -440,17 +440,17 @@ export default async function SchedulePage() {
                 const daysLeft = Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
                 const isOverdue = daysLeft < 0;
                 return (
-                  <div key={job.Job_Number} className="rounded-xl p-3 border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] transition-colors">
+                  <div key={job.Job_Number} className="rounded-xl p-3 border border-[#F1F3F4] bg-[#F1F3F4]/50 hover:bg-white/[0.04] transition-colors">
                     <div className="flex justify-between items-start mb-1.5">
-                      <span className="text-[10px] font-bold text-white/30">{job.Job_Number}</span>
-                      <span className={`text-[10px] font-black ${isOverdue ? 'text-red-400' : daysLeft <= 7 ? 'text-amber-400' : 'text-[#20BC64]'}`}>
+                      <span className="text-[10px] font-bold text-[#757A7F]">{job.Job_Number}</span>
+                      <span className={`text-[10px] font-black ${isOverdue ? 'text-[#E04343]' : daysLeft <= 7 ? 'text-[#F5A623]' : 'text-[#20BC64]'}`}>
                         {isOverdue ? `${Math.abs(daysLeft)}d over` : `${daysLeft}d left`}
                       </span>
                     </div>
-                    <p className="text-[11px] font-bold text-white/80 mb-1 line-clamp-2">{job.Job_Name}</p>
-                    <p className="text-[9px] text-white/30 mb-2">{job.Project_Type} · {job.Start} → {job.End}</p>
-                    <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-                      <div className={`h-full rounded-full ${isOverdue ? 'bg-red-400' : 'bg-[#20BC64]'}`} style={{ width: `${pct}%` }} />
+                    <p className="text-[11px] font-bold text-[#3C4043] mb-1 line-clamp-2">{job.Job_Name}</p>
+                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} · {job.Start} → {job.End}</p>
+                    <div className="w-full bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
+                      <div className={`h-full rounded-full ${isOverdue ? 'bg-[#E04343]' : 'bg-[#20BC64]'}`} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -469,19 +469,19 @@ export default async function SchedulePage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           
           {/* LOOSE ENDS (Level 10) */}
-          <div className="lg:col-span-1 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden flex flex-col h-full">
-            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+          <div className="lg:col-span-1 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col h-full">
+            <div className="px-5 py-4 border-b border-[#F1F3F4] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📝</span>
-                <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Tie Up Loose Ends</h2>
+                <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Tie Up Loose Ends</h2>
               </div>
             </div>
             <div className="p-4 space-y-3 flex-1 overflow-y-auto">
               {level10.looseEnds?.length > 0 ? (
                 level10.looseEnds.map((end, i) => (
-                  <div key={i} className="rounded-xl p-3 border border-white/5 bg-white/[0.02]">
-                    <p className="text-xs font-bold text-white mb-1 leading-tight">{end.details}</p>
-                    {end.who && <p className="text-[10px] text-amber-400 font-bold uppercase">Who: {end.who}</p>}
+                  <div key={i} className="rounded-xl p-3 border border-[#F1F3F4] bg-[#F1F3F4]/50">
+                    <p className="text-xs font-bold text-[#3C4043] mb-1 leading-tight">{end.details}</p>
+                    {end.who && <p className="text-[10px] text-[#F5A623] font-bold uppercase">Who: {end.who}</p>}
                   </div>
                 ))
               ) : (
@@ -494,15 +494,15 @@ export default async function SchedulePage() {
           </div>
 
           {/* EQUIPMENT MAP — GPS pins only, no lists */}
-          <div className="lg:col-span-3 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center">
+          <div className="lg:col-span-3 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <span className="text-sm">📍</span>
-                <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment Locations</h2>
+                <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Equipment Locations</h2>
               </div>
               <div className="flex items-center gap-3 text-[10px]">
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> Rentals ({rentalEquipment.length})</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> Assets ({vlAssets.length})</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span> Assets ({vlAssets.length})</span>
               </div>
             </div>
             <div className="h-[500px]">

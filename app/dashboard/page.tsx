@@ -561,41 +561,41 @@ export default async function MasterDashboard() {
   const healthCounts = { green: 0, amber: 0, red: 0 };
   scheduledJobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
 
-  const healthColor = { green: '#20BC64', amber: '#fb923c', red: '#ef4444' };
-  const riskColor = { critical: '#ef4444', warning: '#fb923c', info: '#60a5fa' };
-  const riskBg = { critical: 'rgba(239,68,68,0.07)', warning: 'rgba(251,146,60,0.07)', info: 'rgba(96,165,250,0.07)' };
-  const riskBorder = { critical: 'rgba(239,68,68,0.2)', warning: 'rgba(251,146,60,0.2)', info: 'rgba(96,165,250,0.2)' };
+  const healthColor: Record<string, string> = { green: '#20BC64', amber: '#F5A623', red: '#E04343' };
+  const riskColor: Record<string, string> = { critical: '#E04343', warning: '#F5A623', info: '#3C4043' };
+  const riskBg: Record<string, string> = { critical: '#FDECEC', warning: '#FEF3DB', info: '#F1F3F4' };
+  const riskBorder: Record<string, string> = { critical: 'rgba(224,67,67,0.3)', warning: 'rgba(245,166,35,0.3)', info: 'rgba(60,64,67,0.15)' };
 
   return (
-    <div className="min-h-screen bg-[#2A2D31] text-white font-sans flex flex-col pb-10 antialiased overflow-x-hidden">
+    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body flex flex-col pb-10 antialiased overflow-x-hidden">
 
       {/* ── HEADER ─────────────────────────────────────────────────────── */}
-      <header className="flex flex-col w-full sticky top-0 z-50 shadow-2xl">
-        <div className="px-8 py-5 bg-[#2A2D31] flex justify-between items-center">
+      <header className="flex flex-col w-full sticky top-0 z-50 shadow-md">
+        <div className="px-8 py-4 bg-white flex justify-between items-center border-b border-[#F1F3F4]">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-[#20BC64] rounded-lg flex items-center justify-center font-black text-white text-lg">S</div>
-            <span className="text-white font-black text-xl tracking-wide">SUNBELT SPORTS</span>
+            <div className="w-10 h-10 bg-[#20BC64] rounded flex items-center justify-center font-display font-black text-white text-lg">S</div>
+            <span className="font-display font-black text-xl tracking-wide text-[#3C4043]">SUNBELT SPORTS</span>
           </div>
           <div className="flex items-center gap-4">
             {criticalCount > 0 && (
-              <a href="#risk-alerts" className="flex items-center gap-1.5 text-xs font-black text-red-400 bg-red-400/10 border border-red-400/20 rounded-full px-3 py-1 hover:bg-red-400/20 transition-colors cursor-pointer">
+              <a href="#risk-alerts" className="pill pill-danger cursor-pointer hover:opacity-80 transition-opacity">
                 🔴 {criticalCount} Critical
               </a>
             )}
             {warningCount > 0 && (
-              <a href="#risk-alerts" className="flex items-center gap-1.5 text-xs font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 rounded-full px-3 py-1 hover:bg-amber-400/20 transition-colors cursor-pointer">
+              <a href="#risk-alerts" className="pill pill-warning cursor-pointer hover:opacity-80 transition-opacity">
                 ⚠️ {warningCount} Warnings
               </a>
             )}
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-[#20BC64] animate-pulse"></div>
-              <span className="text-xs text-white/40 font-bold uppercase tracking-widest">Live Data</span>
+              <span className="text-xs text-[#757A7F] font-display font-bold uppercase tracking-widest">Live Data</span>
             </div>
           </div>
         </div>
-        <div className="bg-[#1e2023] px-8 py-3 border-y border-white/5 shadow-md flex justify-between items-center">
-          <h1 className="text-xl font-black uppercase tracking-wide text-white/90">Construction Management Portal</h1>
-          <p className="text-xs text-white/30 font-bold">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+        <div className="bg-white px-8 py-3 border-b-2 border-[#3C4043] flex justify-between items-center">
+          <h1 className="font-display text-xl font-black uppercase tracking-wide text-[#3C4043]">Construction Management Portal</h1>
+          <p className="text-xs text-[#757A7F] font-display font-bold">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
         </div>
       </header>
 
@@ -604,34 +604,34 @@ export default async function MasterDashboard() {
         {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {/* Scheduled Jobs */}
-          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Scheduled Jobs</p>
-            <p className="text-4xl font-black text-[#20BC64]">{scheduledJobs.length}</p>
-            <div className="text-xs text-white/30 mt-1 leading-relaxed">{scheduledJobNames.length > 0 ? scheduledJobNames.slice(0, 8).map((name, i) => (<div key={i}>{name}</div>)) : 'None this week'}</div>
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Scheduled Jobs</p>
+            <p className="text-4xl font-display font-black text-[#20BC64]">{scheduledJobs.length}</p>
+            <div className="text-xs text-[#757A7F] mt-1 leading-relaxed">{scheduledJobNames.length > 0 ? scheduledJobNames.slice(0, 8).map((name, i) => (<div key={i}>{name}</div>)) : 'None this week'}</div>
           </div>
           {/* Portfolio Value */}
-          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Portfolio Value</p>
-            <p className="text-4xl font-black text-[#60a5fa]">${(totalPortfolio / 1000000).toFixed(1)}M</p>
-            <p className="text-xs text-white/30 mt-1">Total contract value</p>
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Portfolio Value</p>
+            <p className="text-4xl font-display font-black text-[#3C4043]">${(totalPortfolio / 1000000).toFixed(1)}M</p>
+            <p className="text-xs text-[#757A7F] mt-1">Total contract value</p>
           </div>
           {/* Billed To Date */}
-          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Billed To Date</p>
-            <p className="text-4xl font-black text-[#a78bfa]">${(totalBilled / 1000000).toFixed(1)}M</p>
-            <p className="text-xs text-white/30 mt-1">{overallPct}% collected</p>
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Billed To Date</p>
+            <p className="text-4xl font-display font-black text-[#20BC64]">${(totalBilled / 1000000).toFixed(1)}M</p>
+            <p className="text-xs text-[#757A7F] mt-1">{overallPct}% collected</p>
           </div>
           {/* Fleet Tracking */}
-          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Fleet at Jobsites</p>
-            <p className="text-4xl font-black text-[#fb923c]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
-            <p className="text-xs text-white/30 mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p>
+            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
+            <p className="text-xs text-[#757A7F] mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
           </div>
           {/* Missing Reports */}
-          <div className="bg-[#1e2023] rounded-2xl p-5 border border-white/5 shadow-xl">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40 mb-2">Missing Reports</p>
-            <p className={`text-4xl font-black ${missingReportJobs.length > 0 ? 'text-red-400' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
-            <p className="text-xs text-white/30 mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' · ') : 'All yesterday\u2019s reports in'}</p>
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Missing Reports</p>
+            <p className={`text-4xl font-display font-black ${missingReportJobs.length > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
+            <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' · ') : 'All yesterday\u2019s reports in'}</p>
           </div>
         </div>
 
@@ -639,19 +639,18 @@ export default async function MasterDashboard() {
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MAP */}
-          <div className="col-span-12 lg:col-span-8 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden" style={{ minHeight: '500px' }}>
-            <div className="p-5 border-b border-white/5 flex justify-between items-center">
+          <div className="col-span-12 lg:col-span-8 card overflow-hidden" style={{ minHeight: '500px' }}>
+            <div className="p-5 border-b-2 border-[#3C4043] flex justify-between items-center">
               <div className="flex items-center gap-3">
-                <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Live Operations Map</h2>
-                <div className="flex items-center gap-3 text-xs font-bold">
-                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-[#20BC64] inline-block"></span>Job Site</span>
-                  <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-400 inline-block"></span>Vehicle</span>
-                  <span className="flex items-center gap-1.5 text-white/30">● Green &gt;40% · Orange &lt;40% · Red Stalled</span>
+                <h2 className="font-display text-sm font-black uppercase tracking-widest text-[#3C4043]">Live Operations Map</h2>
+                <div className="flex items-center gap-3 text-xs font-display font-bold">
+                  <span className="flex items-center gap-1.5 text-[#3C4043]"><span className="w-3 h-3 rounded-full bg-[#20BC64] inline-block"></span>Job Site</span>
+                  <span className="flex items-center gap-1.5 text-[#3C4043]"><span className="w-3 h-3 rounded bg-blue-500 inline-block"></span>Vehicle</span>
                 </div>
               </div>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-[#20BC64] font-bold">{scheduledJobs.filter((j:any) => j.Lat && j.Lng).length} Pinned</span>
-                {samsara.configured && <span className="text-blue-400 font-bold">{samsara.vehicles.length} Vehicles</span>}
+                <span className="text-[#20BC64] font-display font-bold">{scheduledJobs.filter((j:any) => j.Lat && j.Lng).length} Pinned</span>
+                {samsara.configured && <span className="text-blue-500 font-display font-bold">{samsara.vehicles.length} Vehicles</span>}
               </div>
             </div>
             <div style={{ height: '460px' }}>
@@ -690,12 +689,12 @@ export default async function MasterDashboard() {
           </div>
 
           {/* RISK BOX */}
-          <div id="risk-alerts" className="col-span-12 lg:col-span-4 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl flex flex-col overflow-hidden scroll-mt-32">
-            <div className="p-5 border-b border-white/5 flex justify-between items-center flex-shrink-0">
-              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Risk & Alerts</h2>
+          <div id="risk-alerts" className="col-span-12 lg:col-span-4 card flex flex-col overflow-hidden scroll-mt-32">
+            <div className="p-5 border-b-2 border-[#3C4043] flex justify-between items-center flex-shrink-0">
+              <h2 className="font-display text-sm font-black uppercase tracking-widest text-[#3C4043]">Risk & Alerts</h2>
               <div className="flex gap-2">
-                {criticalCount > 0 && <span className="text-xs font-black text-red-400 bg-red-400/10 rounded-full px-2 py-0.5">{criticalCount} Critical</span>}
-                {warningCount > 0 && <span className="text-xs font-black text-amber-400 bg-amber-400/10 rounded-full px-2 py-0.5">{warningCount} Warn</span>}
+                {criticalCount > 0 && <span className="pill pill-danger">{criticalCount} Critical</span>}
+                {warningCount > 0 && <span className="pill pill-warning">{warningCount} Warn</span>}
               </div>
             </div>
             <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
@@ -703,7 +702,7 @@ export default async function MasterDashboard() {
                 <div className="text-center py-8">
                   <p className="text-4xl mb-2">✅</p>
                   <p className="text-[#20BC64] font-bold text-sm">All Clear</p>
-                  <p className="text-white/30 text-xs mt-1">No active risks detected</p>
+                  <p className="text-[#757A7F] text-xs mt-1">No active risks detected</p>
                 </div>
               ) : risks.map((risk, i) => (
                 <div
@@ -717,11 +716,11 @@ export default async function MasterDashboard() {
                     </span>
                     <div>
                       {risk.job && (
-                        <Link href={`/jobs/${risk.job}`} className="text-[10px] font-black uppercase tracking-widest mb-1 block hover:text-white transition-colors" style={{ color: riskColor[risk.level] }}>
+                        <Link href={`/jobs/${risk.job}`} className="text-[10px] font-black uppercase tracking-widest mb-1 block hover:text-[#3C4043] transition-colors" style={{ color: riskColor[risk.level] }}>
                           {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `· ${j.Job_Name}` : ''; })()} →
                         </Link>
                       )}
-                      <p className="text-xs text-white/70 leading-relaxed">{risk.message}</p>
+                      <p className="text-xs text-[#3C4043] leading-relaxed">{risk.message}</p>
                     </div>
                   </div>
                 </div>
@@ -739,12 +738,12 @@ export default async function MasterDashboard() {
           if (!lowboyVehicle && !samsara.configured) return null;
 
           return (
-            <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-              <div className="p-5 border-b border-white/5 flex justify-between items-center">
+            <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-white/60">🚛 Lowboy Command — Jose De Lara</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">🚛 Lowboy Command — Jose De Lara</h2>
                   {lowboyVehicle && (
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
                       {lowboyVehicle.speed > 2 ? `🟢 EN ROUTE · ${lowboyVehicle.speed} mph` : '🟡 PARKED'}
                     </span>
                   )}
@@ -754,21 +753,21 @@ export default async function MasterDashboard() {
               {lowboyVehicle ? (
                 <div className="p-5">
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Current Location</p>
-                      <p className="text-xs font-bold text-white/70 leading-relaxed">{lowboyVehicle.address || 'GPS Active'}</p>
+                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Current Location</p>
+                      <p className="text-xs font-bold text-[#3C4043] leading-relaxed">{lowboyVehicle.address || 'GPS Active'}</p>
                     </div>
-                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Speed</p>
-                      <p className="text-2xl font-black text-white">{lowboyVehicle.speed}<span className="text-sm text-white/30 ml-1">mph</span></p>
+                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Speed</p>
+                      <p className="text-2xl font-black text-white">{lowboyVehicle.speed}<span className="text-sm text-[#757A7F] ml-1">mph</span></p>
                     </div>
-                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Heading</p>
-                      <p className="text-lg font-black text-white/60">{lowboyVehicle.heading || 0}°</p>
+                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Heading</p>
+                      <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}°</p>
                     </div>
-                    <div className="bg-black/20 rounded-xl p-4 border border-white/5">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Driver</p>
-                      <p className="text-sm font-black text-white/70">Jose De Lara</p>
+                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
+                      <p className="text-sm font-black text-[#3C4043]">Jose De Lara</p>
                     </div>
                   </div>
                   {lowboyVehicle.speed > 2 && (
@@ -780,7 +779,7 @@ export default async function MasterDashboard() {
                 </div>
               ) : (
                 <div className="p-5 text-center">
-                  <p className="text-white/30 text-sm">Awaiting Samsara GPS signal for Jose De Lara&apos;s lowboy unit.</p>
+                  <p className="text-[#757A7F] text-sm">Awaiting Samsara GPS signal for Jose De Lara&apos;s lowboy unit.</p>
                 </div>
               )}
             </div>
@@ -791,20 +790,20 @@ export default async function MasterDashboard() {
         <div className="grid grid-cols-12 gap-6">
 
           {/* PORTFOLIO SCORECARD */}
-          <div className="col-span-12 lg:col-span-5 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-            <div className="p-5 border-b border-white/5">
-              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Portfolio Scorecard — Estimated vs. Actual</h2>
-              <p className="text-xs text-white/30 mt-1">Billing % · Production tonnage from field reports</p>
+          <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-[#F1F3F4]">
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard — Estimated vs. Actual</h2>
+              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p>
             </div>
             <div className="p-5 space-y-5">
 
               {/* Billing Progress */}
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Portfolio Billed</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Portfolio Billed</span>
                   <span className="text-xs font-bold text-[#20BC64]">${(totalBilled/1000000).toFixed(2)}M / ${(totalPortfolio/1000000).toFixed(2)}M</span>
                 </div>
-                <div className="relative h-6 bg-white/5 rounded-full overflow-hidden">
+                <div className="relative h-6 bg-[#F1F3F4] rounded-full overflow-hidden">
                   <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-[#20BC64] to-[#16a558] rounded-full transition-all" style={{ width: `${overallPct}%` }} />
                   <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">{overallPct}% Billed</span>
                 </div>
@@ -813,10 +812,10 @@ export default async function MasterDashboard() {
               {/* Asphalt Tonnage */}
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Asphalt Tonnage (Live)</span>
-                  <span className="text-xs font-bold text-blue-400">{totalAsphaltLogged.toLocaleString()} tons logged</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Asphalt Tonnage (Live)</span>
+                  <span className="text-xs font-bold text-blue-600">{totalAsphaltLogged.toLocaleString()} tons logged</span>
                 </div>
-                <div className="relative h-5 bg-white/5 rounded-full overflow-hidden">
+                <div className="relative h-5 bg-[#F1F3F4] rounded-full overflow-hidden">
                   <div className="absolute left-0 top-0 h-full bg-blue-500/70 rounded-full" style={{ width: `${Math.min(100, (totalAsphaltLogged / Math.max(1, totalAsphaltLogged * 1.3)) * 100)}%` }} />
                   <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">{totalAsphaltLogged.toLocaleString()} tons</span>
                 </div>
@@ -825,37 +824,37 @@ export default async function MasterDashboard() {
               {/* Base Tonnage */}
               <div>
                 <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-white/50">Base / GAB Tonnage (Live)</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Base / GAB Tonnage (Live)</span>
                   <span className="text-xs font-bold text-purple-400">{totalBaseLogged.toLocaleString()} tons logged</span>
                 </div>
-                <div className="relative h-5 bg-white/5 rounded-full overflow-hidden">
+                <div className="relative h-5 bg-[#F1F3F4] rounded-full overflow-hidden">
                   <div className="absolute left-0 top-0 h-full bg-purple-500/70 rounded-full" style={{ width: `${Math.min(100, (totalBaseLogged / Math.max(1, totalBaseLogged * 1.3)) * 100)}%` }} />
                   <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">{totalBaseLogged.toLocaleString()} tons</span>
                 </div>
               </div>
 
               {/* Labour */}
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5">
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#F1F3F4]">
                 <div className="bg-black/20 rounded-xl p-3 text-center">
-                  <p className="text-xs text-white/30 font-bold uppercase mb-1">Total Man-Hours</p>
-                  <p className="text-2xl font-black text-amber-400">{totalManHours.toLocaleString()}</p>
-                  <p className="text-[10px] text-white/20">from field reports</p>
+                  <p className="text-xs text-[#757A7F] font-bold uppercase mb-1">Total Man-Hours</p>
+                  <p className="text-2xl font-black text-[#F5A623]">{totalManHours.toLocaleString()}</p>
+                  <p className="text-[10px] text-[#757A7F]/60">from field reports</p>
                 </div>
                 <div className="bg-black/20 rounded-xl p-3 text-center">
-                  <p className="text-xs text-white/30 font-bold uppercase mb-1">Reported Jobs</p>
+                  <p className="text-xs text-[#757A7F] font-bold uppercase mb-1">Reported Jobs</p>
                   <p className="text-2xl font-black text-[#20BC64]">{fieldReports.length}</p>
-                  <p className="text-[10px] text-white/20">of {jobs.length} total</p>
+                  <p className="text-[10px] text-[#757A7F]/60">of {jobs.length} total</p>
                 </div>
               </div>
 
               {/* Per-job billing vs activity mismatch summary */}
-              <div className="pt-2 border-t border-white/5">
-                <p className="text-xs font-black uppercase tracking-widest text-white/30 mb-3">Billing vs. Activity Summary</p>
+              <div className="pt-2 border-t border-[#F1F3F4]">
+                <p className="text-xs font-black uppercase tracking-widest text-[#757A7F] mb-3">Billing vs. Activity Summary</p>
                 <div className="grid grid-cols-3 gap-2 text-center">
                   {(['green','amber','red'] as const).map(h => (
                     <div key={h} className="rounded-lg p-2" style={{ background: `${healthColor[h]}10`, border: `1px solid ${healthColor[h]}20` }}>
                       <p className="text-xl font-black" style={{ color: healthColor[h] }}>{healthCounts[h]}</p>
-                      <p className="text-[10px] font-bold uppercase text-white/40">{h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : 'At Risk'}</p>
+                      <p className="text-[10px] font-bold uppercase text-[#757A7F]">{h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : 'At Risk'}</p>
                     </div>
                   ))}
                 </div>
@@ -864,13 +863,13 @@ export default async function MasterDashboard() {
           </div>
 
           {/* QUICK JOB HEALTH */}
-          <div className="col-span-12 lg:col-span-7 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-            <div className="p-5 border-b border-white/5 flex justify-between items-center">
-              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">Quick Job Health</h2>
+          <div className="col-span-12 lg:col-span-7 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Quick Job Health</h2>
               <div className="flex items-center gap-3 text-xs">
                 <span className="text-[#20BC64] font-bold">● On Track</span>
-                <span className="text-amber-400 font-bold">● Watch</span>
-                <span className="text-red-400 font-bold">● At Risk</span>
+                <span className="text-[#F5A623] font-bold">● Watch</span>
+                <span className="text-[#E04343] font-bold">● At Risk</span>
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
@@ -893,29 +892,29 @@ export default async function MasterDashboard() {
                     }}
                   >
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-black text-white/40">{job.Job_Number}</span>
+                      <span className="text-[10px] font-black text-[#757A7F]">{job.Job_Number}</span>
                       <span className="text-[10px] font-black uppercase" style={{ color: healthColor[health] }}>
                         {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
                       </span>
                     </div>
-                    <p className="text-xs font-bold text-white leading-tight mb-2 line-clamp-1">{job.Job_Name}</p>
+                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Name}</p>
                     <div className="flex flex-col gap-1">
                       <div>
-                        <div className="flex justify-between text-[9px] text-white/30 mb-0.5">
+                        <div className="flex justify-between text-[9px] text-[#757A7F] mb-0.5">
                           <span>Billed</span>
                           <span>{pct}%</span>
                         </div>
-                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className="h-1 bg-[#F1F3F4] rounded-full overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: healthColor[health] }} />
                         </div>
                       </div>
                       {(asphaltT > 0 || baseT > 0) && (
-                        <div className="mt-1 flex gap-2 text-[9px] text-white/25">
-                          {asphaltT > 0 && <span className="text-blue-400/60">{asphaltT.toLocaleString()}t asph</span>}
+                        <div className="mt-1 flex gap-2 text-[9px] text-[#757A7F]/70">
+                          {asphaltT > 0 && <span className="text-blue-600/60">{asphaltT.toLocaleString()}t asph</span>}
                           {baseT > 0 && <span className="text-purple-400/60">{baseT.toLocaleString()}t base</span>}
                         </div>
                       )}
-                      {!report && <p className="text-[9px] text-red-400/60 mt-1">No field reports</p>}
+                      {!report && <p className="text-[9px] text-[#E04343]/60 mt-1">No field reports</p>}
                     </div>
                   </Link>
                 );
@@ -954,17 +953,17 @@ export default async function MasterDashboard() {
           const maxVelocity = Math.max(stoneVelocity, asphaltVelocity, 1);
 
           return (
-            <div className="bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-              <div className="p-5 border-b border-white/5 flex justify-between items-center">
+            <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+              <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-white/60">⚡ Throughput Bottleneck Tracker</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker</h2>
                   {isBehind && (
-                    <span className="text-[10px] font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
+                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
                       ⚠️ BASE CREW BELOW PAVING THRESHOLD
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-white/20 font-bold uppercase">Live Telemetry</span>
+                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Telemetry</span>
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-2 gap-6">
@@ -972,12 +971,12 @@ export default async function MasterDashboard() {
                   <div>
                     <div className="flex justify-between items-end mb-3">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-400/80">Stone Base Velocity</p>
-                        <p className="text-[9px] text-white/25 mt-0.5">Foremen: Juan · Martin · Julio</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Stone Base Velocity</p>
+                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foremen: Juan · Martin · Julio</p>
                       </div>
-                      <p className="text-3xl font-black text-amber-400">{stoneVelocity}<span className="text-sm text-amber-400/50 ml-1">t/day</span></p>
+                      <p className="text-3xl font-black text-[#F5A623]">{stoneVelocity}<span className="text-sm text-[#F5A623]/50 ml-1">t/day</span></p>
                     </div>
-                    <div className="relative h-8 bg-white/5 rounded-lg overflow-hidden">
+                    <div className="relative h-8 bg-[#F1F3F4] rounded-lg overflow-hidden">
                       <div
                         className="absolute left-0 top-0 h-full rounded-lg transition-all bg-gradient-to-r from-amber-500/80 to-amber-400/60"
                         style={{ width: `${Math.min(100, (stoneVelocity / maxVelocity) * 100)}%` }}
@@ -992,12 +991,12 @@ export default async function MasterDashboard() {
                   <div>
                     <div className="flex justify-between items-end mb-3">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-400/80">Asphalt Paving Velocity</p>
-                        <p className="text-[9px] text-white/25 mt-0.5">Foreman: Rosendo Rubio</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">Asphalt Paving Velocity</p>
+                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foreman: Rosendo Rubio</p>
                       </div>
-                      <p className="text-3xl font-black text-blue-400">{asphaltVelocity}<span className="text-sm text-blue-400/50 ml-1">t/day</span></p>
+                      <p className="text-3xl font-black text-blue-600">{asphaltVelocity}<span className="text-sm text-blue-600/50 ml-1">t/day</span></p>
                     </div>
-                    <div className="relative h-8 bg-white/5 rounded-lg overflow-hidden">
+                    <div className="relative h-8 bg-[#F1F3F4] rounded-lg overflow-hidden">
                       <div
                         className="absolute left-0 top-0 h-full rounded-lg transition-all bg-gradient-to-r from-blue-500/80 to-blue-400/60"
                         style={{ width: `${Math.min(100, (asphaltVelocity / maxVelocity) * 100)}%` }}
@@ -1012,7 +1011,7 @@ export default async function MasterDashboard() {
                 {/* Alert Banner */}
                 {isBehind && (
                   <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
-                    <span className="text-amber-400 text-lg shrink-0">⚠️</span>
+                    <span className="text-[#F5A623] text-lg shrink-0">⚠️</span>
                     <div>
                       <p className="text-amber-300 font-black text-xs">BASE CREW VELOCITY BELOW PAVING THRESHOLD</p>
                       <p className="text-amber-200/50 text-[10px] mt-0.5">
@@ -1024,26 +1023,26 @@ export default async function MasterDashboard() {
                 )}
 
                 {/* Ratio indicator */}
-                <div className="mt-4 pt-3 border-t border-white/5 flex justify-between items-center">
+                <div className="mt-4 pt-3 border-t border-[#F1F3F4] flex justify-between items-center">
                   <div className="flex items-center gap-4">
                     <div className="text-center">
-                      <p className="text-[9px] text-white/25 font-bold uppercase">Ratio</p>
-                      <p className={`text-lg font-black ${isBehind ? 'text-red-400' : 'text-emerald-400'}`}>
+                      <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Ratio</p>
+                      <p className={`text-lg font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
                         {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : '—'}x
                       </p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[9px] text-white/25 font-bold uppercase">Required</p>
-                      <p className="text-lg font-black text-white/40">≥1.20x</p>
+                      <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Required</p>
+                      <p className="text-lg font-black text-[#757A7F]">≥1.20x</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[9px] text-white/25 font-bold uppercase">Status</p>
-                      <p className={`text-xs font-black ${isBehind ? 'text-red-400' : 'text-emerald-400'}`}>
+                      <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Status</p>
+                      <p className={`text-xs font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
                         {isBehind ? '🔴 BEHIND' : '🟢 ON TRACK'}
                       </p>
                     </div>
                   </div>
-                  <span className="text-[9px] text-white/15 font-bold">{activeJobs.length} Active Jobs Reporting</span>
+                  <span className="text-[9px] text-[#757A7F]/50 font-bold">{activeJobs.length} Active Jobs Reporting</span>
                 </div>
               </div>
             </div>
@@ -1054,10 +1053,10 @@ export default async function MasterDashboard() {
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MISSION PROGRESS */}
-          <div className="col-span-12 lg:col-span-4 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl flex flex-col overflow-hidden" style={{ maxHeight: '500px' }}>
-            <div className="p-5 border-b border-white/5 flex justify-between items-center flex-shrink-0">
-              <h2 className="text-sm font-black uppercase tracking-widest text-white/60">This Week&apos;s Jobs</h2>
-              <span className="text-xs text-white/20 font-bold uppercase">Click a job</span>
+          <div className="col-span-12 lg:col-span-4 bg-white rounded-md border border-[#F1F3F4] shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: '500px' }}>
+            <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center flex-shrink-0">
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">This Week&apos;s Jobs</h2>
+              <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Click a job</span>
             </div>
             <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
               {scheduledJobs.map((job: any) => {
@@ -1068,25 +1067,25 @@ export default async function MasterDashboard() {
                   <Link
                     key={job.Job_Number}
                     href={`/jobs/${job.Job_Number}`}
-                    className="block bg-black/30 rounded-xl p-4 border border-white/5 hover:scale-[1.01] transition-all group"
+                    className="block bg-black/30 rounded-xl p-4 border border-[#F1F3F4] hover:scale-[1.01] transition-all group"
                     style={{ borderLeftWidth: '3px', borderLeftColor: healthColor[health] }}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <p className="font-bold text-white text-sm leading-tight">{job.Job_Name}</p>
-                        <p className="text-xs text-white/40 mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
+                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Name}</p>
+                        <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
                       </div>
                       <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: healthColor[health] }}>{pct}%</span>
                     </div>
                     <div className="flex gap-1 mb-1">
-                      <span className="text-[10px] text-white/30 w-14 flex-shrink-0">Billed</span>
-                      <div className="flex-1 bg-white/5 rounded-full h-1.5 overflow-hidden">
+                      <span className="text-[10px] text-[#757A7F] w-14 flex-shrink-0">Billed</span>
+                      <div className="flex-1 bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
                         <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: healthColor[health] }} />
                       </div>
                     </div>
                     <div className="flex justify-between mt-2">
-                      <span className="text-[10px] text-white/25">{job.Job_Number}</span>
-                      <span className="text-[10px] text-white/25">${(job.Contract_Amount || 0).toLocaleString()}</span>
+                      <span className="text-[10px] text-[#757A7F]/70">{job.Job_Number}</span>
+                      <span className="text-[10px] text-[#757A7F]/70">${(job.Contract_Amount || 0).toLocaleString()}</span>
                     </div>
                   </Link>
                 );
@@ -1095,15 +1094,15 @@ export default async function MasterDashboard() {
           </div>
 
           {/* FULL PORTFOLIO — moved to /portfolio */}
-          <div className="col-span-12 lg:col-span-8 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
-            <Link href="/portfolio" className="block p-8 hover:bg-white/5 transition-colors group">
+          <div className="col-span-12 lg:col-span-8 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
+            <Link href="/portfolio" className="block p-8 hover:bg-[#F1F3F4] transition-colors group">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-widest text-white/60 mb-2">Full Portfolio</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
-                  <p className="text-xs text-white/30 mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
+                  <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
                 </div>
-                <span className="text-2xl text-white/20 group-hover:text-white/50 transition-colors">→</span>
+                <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
               </div>
             </Link>
           </div>

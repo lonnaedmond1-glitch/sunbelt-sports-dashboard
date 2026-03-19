@@ -55,17 +55,17 @@ export default async function EquipmentPage() {
   const sortedRentals = enrichedRentals.sort((a, b) => b.totalBurn - a.totalBurn);
 
   return (
-    <div className="min-h-screen bg-[#2A2D31] text-white font-sans p-8">
+    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
       <header className="mb-6 flex justify-between items-end">
         <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-white mb-2">Active Rentals</h1>
-          <p className="text-white/40 text-sm">On-rent equipment tracking with daily burn rates and vendor breakdown.</p>
+          <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-2">Active Rentals</h1>
+          <p className="text-[#757A7F] text-sm">On-rent equipment tracking with daily burn rates and vendor breakdown.</p>
         </div>
       </header>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-[#1e2023] rounded-xl p-5 border border-white/5 shadow-lg relative overflow-hidden">
+        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4] shadow-lg relative overflow-hidden">
           <p className="text-xs font-bold uppercase tracking-widest text-[#20BC64] mb-1">
             Active Rentals {isLive && <span className="ml-1 text-[8px] px-1 bg-[#20BC64]/20 rounded tracking-normal">LIVE</span>}
           </p>
@@ -73,27 +73,27 @@ export default async function EquipmentPage() {
           <div className="absolute right-[-20px] bottom-[-20px] text-[#20BC64]/10 text-8xl font-black">🚜</div>
         </div>
 
-        <div className="bg-[#1e2023] rounded-xl p-5 border border-white/5 shadow-lg relative overflow-hidden">
+        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4] shadow-lg relative overflow-hidden">
           <p className="text-xs font-bold uppercase tracking-widest text-[#fb923c] mb-1">Total Daily Burn</p>
           <p className="text-4xl font-black">${totalDailyBurn.toLocaleString()}</p>
-          <p className="text-xs text-white/30 mt-1 uppercase font-bold tracking-widest">per day</p>
+          <p className="text-xs text-[#757A7F] mt-1 uppercase font-bold tracking-widest">per day</p>
         </div>
 
-        <div className={`bg-[#1e2023] rounded-xl p-5 border ${overdueCount > 0 ? 'border-red-500/30' : 'border-white/5'} shadow-lg relative overflow-hidden`}>
-          <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${overdueCount > 0 ? 'text-red-400' : 'text-blue-400'}`}>Aging Rentals (&gt;30 Days)</p>
-          <p className={`text-4xl font-black ${overdueCount > 0 ? 'text-red-500' : 'text-white'}`}>{overdueCount}</p>
+        <div className={`bg-white rounded-xl p-5 border ${overdueCount > 0 ? 'border-red-500/30' : 'border-[#F1F3F4]'} shadow-lg relative overflow-hidden`}>
+          <p className={`text-xs font-bold uppercase tracking-widest mb-1 ${overdueCount > 0 ? 'text-[#E04343]' : 'text-blue-600'}`}>Aging Rentals (&gt;30 Days)</p>
+          <p className={`text-4xl font-black ${overdueCount > 0 ? 'text-[#E04343]' : 'text-white'}`}>{overdueCount}</p>
         </div>
       </div>
 
       {/* Main Table */}
-      <div className="bg-[#1e2023] rounded-xl border border-white/5 overflow-hidden shadow-2xl">
-        <div className="px-6 py-4 border-b border-white/5 bg-black/20">
+      <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden shadow-md">
+        <div className="px-6 py-4 border-b border-[#F1F3F4] bg-black/20">
           <h2 className="text-sm font-black uppercase tracking-widest text-[#20BC64]">Active Rentals</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-black/10 border-b border-white/5 text-[10px] uppercase font-black tracking-widest text-white/40">
+              <tr className="bg-black/10 border-b border-[#F1F3F4] text-[10px] uppercase font-black tracking-widest text-[#757A7F]">
                 <th className="px-6 py-4">Equipment / Vendor</th>
                 <th className="px-6 py-4">Job Assigned</th>
                 <th className="px-6 py-4 text-center">Days Active</th>
@@ -105,10 +105,10 @@ export default async function EquipmentPage() {
             </thead>
             <tbody className="text-sm">
               {sortedRentals.map((r, i) => (
-                <tr key={i} className={`border-b border-white/5 hover:bg-white/5 transition-colors ${r.isOverdue ? 'bg-red-500/5' : ''}`}>
+                <tr key={i} className={`border-b border-[#F1F3F4] hover:bg-[#F1F3F4] transition-colors ${r.isOverdue ? 'bg-[#E04343]/5' : ''}`}>
                   <td className="px-6 py-4">
-                    <p className="font-bold text-white">{r.Equipment_Type}</p>
-                    <p className="text-xs text-white/40 mt-1">{r.Vendor}</p>
+                    <p className="font-bold text-[#3C4043]">{r.Equipment_Type}</p>
+                    <p className="text-xs text-[#757A7F] mt-1">{r.Vendor}</p>
                   </td>
                   <td className="px-6 py-4">
                     {r.isLive ? (
@@ -118,10 +118,10 @@ export default async function EquipmentPage() {
                         {r.Job_Number}
                       </Link>
                     )}
-                    <p className="text-xs text-white/60 mt-1 truncate max-w-[150px]">{r.jobName}</p>
+                    <p className="text-xs text-[#3C4043]/70 mt-1 truncate max-w-[150px]">{r.jobName}</p>
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className={`inline-block px-3 py-1 rounded border font-black text-xs ${r.isOverdue ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-black/20 text-white/60 border-white/10'}`}>
+                    <span className={`inline-block px-3 py-1 rounded border font-black text-xs ${r.isOverdue ? 'bg-[#E04343]/20 text-[#E04343] border-red-500/30' : 'bg-black/20 text-[#3C4043]/70 border-[#3C4043]/15'}`}>
                       {r.days} Days
                     </span>
                   </td>
@@ -129,18 +129,18 @@ export default async function EquipmentPage() {
                     ${r.rate.toLocaleString()}/day
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <p className={`font-black ${r.isOverdue ? 'text-red-400' : 'text-[#20BC64]'}`}>
+                    <p className={`font-black ${r.isOverdue ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>
                       ${r.totalBurn.toLocaleString()}
                     </p>
                   </td>
-                  <td className="px-6 py-4 text-center text-xs text-white/50 font-bold">
+                  <td className="px-6 py-4 text-center text-xs text-[#757A7F] font-bold">
                     {r.Target_Off_Rent || 'N/A'}
                   </td>
                   <td className="px-6 py-4 text-center">
                     {r.isOverdue ? (
-                      <span className="text-[10px] font-black tracking-widest uppercase text-red-500 flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> Overdue</span>
+                      <span className="text-[10px] font-black tracking-widest uppercase text-[#E04343] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#E04343] animate-pulse"></span> Overdue</span>
                     ) : r.days > 14 && r.rate === 0 ? (
-                      <span className="text-[10px] font-black tracking-widest uppercase text-amber-400 flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span> INACTIVE</span>
+                      <span className="text-[10px] font-black tracking-widest uppercase text-[#F5A623] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A623] animate-pulse"></span> INACTIVE</span>
                     ) : (
                       <span className="text-[10px] font-black tracking-widest uppercase text-[#20BC64] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#20BC64]"></span> Active</span>
                     )}
@@ -149,7 +149,7 @@ export default async function EquipmentPage() {
               ))}
               {sortedRentals.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-white/30 text-sm">
+                  <td colSpan={7} className="px-6 py-12 text-center text-[#757A7F] text-sm">
                     No active equipment on rent.
                   </td>
                 </tr>
