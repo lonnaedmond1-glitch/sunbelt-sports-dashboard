@@ -135,6 +135,32 @@ export default async function SchedulePage() {
     equipByJob[eq.jobNumber].items.push(eq);
   }
 
+  // Map Make/Model to readable equipment type
+  const getEquipType = (make: string, model: string) => {
+    const m = make.toUpperCase();
+    const mod = model.toUpperCase();
+    if (m === 'BOBCAT' && (mod.startsWith('T') || mod.startsWith('S7'))) return 'Skid Steer';
+    if (m === 'BOBCAT' && mod.startsWith('E')) return 'Mini Excavator';
+    if (m === 'DYNAPAC' || m === 'SAKAI') return 'Roller';
+    if (m === 'LEEBOY' && mod.includes('SCREEN')) return 'Screening Plant';
+    if (m === 'LEEBOY') return 'Paver';
+    if (m === 'BASIC') return 'Tack Truck';
+    if (m === 'INTERNATIONAL') return 'Service Truck';
+    return `${make} ${model}`;
+  };
+
+  // Build equipment map pins from rental equipment assigned to jobs with coordinates
+  const equipmentMapPins = rentalEquipment.map(eq => {
+    const job = jobs.find((j: any) => j.Job_Number === eq.jobNumber);
+    if (!job || !job.Lat || !job.Lng) return null;
+    return {
+      name: eq.type,
+      lat: parseFloat(job.Lat),
+      lng: parseFloat(job.Lng),
+      address: job.Job_Name || '',
+    };
+  }).filter(Boolean) as { name: string; lat: number; lng: number; address: string }[];
+
   // Filter job locations to only scheduled jobs
   const scheduledJobLocations = jobLocations.filter((j: any) => {
     const name = j.name.toLowerCase();
@@ -495,28 +521,31 @@ export default async function SchedulePage() {
               </div>
             )}
           </div>
-          {/* VisionLink Assets */}
+          {/* VisionLink Assets — labeled by equipment type */}
           {vlAssets.length > 0 && (
             <div className="p-4 border-t border-white/5">
               <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-2">VisionLink Fleet — {vlAssets.length} Assets</p>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                 {vlAssets.map((a: any) => (
                   <div key={a.Asset_ID} className="rounded-lg p-2 border border-blue-400/10 bg-blue-400/5 text-[10px]">
-                    <p className="font-bold text-white/80">{a.Make} {a.Model}</p>
+                    <p className="font-bold text-white/80">{getEquipType(a.Make, a.Model)}</p>
                     <p className="text-white/30">#{a.Asset_ID} · {a.Hours}h</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          {/* Map — scheduled jobs only */}
+          {/* Map — scheduled jobs + equipment pins */}
           <div className="h-[400px] border-t border-white/5">
             <MapWrapper
               jobs={scheduledJobLocations.map((j: any) => ({
                 Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
                 Status: 'Active', General_Contractor: '', Contract_Amount: 0
               }))}
-              vehicles={[]}
+              vehicles={equipmentMapPins.map((eq: any) => ({
+                id: eq.name, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
+                speed: 0, driver: '', status: 'active'
+              }))}
             />
           </div>
         </div>
