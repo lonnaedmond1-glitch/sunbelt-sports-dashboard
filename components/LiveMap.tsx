@@ -22,6 +22,7 @@ interface VehiclePin {
   speed: number;
   driver: string;
   status: string;
+  address?: string;
 }
 
 interface Props {
@@ -128,11 +129,13 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         });
       };
 
-      // ── Vehicle pin: named badge with speed indicator ────────────────────
-      const vehicleIcon = (name: string, speed: number) => {
-        const isMoving = speed > 2;
+      // ── Vehicle/Equipment pin: colored by type (rental vs owned asset) ──
+      const vehicleIcon = (name: string, speed: number, status: string = 'active') => {
+        const isRental = status === 'rental';
+        const borderColor = isRental ? '#20BC64' : '#60a5fa';
+        const glowColor = isRental ? 'rgba(32,188,100,0.5)' : 'rgba(96,165,250,0.5)';
+        const emoji = isRental ? '🏗️' : '⚙️';
         const fname = firstName(name);
-        const statusColor = isMoving ? '#4ade80' : '#fb923c';
         return L.divIcon({
           html: `
             <div style="
@@ -140,17 +143,16 @@ export default function LiveMap({ jobs, vehicles }: Props) {
               filter: drop-shadow(0 2px 6px rgba(0,0,0,0.8));
             ">
               <div style="
-                background:#1a2744; border:2px solid #60a5fa;
+                background:#1a2744; border:2px solid ${borderColor};
                 border-radius:8px; padding:3px 7px;
                 display:flex; align-items:center; gap:4px;
-                box-shadow:0 0 12px rgba(96,165,250,0.5);
+                box-shadow:0 0 12px ${glowColor};
                 white-space:nowrap;
               ">
-                <span style="font-size:11px;">🚛</span>
+                <span style="font-size:11px;">${emoji}</span>
                 <span style="font-size:9px; font-weight:900; font-family:Montserrat,sans-serif; color:white; text-transform:uppercase; letter-spacing:0.5px;">${fname}</span>
-                <span style="width:6px;height:6px;background:${statusColor};border-radius:50%;flex-shrink:0;box-shadow:0 0 4px ${statusColor};"></span>
               </div>
-              <div style="width:2px;height:6px;background:#60a5fa;opacity:0.6;"></div>
+              <div style="width:2px;height:6px;background:${borderColor};opacity:0.6;"></div>
             </div>`,
           className: '',
           iconSize: [90, 36],
@@ -186,13 +188,22 @@ export default function LiveMap({ jobs, vehicles }: Props) {
       // ── Plot vehicle pins (with overlap jitter) ──────────────────────────
       const spreadVehicles = jitterOverlaps(vehicles.filter(v => v.lat && v.lng));
       spreadVehicles.forEach((v) => {
-        const marker = L.marker([v.lat, v.lng], { icon: vehicleIcon(v.name, v.speed) }).addTo(map);
+        const marker = L.marker([v.lat, v.lng], { icon: vehicleIcon(v.name, v.speed, v.status) }).addTo(map);
+        const isRental = v.status === 'rental';
+        const isAsset = v.status === 'asset';
+        const popupLabel = isRental ? 'RENTAL EQUIPMENT' : isAsset ? 'VISIONLINK · ASSET' : 'SAMSARA · LIVE';
+        const popupColor = isRental ? '#20BC64' : isAsset ? '#60a5fa' : '#60a5fa';
+        const popupDetail = isRental
+          ? `<p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0;">At: ${v.address || 'Unknown'}</p>`
+          : isAsset
+          ? `<p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0;">${v.address || ''}</p>`
+          : `<p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0 0 2px 0;">Driver: ${v.driver !== 'Unassigned' ? v.driver : '—'}</p>
+             <p style="font-size:11px;color:${v.speed > 2 ? '#4ade80' : '#fb923c'};margin:0;">${v.speed > 2 ? `🟢 Moving · ${v.speed} mph` : '🟠 Parked'}</p>`;
         marker.bindPopup(`
-          <div style="font-family:Montserrat,sans-serif;min-width:190px;background:#1a2744;color:white;border-radius:10px;padding:12px;border:1px solid rgba(96,165,250,0.3);">
-            <p style="font-size:10px;color:#60a5fa;font-weight:900;text-transform:uppercase;margin:0 0 3px 0;letter-spacing:1px;">SAMSARA · LIVE</p>
+          <div style="font-family:Montserrat,sans-serif;min-width:190px;background:#1a2744;color:white;border-radius:10px;padding:12px;border:1px solid ${popupColor}40;">
+            <p style="font-size:10px;color:${popupColor};font-weight:900;text-transform:uppercase;margin:0 0 3px 0;letter-spacing:1px;">${popupLabel}</p>
             <p style="font-size:13px;font-weight:800;margin:0 0 2px 0;">${v.name.replace(/\s*\(.*\)/, '')}</p>
-            <p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0 0 2px 0;">Driver: ${v.driver !== 'Unassigned' ? v.driver : '—'}</p>
-            <p style="font-size:11px;color:${v.speed > 2 ? '#4ade80' : '#fb923c'};margin:0;">${v.speed > 2 ? `🟢 Moving · ${v.speed} mph` : '🟠 Parked'}</p>
+            ${popupDetail}
           </div>`, { className: 'dark-popup' });
       });
 

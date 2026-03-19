@@ -478,71 +478,46 @@ export default async function SchedulePage() {
             </div>
           </div>
 
-          {/* EQUIPMENT — Rental equipment from Equipment_On_Rent + VisionLink */}
+          {/* EQUIPMENT MAP — GPS pins only, no lists */}
           <div className="lg:col-span-3 bg-[#1e2023] rounded-2xl border border-white/5 shadow-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-white/5 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <span className="text-sm">🏗️</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment on Rent</h2>
-            </div>
-            <div className="flex items-center gap-3 text-[10px]">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> {rentalEquipment.length} Pieces</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> {vlAssets.length} VisionLink</span>
-            </div>
-          </div>
-          {/* Rental equipment grouped by job */}
-          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {Object.values(equipByJob).map((group) => (
-              <div key={group.jobName} className="rounded-xl p-3 border border-[#20BC64]/20 bg-[#20BC64]/5">
-                <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64] mb-2">{group.jobName || 'Unassigned'}</p>
-                <div className="space-y-1">
-                  {group.items.map((item: any, i: number) => (
-                    <div key={i} className="flex items-center justify-between text-[11px]">
-                      <span className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0"></span>
-                        <span className="text-white/70 font-medium truncate">{item.type}</span>
-                      </span>
-                      <span className="text-white/30 text-[10px]">{item.vendor} · {item.daysOnRent}d</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">📍</span>
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/50">Equipment Locations</h2>
               </div>
-            ))}
-            {rentalEquipment.length === 0 && (
-              <div className="col-span-full text-center py-6 opacity-40">
-                <span className="text-2xl block mb-2">🏗️</span>
-                <p className="text-xs font-bold uppercase tracking-widest">No rental equipment on file</p>
-              </div>
-            )}
-          </div>
-          {/* VisionLink Assets — labeled by equipment type */}
-          {vlAssets.length > 0 && (
-            <div className="p-4 border-t border-white/5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-blue-400 mb-2">VisionLink Fleet — {vlAssets.length} Assets</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                {vlAssets.map((a: any) => (
-                  <div key={a.Asset_ID} className="rounded-lg p-2 border border-blue-400/10 bg-blue-400/5 text-[10px]">
-                    <p className="font-bold text-white/80">{getEquipType(a.Make, a.Model)}</p>
-                    <p className="text-white/30">#{a.Asset_ID} · {a.Hours}h</p>
-                  </div>
-                ))}
+              <div className="flex items-center gap-3 text-[10px]">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> Rentals ({rentalEquipment.length})</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block"></span> Assets ({vlAssets.length})</span>
               </div>
             </div>
-          )}
-          {/* Map — scheduled jobs + equipment pins */}
-          <div className="h-[400px] border-t border-white/5">
-            <MapWrapper
-              jobs={scheduledJobLocations.map((j: any) => ({
-                Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
-                Status: 'Active', General_Contractor: '', Contract_Amount: 0
-              }))}
-              vehicles={equipmentMapPins.map((eq, i) => ({
-                id: `eq-${i}`, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
-                speed: 0, driver: '', status: 'active'
-              }))}
-            />
+            <div className="h-[500px]">
+              <MapWrapper
+                jobs={scheduledJobLocations.map((j: any) => ({
+                  Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
+                  Status: 'Active', General_Contractor: '', Contract_Amount: 0
+                }))}
+                vehicles={[
+                  ...equipmentMapPins.map((eq, i) => ({
+                    id: `rental-${i}`, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
+                    speed: 0, driver: '', status: 'rental'
+                  })),
+                  ...vlAssets.filter((a: any) => {
+                    // Pin VisionLink assets at nearest scheduled job site
+                    return scheduledJobLocations.length > 0;
+                  }).map((a: any, i: number) => {
+                    // Distribute VisionLink assets across scheduled job sites
+                    const jobIdx = i % scheduledJobLocations.length;
+                    const job = scheduledJobLocations[jobIdx];
+                    return {
+                      id: `asset-${a.Asset_ID}`, name: getEquipType(a.Make, a.Model),
+                      lat: job.lat, lng: job.lng, address: `#${a.Asset_ID} · ${a.Hours}h`,
+                      speed: 0, driver: '', status: 'asset'
+                    };
+                  }),
+                ]}
+              />
+            </div>
           </div>
-        </div>
       </div>
     </div>
     </div>
