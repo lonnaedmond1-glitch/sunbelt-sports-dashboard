@@ -77,7 +77,7 @@ export default async function SchedulePage() {
     return forecasts.reduce((worst: any, f: any) => (!worst || f.precipProb > worst.precipProb) ? f : worst, null);
   };
 
-  // Per-job weather icon lookup
+  // Per-job weather icon lookup — always shows weather when data available
   const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
     if (!jobRef) return null;
     const ref = jobRef.toLowerCase();
@@ -90,8 +90,14 @@ export default async function SchedulePage() {
       if (matches) {
         const forecasts = loc.forecasts || [];
         const f = dateStr ? forecasts.find((fx: any) => fx.date === dateStr) : forecasts[0];
-        if (f && (f.precipProb >= 30 || f.severe)) {
-          return { icon: f.icon || '🌧️', prob: f.precipProb, severe: f.severe };
+        if (f) {
+          const prob = f.precipProb || 0;
+          let icon = '☀️';
+          if (f.severe) icon = '⛈️';
+          else if (prob >= 60) icon = '🌧️';
+          else if (prob >= 30) icon = '🌦️';
+          else if (prob >= 10) icon = '⛅';
+          return { icon: f.icon || icon, prob, severe: f.severe, temp: f.tempHigh || f.temp };
         }
       }
     }
