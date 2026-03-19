@@ -134,6 +134,27 @@ export default async function SchedulePage() {
     return `${make} ${model}`;
   };
 
+  // Build equipment map pins by matching rental job names to jobs with coordinates
+  const equipmentMapPins: { name: string; lat: number; lng: number; address: string }[] = [];
+  for (const eq of rentalEquipment) {
+    if (!eq.jobName) continue;
+    const eqName = eq.jobName.toLowerCase();
+    const matchedJob = jobs.find((j: any) => {
+      if (!j.Lat || !j.Lng || !j.Job_Name) return false;
+      const jName = j.Job_Name.toLowerCase();
+      const word = eqName.split(' ')[0];
+      return word.length > 3 && jName.includes(word);
+    });
+    if (matchedJob) {
+      equipmentMapPins.push({
+        name: eq.type,
+        lat: parseFloat(matchedJob.Lat),
+        lng: parseFloat(matchedJob.Lng),
+        address: matchedJob.Job_Name,
+      });
+    }
+  }
+
   // Filter job locations to only scheduled jobs
   const scheduledJobLocations = jobLocations.filter((j: any) => {
     const name = j.name.toLowerCase();
@@ -515,7 +536,10 @@ export default async function SchedulePage() {
                 Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
                 Status: 'Active', General_Contractor: '', Contract_Amount: 0
               }))}
-              vehicles={[]}
+              vehicles={equipmentMapPins.map((eq, i) => ({
+                id: `eq-${i}`, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
+                speed: 0, driver: '', status: 'active'
+              }))}
             />
           </div>
         </div>
