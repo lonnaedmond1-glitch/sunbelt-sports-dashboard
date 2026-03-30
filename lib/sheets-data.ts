@@ -892,10 +892,10 @@ const GANTT_SHEET_ID = '178t9iioyveWqP6o8x2lQwMagexDP0W9FA4I2jfutJmw';
 const GANTT_GID = '1949703319';
 
 const CREW_COLUMNS: { name: string; col: number; pmCol?: number; type: string }[] = [
-  { name: 'Rosendo / P1', col: 8, pmCol: 9, type: 'primary' },
-  { name: 'Julio / B1', col: 21, pmCol: 22, type: 'primary' },
-  { name: 'Martin / B2', col: 24, pmCol: 25, type: 'primary' },
-  { name: 'Juan / B3', col: 26, pmCol: 28, type: 'primary' },
+  { name: 'Rosendo / P1', col: 9, pmCol: 10, type: 'primary' },
+  { name: 'Julio / B1', col: 22, pmCol: 23, type: 'primary' },
+  { name: 'Martin / B2', col: 25, pmCol: 26, type: 'primary' },
+  { name: 'Juan / B3', col: 27, pmCol: 28, type: 'primary' },
   { name: 'Cesar', col: 29, type: 'primary' },
   { name: 'Pedro', col: 30, type: 'primary' },
   { name: 'Jeff', col: 2, type: 'support' },
@@ -906,9 +906,9 @@ const CREW_COLUMNS: { name: string; col: number; pmCol?: number; type: string }[
   { name: 'Shawn', col: 13, type: 'support' },
   { name: 'Giovany (NC)', col: 15, pmCol: 16, type: 'primary' },
   { name: 'Marcos (NC)', col: 18, pmCol: 19, type: 'primary' },
-  { name: 'Concrete Sub 1', col: 37, type: 'sub' },
-  { name: 'Concrete Sub 2', col: 38, type: 'sub' },
-  { name: 'Bud', col: 49, type: 'support' },
+  { name: 'Concrete Sub 1', col: 38, type: 'sub' },
+  { name: 'Concrete Sub 2', col: 39, type: 'sub' },
+  { name: 'Bud', col: 52, type: 'support' },
 ];
 const DELIVERY_COL = 7;
 

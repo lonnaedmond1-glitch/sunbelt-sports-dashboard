@@ -36,12 +36,15 @@ async function getLevel10Data() {
 const crewColors: Record<string, string> = {
   'Rosendo / P1': '#20BC64', 'Julio / B1': '#60a5fa', 'Martin / B2': '#fb923c',
   'Juan / B3': '#a78bfa', 'Cesar': '#f59e0b', 'Pedro': '#ec4899',
+  'Giovany (NC)': '#0ea5e9', 'Marcos (NC)': '#f97316',
+  'Jeff': '#10b981', 'David': '#6366f1',
+  'Lowboy 1': '#ef4444', 'Lowboy 2': '#f87171',
   'Sergio': '#14b8a6', 'Shawn': '#8b5cf6',
   'Concrete Sub 1': '#9ca3af', 'Concrete Sub 2': '#6b7280', 'Bud': '#d946ef',
 };
 
-const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar', 'Pedro'];
-const SUPPORT_CREWS = ['David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn', 'Concrete Sub 1', 'Concrete Sub 2', 'Bud'];
+const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar', 'Pedro', 'Giovany (NC)', 'Marcos (NC)'];
+const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn', 'Concrete Sub 1', 'Concrete Sub 2', 'Bud'];
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
@@ -398,7 +401,7 @@ export default async function SchedulePage() {
             )}
             {schedule.deliveries?.length > 0 && (
               <span className="text-xs font-black text-blue-600 bg-blue-600/10 border border-blue-400/20 rounded-full px-3 py-1.5">
-                ð {schedule.deliveries.length} Deliveries
+                🚚 {schedule.deliveries.length} Deliveries
               </span>
             )}
           </div>
@@ -425,7 +428,7 @@ export default async function SchedulePage() {
         {(schedule.activeGanttJobs || []).length > 0 && (
           <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-[#F1F3F4] flex items-center gap-2">
-              <span className="text-sm">ð</span>
+              <span className="text-sm">📋</span>
               <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Active Projects — Timeline</h2>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
