@@ -158,7 +158,9 @@ export function fetchLiveJobs() {
       return key !== undefined ? hdr[key] : -1;
     };
 
-    const iJobNum = col('job number');
+    let iJobNum = col('job number');
+    if (iJobNum < 0) iJobNum = col('job #');
+    if (iJobNum < 0) iJobNum = 0; // Fallback: job numbers are always in column 0
     const iCoords = col('coordinates');
     const iState = col('state');
     const iStatus = col('contract status');
