@@ -623,8 +623,8 @@ export default async function MasterDashboard() {
           </div>
           {/* Fleet Tracking */}
           <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><p className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer" onClick={() => document.getElementById('risk-alerts')?.scrollIntoView({behavior:'smooth'})}>â See Live Map</p>
-            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : 'â'}</p>
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><a href="#risk-alerts" className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer block hover:underline">â†‘ See Live Map</a>
+            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : 'â€”'}</p>
             <p className="text-xs text-[#757A7F] mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
           </div>
           {/* Missing Reports */}
