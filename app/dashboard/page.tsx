@@ -655,7 +655,7 @@ export default async function MasterDashboard() {
             </div>
             <div style={{ height: '460px' }}>
               <MapWrapper
-                jobs={[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].filter(Boolean).map((j: any) => {
+                jobs={[...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()].filter(Boolean).map((j: any) => {
                   const jobLat = parseFloat(j.Lat);
                   const jobLng = parseFloat(j.Lng);
                   // Module 2: Find nearest Samsara vehicle within 10 miles
@@ -873,7 +873,7 @@ export default async function MasterDashboard() {
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
-              {[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].filter(Boolean).map((job: any) => {
+              {[...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()].filter(Boolean).map((job: any) => {
                 const health = getJobHealth(job, reportMap[job.Job_Number]);
                 const pct = Math.round(job.Pct_Complete || 0);
                 const report = reportMap[job.Job_Number];
@@ -1101,7 +1101,7 @@ export default async function MasterDashboard() {
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
                   <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
-                <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map(j=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a,j)=>a+(parseFloat(String(j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
+                <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
                 <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">â</span>
               </div>
             </Link>
