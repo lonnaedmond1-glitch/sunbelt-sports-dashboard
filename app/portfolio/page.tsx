@@ -93,7 +93,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             {Object.entries(statusCounts).sort((a, b) => b[1] - a[1]).map(([status, count]) => {
               const color = status === 'Executed' ? '#20BC64' : status === 'Signed' ? '#60a5fa' : status === 'Received' ? '#fb923c' : '#9ca3af';
               return (
-                <a href={`/portfolio?status=${encodeURIComponent(status)}`} style={filterStatus === status ? {fontWeight:"bold",outline:"2px solid currentColor"} : {}} key={status} className="cursor-pointer hover:opacity-80 text-xs font-bold px-3 py-1.5 rounded-full" style={{ color, backgroundColor: `${color}15`, border: `1px solid ${color}30` }}>
+                <a href={`/portfolio?status=${encodeURIComponent(status)}`} key={status} className="cursor-pointer hover:opacity-80 text-xs font-bold px-3 py-1.5 rounded-full" style={{ color, backgroundColor: `${color}15`, border: `1px solid ${color}30`, ...(filterStatus === status ? {fontWeight:"bold",outline:"2px solid currentColor"} : {}) }}>
                   {status} ({count})
                 </a>
               );
