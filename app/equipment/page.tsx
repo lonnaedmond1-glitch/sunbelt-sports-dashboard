@@ -1,4 +1,5 @@
 import React from 'react';
+export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveRentals } from '@/lib/sheets-data';

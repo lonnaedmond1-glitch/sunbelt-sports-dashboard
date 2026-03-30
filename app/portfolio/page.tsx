@@ -2,7 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
 
-export const revalidate = 120;
+export const dynamic = 'force-dynamic';
 
 function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
   const pct = job.Pct_Complete || 0;

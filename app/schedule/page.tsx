@@ -5,7 +5,7 @@ import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchVisionLinkA
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
-export const revalidate = 120;
+export const dynamic = 'force-dynamic';
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -279,17 +279,17 @@ export default async function SchedulePage() {
                                 {assignment.decoded?.activity && (
                                   <div className="text-sm opacity-70 mt-0.5 flex items-center gap-1">
                                     <span className="uppercase font-bold">{assignment.decoded.activity}</span>
-                                    {assignment.decoded.state && <span className="opacity-50">Â· {assignment.decoded.state}</span>}
+                                    {assignment.decoded.state && <span className="opacity-50">· {assignment.decoded.state}</span>}
                                   </div>
                                 )}
                                 {(assignment.pm || assignment.supplierFull) && (
                                   <div className="text-[9px] opacity-40 mt-0.5">
                                     {assignment.pm && <span>PM: {assignment.pm}</span>}
-                                    {assignment.supplierFull && <span> Â· {assignment.supplierFull}</span>}
+                                    {assignment.supplierFull && <span> · {assignment.supplierFull}</span>}
                                   </div>
                                 )}
                                 <div className="text-[9px] opacity-30 mt-0.5">
-                                  #{linkJobId} {assignment.ganttMatch?.projectType ? `Â· ${assignment.ganttMatch.projectType}` : ''}
+                                  #{linkJobId} {assignment.ganttMatch?.projectType ? `· ${assignment.ganttMatch.projectType}` : ''}
                                 </div>
                               </Link>
                             ) : (
@@ -301,13 +301,13 @@ export default async function SchedulePage() {
                                 {assignment.decoded?.activity && (
                                   <div className="text-sm opacity-70 mt-0.5 flex items-center gap-1">
                                     <span className="uppercase font-bold">{assignment.decoded.activity}</span>
-                                    {assignment.decoded.state && <span className="opacity-50">Â· {assignment.decoded.state}</span>}
+                                    {assignment.decoded.state && <span className="opacity-50">· {assignment.decoded.state}</span>}
                                   </div>
                                 )}
                                 {(assignment.pm || assignment.supplierFull) && (
                                   <div className="text-[9px] opacity-40 mt-0.5">
                                     {assignment.pm && <span>PM: {assignment.pm}</span>}
-                                    {assignment.supplierFull && <span> Â· {assignment.supplierFull}</span>}
+                                    {assignment.supplierFull && <span> · {assignment.supplierFull}</span>}
                                   </div>
                                 )}
                               </div>
@@ -357,12 +357,12 @@ export default async function SchedulePage() {
                               ) : linkJobId ? (
                                 <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block hover:opacity-80 transition-opacity cursor-pointer">
                                   <span className="font-medium text-[#3C4043] hover:text-[#20BC64] transition-colors">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50 text-[#3C4043]/70"> Â· {assignment.decoded.activity}</span>}
+                                  {assignment.decoded?.activity && <span className="opacity-50 text-[#3C4043]/70"> · {assignment.decoded.activity}</span>}
                                 </Link>
                               ) : (
                                 <>
                                   <span className="font-medium">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50"> Â· {assignment.decoded.activity}</span>}
+                                  {assignment.decoded?.activity && <span className="opacity-50"> · {assignment.decoded.activity}</span>}
                                 </>
                               )}
                             </div>
@@ -388,7 +388,7 @@ export default async function SchedulePage() {
         <div className="flex justify-between items-center max-w-[1920px] mx-auto">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tight">Weekly Schedule</h1>
-            <p className="text-xs text-[#757A7F] mt-1">Live from Level 10 Â· Schedule & Project Timeline Â· {schedule.scheduledJobCount || 0} Active Jobs</p>
+            <p className="text-xs text-[#757A7F] mt-1">Live from Level 10 · Schedule & Project Timeline · {schedule.scheduledJobCount || 0} Active Jobs</p>
           </div>
           <div className="flex items-center gap-3">
             {weatherAlerts.length > 0 && (
@@ -447,7 +447,7 @@ export default async function SchedulePage() {
                       </span>
                     </div>
                     <p className="text-[11px] font-bold text-[#3C4043] mb-1 line-clamp-2">{job.Job_Name}</p>
-                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} Â· {job.Start} â {job.End}</p>
+                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} · {job.Start} â {job.End}</p>
                     <div className="w-full bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
                       <div className={`h-full rounded-full ${isOverdue ? 'bg-[#E04343]' : 'bg-[#20BC64]'}`} style={{ width: `${pct}%` }} />
                     </div>
@@ -524,7 +524,7 @@ export default async function SchedulePage() {
                     const job = scheduledJobLocations[jobIdx];
                     return {
                       id: `asset-${a.Asset_ID}`, name: getEquipType(a.Make, a.Model),
-                      lat: job.lat, lng: job.lng, address: `#${a.Asset_ID} Â· ${a.Hours}h`,
+                      lat: job.lat, lng: job.lng, address: `#${a.Asset_ID} · ${a.Hours}h`,
                       speed: 0, driver: '', status: 'asset'
                     };
                   }),

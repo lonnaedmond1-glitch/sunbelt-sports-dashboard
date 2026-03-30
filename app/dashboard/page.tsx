@@ -5,7 +5,7 @@ import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData } from '@/lib/sheets-data';
 
-export const revalidate = 120; // ISR: regenerate page every 2 minutes instead of every request
+export const dynamic = 'force-dynamic';
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -623,15 +623,15 @@ export default async function MasterDashboard() {
           </div>
           {/* Fleet Tracking */}
           <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><a href="#risk-alerts" className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer block hover:underline">â†‘ See Live Map</a>
-            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : 'â€”'}</p>
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><a href="#risk-alerts" className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer block hover:underline">↑ See Live Map</a>
+            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
             <p className="text-xs text-[#757A7F] mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
           </div>
           {/* Missing Reports */}
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Missing Reports</p>
             <p className={`text-4xl font-display font-black ${missingReportJobs.length > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
-            <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' Â· ') : 'All yesterday\u2019s reports in'}</p>
+            <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' · ') : 'All yesterday\u2019s reports in'}</p>
           </div>
         </div>
 
@@ -717,7 +717,7 @@ export default async function MasterDashboard() {
                     <div>
                       {risk.job && (
                         <Link href={`/jobs/${risk.job}`} className="text-[10px] font-black uppercase tracking-widest mb-1 block hover:text-[#3C4043] transition-colors" style={{ color: riskColor[risk.level] }}>
-                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `Â· ${j.Job_Name}` : ''; })()} â
+                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `· ${j.Job_Name}` : ''; })()} â
                         </Link>
                       )}
                       <p className="text-xs text-[#3C4043] leading-relaxed">{risk.message}</p>
@@ -744,7 +744,7 @@ export default async function MasterDashboard() {
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command â Jose De Lara</h2>
                   {lowboyVehicle && (
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
-                      {lowboyVehicle.speed > 2 ? `ð¢ EN ROUTE Â· ${lowboyVehicle.speed} mph` : 'ð¡ PARKED'}
+                      {lowboyVehicle.speed > 2 ? `ð¢ EN ROUTE · ${lowboyVehicle.speed} mph` : 'ð¡ PARKED'}
                     </span>
                   )}
                 </div>
@@ -793,7 +793,7 @@ export default async function MasterDashboard() {
           <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="p-5 border-b border-[#F1F3F4]">
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard â Estimated vs. Actual</h2>
-              <p className="text-xs text-[#757A7F] mt-1">Billing % Â· Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">â¹ï¸ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
+              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">â¹ï¸ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
             </div>
             <div className="p-5 space-y-5">
 
@@ -972,7 +972,7 @@ export default async function MasterDashboard() {
                     <div className="flex justify-between items-end mb-3">
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Stone Base Velocity</p>
-                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foremen: Juan Â· Martin Â· Julio</p>
+                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foremen: Juan · Martin · Julio</p>
                       </div>
                       <p className="text-3xl font-black text-[#F5A623]">{stoneVelocity}<span className="text-sm text-[#F5A623]/50 ml-1">t/day</span></p>
                     </div>
@@ -1073,7 +1073,7 @@ export default async function MasterDashboard() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} â {job.Job_Name}</p>
-                        <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} Â· {job.Project_Manager} PM Â· {job.State}</p>
+                        <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
                       </div>
                       <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: healthColor[health] }}>{pct}%</span>
                     </div>
