@@ -36,13 +36,11 @@ async function getLevel10Data() {
 const crewColors: Record<string, string> = {
   'Rosendo / P1': '#20BC64', 'Julio / B1': '#60a5fa', 'Martin / B2': '#fb923c',
   'Juan / B3': '#a78bfa', 'Cesar': '#f59e0b', 'Pedro': '#ec4899',
-  'Jeff': '#10b981', 'David': '#6366f1', 'Lowboy 1': '#ef4444', 'Lowboy 2': '#f87171',
   'Sergio': '#14b8a6', 'Shawn': '#8b5cf6',
   'Concrete Sub 1': '#9ca3af', 'Concrete Sub 2': '#6b7280', 'Bud': '#d946ef',
 };
 
 const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar', 'Pedro'];
-const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn', 'Concrete Sub 1', 'Concrete Sub 2', 'Bud'];
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
@@ -77,7 +75,7 @@ export default async function SchedulePage() {
     return forecasts.reduce((worst: any, f: any) => (!worst || f.precipProb > worst.precipProb) ? f : worst, null);
   };
 
-  // Per-job weather icon lookup — always shows weather when data available
+  // Per-job weather icon lookup â always shows weather when data available
   // Weather API returns loc.jobs as array of Job_Number strings (e.g. ["26-040", "25-300"])
   const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
     if (!jobRef) return null;
@@ -101,11 +99,11 @@ export default async function SchedulePage() {
         const f = dateStr ? forecasts.find((fx: any) => fx.date === dateStr) : forecasts[0];
         if (f) {
           const prob = f.precipProb || 0;
-          let icon = '☀️';
-          if (f.severe) icon = '⛈️';
-          else if (prob >= 60) icon = '🌧️';
-          else if (prob >= 30) icon = '🌦️';
-          else if (prob >= 10) icon = '⛅';
+          let icon = 'âï¸';
+          if (f.severe) icon = 'âï¸';
+          else if (prob >= 60) icon = 'ð§ï¸';
+          else if (prob >= 30) icon = 'ð¦ï¸';
+          else if (prob >= 10) icon = 'â';
           return { icon: f.icon || icon, prob, severe: f.severe, temp: f.high || 0 };
         }
       }
@@ -223,7 +221,7 @@ export default async function SchedulePage() {
         <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center" style={{ background: isCurrent ? 'rgba(32,188,100,0.04)' : 'transparent' }}>
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]">{week.label || label}</h2>
-            {isCurrent && <span className="text-[10px] font-black text-[#20BC64] bg-[#20BC64]/15 px-2 py-0.5 rounded-full">THIS WEEK</span>}
+            {isCurrent && <span className="text-sm font-black text-[#20BC64] bg-[#20BC64]/15 px-2 py-0.5 rounded-full">THIS WEEK</span>}
           </div>
         </div>
 
@@ -238,7 +236,7 @@ export default async function SchedulePage() {
                     <th key={day} className={`text-left px-3 py-2 text-xs font-bold uppercase tracking-widest min-w-[185px] ${dayData?.isToday ? 'bg-[#20BC64]/5 text-[#20BC64]' : 'text-[#757A7F]'}`}>
                       <span>{day}</span>
                       {dayData && (
-                        <div className="text-[10px] text-[#757A7F]/60 font-normal mt-0.5">
+                        <div className="text-sm text-[#757A7F]/60 font-normal mt-0.5">
                           {dayData.dateDisplay?.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '')}
                         </div>
                       )}
@@ -270,7 +268,7 @@ export default async function SchedulePage() {
                             const linkJobId = resolveJobLink(assignment);
                             return (
                             assignment.decoded?.isOff ? (
-                              <div className="text-[10px] text-[#757A7F]/60 italic px-2 py-1">{assignment.decoded.jobRef}</div>
+                              <div className="text-sm text-[#757A7F]/60 italic px-2 py-1">{assignment.decoded.jobRef}</div>
                             ) : linkJobId ? (
                               <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block rounded-lg px-2.5 py-2 text-[11px] border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
                                 <div className="font-bold leading-tight flex items-center gap-1">
@@ -278,19 +276,19 @@ export default async function SchedulePage() {
                                   {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-[#E04343]' : ''}>{wx.icon}</span> : null; })()}
                                 </div>
                                 {assignment.decoded?.activity && (
-                                  <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
+                                  <div className="text-sm opacity-70 mt-0.5 flex items-center gap-1">
                                     <span className="uppercase font-bold">{assignment.decoded.activity}</span>
-                                    {assignment.decoded.state && <span className="opacity-50">· {assignment.decoded.state}</span>}
+                                    {assignment.decoded.state && <span className="opacity-50">Â· {assignment.decoded.state}</span>}
                                   </div>
                                 )}
                                 {(assignment.pm || assignment.supplierFull) && (
                                   <div className="text-[9px] opacity-40 mt-0.5">
                                     {assignment.pm && <span>PM: {assignment.pm}</span>}
-                                    {assignment.supplierFull && <span> · {assignment.supplierFull}</span>}
+                                    {assignment.supplierFull && <span> Â· {assignment.supplierFull}</span>}
                                   </div>
                                 )}
                                 <div className="text-[9px] opacity-30 mt-0.5">
-                                  #{linkJobId} {assignment.ganttMatch?.projectType ? `· ${assignment.ganttMatch.projectType}` : ''}
+                                  #{linkJobId} {assignment.ganttMatch?.projectType ? `Â· ${assignment.ganttMatch.projectType}` : ''}
                                 </div>
                               </Link>
                             ) : (
@@ -300,22 +298,22 @@ export default async function SchedulePage() {
                                   {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-[#E04343]' : ''}>{wx.icon}</span> : null; })()}
                                 </div>
                                 {assignment.decoded?.activity && (
-                                  <div className="text-[10px] opacity-70 mt-0.5 flex items-center gap-1">
+                                  <div className="text-sm opacity-70 mt-0.5 flex items-center gap-1">
                                     <span className="uppercase font-bold">{assignment.decoded.activity}</span>
-                                    {assignment.decoded.state && <span className="opacity-50">· {assignment.decoded.state}</span>}
+                                    {assignment.decoded.state && <span className="opacity-50">Â· {assignment.decoded.state}</span>}
                                   </div>
                                 )}
                                 {(assignment.pm || assignment.supplierFull) && (
                                   <div className="text-[9px] opacity-40 mt-0.5">
                                     {assignment.pm && <span>PM: {assignment.pm}</span>}
-                                    {assignment.supplierFull && <span> · {assignment.supplierFull}</span>}
+                                    {assignment.supplierFull && <span> Â· {assignment.supplierFull}</span>}
                                   </div>
                                 )}
                               </div>
                             )
                             );
                           })() : (
-                            <span className="text-[10px] text-[#757A7F]/40 px-2">—</span>
+                            <span className="text-sm text-[#757A7F]/40 px-2">â</span>
                           )}
                         </td>
                       );
@@ -327,7 +325,7 @@ export default async function SchedulePage() {
               {/* Support separator */}
               <tr className="border-b-2 border-[#3C4043]/15">
                 <td colSpan={8} className="px-4 py-1.5 bg-[#F1F3F4]/50">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-[#757A7F]/60">Support & Logistics</span>
+                  <span className="text-sm font-bold uppercase tracking-widest text-[#757A7F]/60">Support & Logistics</span>
                 </td>
               </tr>
 
@@ -352,23 +350,23 @@ export default async function SchedulePage() {
                           {assignment ? (() => {
                             const linkJobId = resolveJobLink(assignment);
                             return (
-                            <div className="text-[10px] text-[#757A7F] px-2 py-1 rounded bg-[#F1F3F4]/60">
+                            <div className="text-sm text-[#757A7F] px-2 py-1 rounded bg-[#F1F3F4]/60">
                               {assignment.decoded?.isOff ? (
                                 <span className="italic text-[#757A7F]/60">{assignment.decoded.jobRef}</span>
                               ) : linkJobId ? (
                                 <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block hover:opacity-80 transition-opacity cursor-pointer">
                                   <span className="font-medium text-[#3C4043] hover:text-[#20BC64] transition-colors">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50 text-[#3C4043]/70"> · {assignment.decoded.activity}</span>}
+                                  {assignment.decoded?.activity && <span className="opacity-50 text-[#3C4043]/70"> Â· {assignment.decoded.activity}</span>}
                                 </Link>
                               ) : (
                                 <>
                                   <span className="font-medium">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50"> · {assignment.decoded.activity}</span>}
+                                  {assignment.decoded?.activity && <span className="opacity-50"> Â· {assignment.decoded.activity}</span>}
                                 </>
                               )}
                             </div>
                             );
-                          })() : <span className="text-[10px] text-[#757A7F]/40 px-2">—</span>}
+                          })() : <span className="text-sm text-[#757A7F]/40 px-2">â</span>}
                         </td>
                       );
                     })}
@@ -389,17 +387,17 @@ export default async function SchedulePage() {
         <div className="flex justify-between items-center max-w-[1920px] mx-auto">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tight">Weekly Schedule</h1>
-            <p className="text-xs text-[#757A7F] mt-1">Live from Level 10 · Schedule & Project Timeline · {schedule.scheduledJobCount || 0} Active Jobs</p>
+            <p className="text-xs text-[#757A7F] mt-1">Live from Level 10 Â· Schedule & Project Timeline Â· {schedule.scheduledJobCount || 0} Active Jobs</p>
           </div>
           <div className="flex items-center gap-3">
             {weatherAlerts.length > 0 && (
               <span className="text-xs font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 rounded-full px-3 py-1.5">
-                ⛈️ {weatherAlerts.length} Weather Alerts
+                âï¸ {weatherAlerts.length} Weather Alerts
               </span>
             )}
             {schedule.deliveries?.length > 0 && (
               <span className="text-xs font-black text-blue-600 bg-blue-600/10 border border-blue-400/20 rounded-full px-3 py-1.5">
-                🚚 {schedule.deliveries.length} Deliveries
+                ð {schedule.deliveries.length} Deliveries
               </span>
             )}
           </div>
@@ -410,7 +408,7 @@ export default async function SchedulePage() {
         {/* CUSTOMERS SCREAMING BANNER */}
         {level10.screaming?.length > 0 && (
           <div className="bg-[#E04343]/10 border border-red-500/30 rounded-md p-4 flex items-start gap-4 shadow-sm">
-            <div className="text-3xl">😱</div>
+            <div className="text-3xl">ð±</div>
             <div>
               <h2 className="text-[#E04343] font-black uppercase tracking-widest text-xs mb-2">What Customers Are Screaming</h2>
               <ul className="list-disc pl-4 space-y-1">
@@ -426,8 +424,8 @@ export default async function SchedulePage() {
         {(schedule.activeGanttJobs || []).length > 0 && (
           <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-[#F1F3F4] flex items-center gap-2">
-              <span className="text-sm">📋</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Active Projects — Timeline</h2>
+              <span className="text-sm">ð</span>
+              <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Active Projects â Timeline</h2>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {(schedule.activeGanttJobs || []).map((job: any) => {
@@ -442,13 +440,13 @@ export default async function SchedulePage() {
                 return (
                   <div key={job.Job_Number} className="rounded-xl p-3 border border-[#F1F3F4] bg-[#F1F3F4]/50 hover:bg-white/[0.04] transition-colors">
                     <div className="flex justify-between items-start mb-1.5">
-                      <span className="text-[10px] font-bold text-[#757A7F]">{job.Job_Number}</span>
+                      <Link href={`/jobs/${job.Job_Number}`} className="font-bold text-blue-400 hover:underline">{job.Job_Number} &mdash; {job.Job_Name}</Link>
                       <span className={`text-[10px] font-black ${isOverdue ? 'text-[#E04343]' : daysLeft <= 7 ? 'text-[#F5A623]' : 'text-[#20BC64]'}`}>
                         {isOverdue ? `${Math.abs(daysLeft)}d over` : `${daysLeft}d left`}
                       </span>
                     </div>
                     <p className="text-[11px] font-bold text-[#3C4043] mb-1 line-clamp-2">{job.Job_Name}</p>
-                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} · {job.Start} → {job.End}</p>
+                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} Â· {job.Start} â {job.End}</p>
                     <div className="w-full bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
                       <div className={`h-full rounded-full ${isOverdue ? 'bg-[#E04343]' : 'bg-[#20BC64]'}`} style={{ width: `${pct}%` }} />
                     </div>
@@ -472,7 +470,7 @@ export default async function SchedulePage() {
           <div className="lg:col-span-1 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col h-full">
             <div className="px-5 py-4 border-b border-[#F1F3F4] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-sm">📝</span>
+                <span className="text-sm">ð</span>
                 <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Tie Up Loose Ends</h2>
               </div>
             </div>
@@ -481,26 +479,26 @@ export default async function SchedulePage() {
                 level10.looseEnds.map((end, i) => (
                   <div key={i} className="rounded-xl p-3 border border-[#F1F3F4] bg-[#F1F3F4]/50">
                     <p className="text-xs font-bold text-[#3C4043] mb-1 leading-tight">{end.details}</p>
-                    {end.who && <p className="text-[10px] text-[#F5A623] font-bold uppercase">Who: {end.who}</p>}
+                    {end.who && <p className="text-sm text-[#F5A623] font-bold uppercase">Who: {end.who}</p>}
                   </div>
                 ))
               ) : (
                 <div className="text-center py-8 opacity-40">
-                  <span className="text-2xl block mb-2">✅</span>
+                  <span className="text-2xl block mb-2">â</span>
                   <p className="text-xs font-bold uppercase tracking-widest">No loose ends</p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* EQUIPMENT MAP — GPS pins only, no lists */}
+          {/* EQUIPMENT MAP â GPS pins only, no lists */}
           <div className="lg:col-span-3 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <span className="text-sm">📍</span>
+                <span className="text-sm">ð</span>
                 <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Equipment Locations</h2>
               </div>
-              <div className="flex items-center gap-3 text-[10px]">
+              <div className="flex items-center gap-3 text-sm">
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> Rentals ({rentalEquipment.length})</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span> Assets ({vlAssets.length})</span>
               </div>
@@ -525,7 +523,7 @@ export default async function SchedulePage() {
                     const job = scheduledJobLocations[jobIdx];
                     return {
                       id: `asset-${a.Asset_ID}`, name: getEquipType(a.Make, a.Model),
-                      lat: job.lat, lng: job.lng, address: `#${a.Asset_ID} · ${a.Hours}h`,
+                      lat: job.lat, lng: job.lng, address: `#${a.Asset_ID} Â· ${a.Hours}h`,
                       speed: 0, driver: '', status: 'asset'
                     };
                   }),
