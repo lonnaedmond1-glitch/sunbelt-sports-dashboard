@@ -15,7 +15,7 @@ const getBaseUrl = () => {
 const getLiveJobs = fetchLiveJobs;
 const getLiveFieldReports = fetchLiveFieldReports;
 
-// ─── Load Project Scorecards for est/actual comparison ───────────────────────
+// âââ Load Project Scorecards for est/actual comparison âââââââââââââââââââââââ
 function loadScorecardEstimates(): Record<string, { estTons: number; estDays: number }> {
   try {
     const filePath = path.join(process.cwd(), 'data', 'Project_Scorecards.csv');
@@ -36,7 +36,7 @@ function loadScorecardEstimates(): Record<string, { estTons: number; estDays: nu
   } catch { return {}; }
 }
 
-// ─── Haversine distance (miles) ───────────────────────────────────────────────
+// âââ Haversine distance (miles) âââââââââââââââââââââââââââââââââââââââââââââââ
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -96,7 +96,7 @@ async function getSamsaraData() {
 }
 
 
-// Cross-check is now inlined — no more self-referencing fetch
+// Cross-check is now inlined â no more self-referencing fetch
 function computeCrossCheck(vehicles: any[], jobs: any[], reportMap: Record<string, any>) {
   const PROXIMITY_MILES = 0.5;
   const geoJobs = jobs
@@ -148,7 +148,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
   const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
 
   try {
-    // Dedupe locations — only fetch once per unique lat/lng rounded to 1 decimal
+    // Dedupe locations â only fetch once per unique lat/lng rounded to 1 decimal
     const seen = new Set<string>();
     const locationJobs: { lat: number; lng: number; job: any }[] = [];
     for (const job of jobsPreloaded) {
@@ -185,7 +185,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
               job: job?.Job_Number, jobName: job?.Job_Name,
               pm: job?.Project_Manager || '',
               precipProb, wind, condition: condLabel,
-              message: `⛈️ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} — ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
+              message: `âï¸ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} â ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
             });
           }
         }
@@ -197,7 +197,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
 
 
 
-// ─── Parse schedule date ────────────────────────────────────────────────────
+// âââ Parse schedule date ââââââââââââââââââââââââââââââââââââââââââââââââââââ
 function parseJobDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('/');
@@ -209,9 +209,9 @@ function parseJobDate(dateStr: string): Date | null {
 }
 
 
-// ─── Scheduled Jobs State Engine ─────────────────────────────────────────────
+// âââ Scheduled Jobs State Engine âââââââââââââââââââââââââââââââââââââââââââââ
 // A job is SCHEDULED if it appears on a crew row in THIS WEEK's schedule grid.
-// Source of truth: currentWeek parsed day assignments ONLY (Mon–Fri this week).
+// Source of truth: currentWeek parsed day assignments ONLY (MonâFri this week).
 // Resolve a schedule assignment to a job number (mirrors schedule page logic)
 // IMPORTANT: Format is "Job Name - Scope - State - Vendor"
 // We must use decoded.jobRef (just the job name) for name matching, NOT raw text
@@ -277,23 +277,23 @@ function isJobScheduled(job: any): boolean {
   return start <= new Date();
 }
 
-// ─── Health scoring ──────────────────────────────────────────────────────────
+// âââ Health scoring ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
   const pct = job.Pct_Complete || 0;
   const hasReport = !!report;
   const scheduled = isJobScheduled(job);
 
-  // If the job hasn't hit its start date yet, it's pre-construction → green
+  // If the job hasn't hit its start date yet, it's pre-construction â green
   if (!scheduled) return 'green';
 
-  // Scheduled and active — now check real indicators
+  // Scheduled and active â now check real indicators
   if (pct === 0 && !hasReport) return 'red';      // should have started, zero activity
   if (pct > 0 && pct < 30 && !hasReport) return 'amber'; // some billing but no field data
   if (pct >= 80 && report && (report.Base_Actual + report.Asphalt_Actual) === 0) return 'amber';
   return 'green';
 }
 
-// ─── Module 3: Risk & Alerts Engine ─────────────────────────────────────────
+// âââ Module 3: Risk & Alerts Engine âââââââââââââââââââââââââââââââââââââââââ
 function computeRisks(
   jobs: any[],
   reportMap: Record<string, any>,
@@ -310,7 +310,7 @@ function computeRisks(
 
   const risks: { level: 'critical' | 'warning' | 'info'; job?: string; message: string }[] = [];
   const now = new Date();
-  // Use Eastern time — UTC can flip to next day after 8PM EDT
+  // Use Eastern time â UTC can flip to next day after 8PM EDT
   const eastNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
 
@@ -318,7 +318,7 @@ function computeRisks(
   const estMinute = eastNow.getMinutes();
   const timeStr12 = `${estHour > 12 ? estHour - 12 : estHour || 12}:${estMinute.toString().padStart(2, '0')} ${estHour >= 12 ? 'PM' : 'AM'}`;
 
-  // ── CONDITION 1: Missing Field Report from YESTERDAY's schedule ─────────
+  // ââ CONDITION 1: Missing Field Report from YESTERDAY's schedule âââââââââ
   const yesterdayDate = new Date(eastNow);
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
@@ -338,12 +338,12 @@ function computeRisks(
         return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
       if (matchedJob && !reportMap[matchedJob.Job_Number]) {
-        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
+        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT â ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
       }
     }
   }
 
-  // ── CONDITION 2: Material Overrun ─────────────────────────────────────────
+  // ââ CONDITION 2: Material Overrun âââââââââââââââââââââââââââââââââââââââââ
   // Cumulative Jotform tonnage > estimated tonnage from Project Scorecards
   for (const [jobNum, report] of Object.entries(reportMap)) {
     const est = scorecardEstimates[jobNum];
@@ -352,11 +352,11 @@ function computeRisks(
     if (actualTons > est.estTons) {
       const pctOver = Math.round(((actualTons - est.estTons) / est.estTons) * 100);
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN — ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN â ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
-  // ── CONDITION 3: Days on Site Overrun ────────────────────────────────────
+  // ââ CONDITION 3: Days on Site Overrun ââââââââââââââââââââââââââââââââââââ
   // Field report day count > allotted days from Project Scorecards
   for (const [jobNum, report] of Object.entries(reportMap)) {
     const est = scorecardEstimates[jobNum];
@@ -365,11 +365,11 @@ function computeRisks(
     if (actualDays > est.estDays) {
       const daysOver = actualDays - est.estDays;
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN — ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN â ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
-  // ── CONDITION 4: Weather Risk (≥40% rain during working hours) ───────────
+  // ââ CONDITION 4: Weather Risk (â¥40% rain during working hours) âââââââââââ
   // Look back 1 day (today in EST may already be tomorrow in UTC) and forward 3 days
   const yesterdayISO = new Date(eastNow.getTime() - 86400000).toISOString().split('T')[0];
   const threeDaysOut = new Date(eastNow.getTime() + 3 * 86400000).toISOString().split('T')[0];
@@ -378,16 +378,16 @@ function computeRisks(
     .slice(0, 8)
     .forEach((wx: any) => {
       const lvl = (wx.isToday || wx.severity === 'critical' || (wx.precipProb || 0) >= 70) ? 'critical' as const : 'warning' as const;
-      const todayTag = wx.isToday ? 'TODAY — ' : `${wx.date} — `;
+      const todayTag = wx.isToday ? 'TODAY â ' : `${wx.date} â `;
       risks.push({
         level: lvl,
         job: wx.job,
-        message: `⛈️ WEATHER — ${wx.jobName} (${todayTag.replace(' — ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
+        message: `âï¸ WEATHER â ${wx.jobName} (${todayTag.replace(' â ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
       });
     });
 
 
-  // ── CONDITION 5: Vendor/Credit Account Missing ───────────────────────────
+  // ââ CONDITION 5: Vendor/Credit Account Missing âââââââââââââââââââââââââââ
   // Uses Job Prep Board credit status as proxy for vendor account status
   for (const prep of prepBoard) {
     const creditStatus = (prep.Asphalt_Plant_Credit || prep.Plant_Credit || '').toLowerCase();
@@ -397,12 +397,12 @@ function computeRisks(
       const job = jobs.find(j => j.Job_Number === prep.Job_Number);
       if (job) {
         const bad = [isBad(creditStatus) ? 'Asphalt Plant' : '', isBad(quarryStatus) ? 'Quarry' : ''].filter(Boolean).join(' & ');
-        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD — ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
+        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD â ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
       }
     }
   }
 
-  // ── CONDITION 6: Schedule Deviation — truck GPS at wrong job ─────────────
+  // ââ CONDITION 6: Schedule Deviation â truck GPS at wrong job âââââââââââââ
   // Map crew schedule names to Samsara vehicle names (first name match)
   if (vehicles.length > 0) {
     const todayAssignments = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
@@ -438,7 +438,7 @@ function computeRisks(
             return haversineDistance(vehicle.lat, vehicle.lng, oLat, oLng) <= 2;
           });
           if (atOtherJob) {
-            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION — ${assignment.crew}: GPS at ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
+            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION â ${assignment.crew}: GPS at ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
           }
         }
       }
@@ -457,7 +457,7 @@ export default async function MasterDashboard() {
     fetchScheduleData(),
   ]);
 
-  // Build report map first — needed by both crossCheck and weather
+  // Build report map first â needed by both crossCheck and weather
   const reportMap: Record<string, any> = {};
   for (const r of fieldReports) reportMap[r.Job_Number] = r;
 
@@ -486,8 +486,8 @@ export default async function MasterDashboard() {
 
 
 
-  // ── Scheduled Jobs State Engine ──────────────────────────────────────────
-  // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
+  // ââ Scheduled Jobs State Engine ââââââââââââââââââââââââââââââââââââââââââ
+  // ScheduledStatus = TRUE: appears on master schedule within Â±7 days of today
   const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData, jobs));
 
   // On schedule this week but no field report yet
@@ -509,7 +509,7 @@ export default async function MasterDashboard() {
   const totalManHours = fieldReports.reduce((s: number, r: any) => s + (r.Total_Man_Hours || 0), 0);
   const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
-  // ── Fleet at Jobsites: trucks within 2 miles of any job ──────────────────
+  // ââ Fleet at Jobsites: trucks within 2 miles of any job ââââââââââââââââââ
   const fleetAtJobsites = samsara.configured ? samsara.vehicles.filter((v: any) => {
     if (!v.lat || !v.lng) return false;
     return jobs.some((j: any) => {
@@ -519,7 +519,7 @@ export default async function MasterDashboard() {
     });
   }) : [];
 
-  // ── Missing Reports: jobs assigned YESTERDAY with no field report ─────────
+  // ââ Missing Reports: jobs assigned YESTERDAY with no field report âââââââââ
   const scheduledJobNames = scheduledJobs.map((j: any) => j.Job_Name).filter(Boolean);
   // Find yesterday's date in EST
   const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -569,7 +569,7 @@ export default async function MasterDashboard() {
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body flex flex-col pb-10 antialiased overflow-x-hidden">
 
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      {/* ââ HEADER âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
       <header className="flex flex-col w-full sticky top-0 z-50 shadow-md">
         <div className="px-8 py-4 bg-white flex justify-between items-center border-b border-[#F1F3F4]">
           <div className="flex items-center gap-4">
@@ -579,12 +579,12 @@ export default async function MasterDashboard() {
           <div className="flex items-center gap-4">
             {criticalCount > 0 && (
               <a href="#risk-alerts" className="pill pill-danger cursor-pointer hover:opacity-80 transition-opacity">
-                🔴 {criticalCount} Critical
+                ð´ {criticalCount} Critical
               </a>
             )}
             {warningCount > 0 && (
               <a href="#risk-alerts" className="pill pill-warning cursor-pointer hover:opacity-80 transition-opacity">
-                ⚠️ {warningCount} Warnings
+                â ï¸ {warningCount} Warnings
               </a>
             )}
             <div className="flex items-center gap-2">
@@ -601,7 +601,7 @@ export default async function MasterDashboard() {
 
       <div className="flex flex-col gap-6 w-full max-w-[1920px] mx-auto p-6">
 
-        {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
+        {/* ââ KPI STRIP ââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {/* Scheduled Jobs */}
           <div className="card p-5">
@@ -623,19 +623,19 @@ export default async function MasterDashboard() {
           </div>
           {/* Fleet Tracking */}
           <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><p className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer" onClick={() => document.getElementById('risk-alerts')?.scrollIntoView({behavior:'smooth'})}>↑ See Live Map</p>
-            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><p className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer" onClick={() => document.getElementById('risk-alerts')?.scrollIntoView({behavior:'smooth'})}>â See Live Map</p>
+            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : 'â'}</p>
             <p className="text-xs text-[#757A7F] mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
           </div>
           {/* Missing Reports */}
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Missing Reports</p>
             <p className={`text-4xl font-display font-black ${missingReportJobs.length > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
-            <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' · ') : 'All yesterday\u2019s reports in'}</p>
+            <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' Â· ') : 'All yesterday\u2019s reports in'}</p>
           </div>
         </div>
 
-        {/* ── ROW 2: MAP + RISK BOX ───────────────────────────────────────── */}
+        {/* ââ ROW 2: MAP + RISK BOX âââââââââââââââââââââââââââââââââââââââââ */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MAP */}
@@ -655,7 +655,7 @@ export default async function MasterDashboard() {
             </div>
             <div style={{ height: '460px' }}>
               <MapWrapper
-                jobs={[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].map((j: any) => {
+                jobs={[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].filter(Boolean).map((j: any) => {
                   const jobLat = parseFloat(j.Lat);
                   const jobLng = parseFloat(j.Lng);
                   // Module 2: Find nearest Samsara vehicle within 10 miles
@@ -700,7 +700,7 @@ export default async function MasterDashboard() {
             <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
               {risks.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-4xl mb-2">✅</p>
+                  <p className="text-4xl mb-2">â</p>
                   <p className="text-[#20BC64] font-bold text-sm">All Clear</p>
                   <p className="text-[#757A7F] text-xs mt-1">No active risks detected</p>
                 </div>
@@ -712,12 +712,12 @@ export default async function MasterDashboard() {
                 >
                   <div className="flex items-start gap-2">
                     <span className="text-sm flex-shrink-0 mt-0.5">
-                      {risk.level === 'critical' ? '🔴' : risk.level === 'warning' ? '⚠️' : 'ℹ️'}
+                      {risk.level === 'critical' ? 'ð´' : risk.level === 'warning' ? 'â ï¸' : 'â¹ï¸'}
                     </span>
                     <div>
                       {risk.job && (
                         <Link href={`/jobs/${risk.job}`} className="text-[10px] font-black uppercase tracking-widest mb-1 block hover:text-[#3C4043] transition-colors" style={{ color: riskColor[risk.level] }}>
-                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `· ${j.Job_Name}` : ''; })()} →
+                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `Â· ${j.Job_Name}` : ''; })()} â
                         </Link>
                       )}
                       <p className="text-xs text-[#3C4043] leading-relaxed">{risk.message}</p>
@@ -729,7 +729,7 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ── LOWBOY COMMAND ─────────────────────────────────────────────── */}
+        {/* ââ LOWBOY COMMAND âââââââââââââââââââââââââââââââââââââââââââââââ */}
         {(() => {
           const lowboyVehicle = samsara.configured
             ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('jose') || (v.name || '').toLowerCase().includes('lowboy'))
@@ -741,14 +741,14 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">🚛 Lowboy Command — Jose De Lara</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command â Jose De Lara</h2>
                   {lowboyVehicle && (
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
-                      {lowboyVehicle.speed > 2 ? `🟢 EN ROUTE · ${lowboyVehicle.speed} mph` : '🟡 PARKED'}
+                      {lowboyVehicle.speed > 2 ? `ð¢ EN ROUTE Â· ${lowboyVehicle.speed} mph` : 'ð¡ PARKED'}
                     </span>
                   )}
                 </div>
-                <span className="text-[9px] font-bold text-emerald-400 px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">✅ PERMANENT PERMIT</span>
+                <span className="text-[9px] font-bold text-emerald-400 px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">â PERMANENT PERMIT</span>
               </div>
               {lowboyVehicle ? (
                 <div className="p-5">
@@ -763,7 +763,7 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Heading</p>
-                      <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}°</p>
+                      <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}Â°</p>
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
@@ -772,7 +772,7 @@ export default async function MasterDashboard() {
                   </div>
                   {lowboyVehicle.speed > 2 && (
                     <div className="mt-3 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
-                      <span className="text-emerald-400">🚛</span>
+                      <span className="text-emerald-400">ð</span>
                       <p className="text-xs text-emerald-300/70 font-bold">Lowboy is currently in transit at {lowboyVehicle.speed} mph. ETA to next staging site updating live via Samsara.</p>
                     </div>
                   )}
@@ -786,14 +786,14 @@ export default async function MasterDashboard() {
           );
         })()}
 
-        {/* ── ROW 3: SCORECARD + JOB HEALTH ──────────────────────────────── */}
+        {/* ââ ROW 3: SCORECARD + JOB HEALTH ââââââââââââââââââââââââââââââââ */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* PORTFOLIO SCORECARD */}
           <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="p-5 border-b border-[#F1F3F4]">
-              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard — Estimated vs. Actual</h2>
-              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">ℹ️ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard â Estimated vs. Actual</h2>
+              <p className="text-xs text-[#757A7F] mt-1">Billing % Â· Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">â¹ï¸ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
             </div>
             <div className="p-5 space-y-5">
 
@@ -867,13 +867,13 @@ export default async function MasterDashboard() {
             <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Quick Job Health</h2>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-[#20BC64] font-bold">● On Track</span>
-                <span className="text-[#F5A623] font-bold">● Watch</span>
-                <span className="text-[#E04343] font-bold">● At Risk</span>
+                <span className="text-[#20BC64] font-bold">â On Track</span>
+                <span className="text-[#F5A623] font-bold">â Watch</span>
+                <span className="text-[#E04343] font-bold">â At Risk</span>
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
-              {[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].map((job: any) => {
+              {[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].filter(Boolean).map((job: any) => {
                 const health = getJobHealth(job, reportMap[job.Job_Number]);
                 const pct = Math.round(job.Pct_Complete || 0);
                 const report = reportMap[job.Job_Number];
@@ -894,10 +894,10 @@ export default async function MasterDashboard() {
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-black text-[#757A7F]">{job.Job_Number}</span>
                       <span className="text-[10px] font-black uppercase" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
+                        {health === 'green' ? 'â OK' : health === 'amber' ? 'â Watch' : 'â Risk'}
                       </span>
                     </div>
-                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} — {job.Job_Name}</p>
+                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} â {job.Job_Name}</p>
                     <div className="flex flex-col gap-1">
                       <div>
                         <div className="flex justify-between text-[9px] text-[#757A7F] mb-0.5">
@@ -923,7 +923,7 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ────────────────────── */}
+        {/* ââ ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ââââââââââââââââââââââ */}
         {(() => {
           // Compute velocity from scorecard data
           const scorecards: any[] = [];
@@ -956,10 +956,10 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">â¡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
                   {isBehind && (
                     <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
-                      ⚠️ BASE CREW BELOW PAVING THRESHOLD
+                      â ï¸ BASE CREW BELOW PAVING THRESHOLD
                     </span>
                   )}
                 </div>
@@ -972,7 +972,7 @@ export default async function MasterDashboard() {
                     <div className="flex justify-between items-end mb-3">
                       <div>
                         <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Stone Base Velocity</p>
-                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foremen: Juan · Martin · Julio</p>
+                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foremen: Juan Â· Martin Â· Julio</p>
                       </div>
                       <p className="text-3xl font-black text-[#F5A623]">{stoneVelocity}<span className="text-sm text-[#F5A623]/50 ml-1">t/day</span></p>
                     </div>
@@ -1011,12 +1011,12 @@ export default async function MasterDashboard() {
                 {/* Alert Banner */}
                 {isBehind && (
                   <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
-                    <span className="text-[#F5A623] text-lg shrink-0">⚠️</span>
+                    <span className="text-[#F5A623] text-lg shrink-0">â ï¸</span>
                     <div>
                       <p className="text-amber-300 font-black text-xs">BASE CREW VELOCITY BELOW PAVING THRESHOLD</p>
                       <p className="text-amber-200/50 text-[10px] mt-0.5">
                         Stone crews are producing {stoneVelocity} t/day vs. {asphaltVelocity} t/day asphalt demand.
-                        Base must lead asphalt by ≥20% to prevent paving crew downtime. Contact Juan / Martin / Julio immediately.
+                        Base must lead asphalt by â¥20% to prevent paving crew downtime. Contact Juan / Martin / Julio immediately.
                       </p>
                     </div>
                   </div>
@@ -1028,17 +1028,17 @@ export default async function MasterDashboard() {
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Ratio</p>
                       <p className={`text-lg font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : '—'}x
+                        {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : 'â'}x
                       </p>
                     </div>
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Required</p>
-                      <p className="text-lg font-black text-[#757A7F]">≥1.20x</p>
+                      <p className="text-lg font-black text-[#757A7F]">â¥1.20x</p>
                     </div>
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Status</p>
                       <p className={`text-xs font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {isBehind ? '🔴 BEHIND' : '🟢 ON TRACK'}
+                        {isBehind ? 'ð´ BEHIND' : 'ð¢ ON TRACK'}
                       </p>
                     </div>
                   </div>
@@ -1049,7 +1049,7 @@ export default async function MasterDashboard() {
           );
         })()}
 
-        {/* ── ROW 4: JOB LIST + PORTFOLIO TABLE ─────────────────────────── */}
+        {/* ââ ROW 4: JOB LIST + PORTFOLIO TABLE âââââââââââââââââââââââââââ */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MISSION PROGRESS */}
@@ -1072,8 +1072,8 @@ export default async function MasterDashboard() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} — {job.Job_Name}</p>
-                        <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
+                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} â {job.Job_Name}</p>
+                        <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} Â· {job.Project_Manager} PM Â· {job.State}</p>
                       </div>
                       <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: healthColor[health] }}>{pct}%</span>
                     </div>
@@ -1093,7 +1093,7 @@ export default async function MasterDashboard() {
             </div>
           </div>
 
-          {/* FULL PORTFOLIO — moved to /portfolio */}
+          {/* FULL PORTFOLIO â moved to /portfolio */}
           <div className="col-span-12 lg:col-span-8 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <Link href="/portfolio" className="block p-5 hover:bg-[#F1F3F4] transition-colors group">
               <div className="flex justify-between items-center">
@@ -1102,7 +1102,7 @@ export default async function MasterDashboard() {
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
                   <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
                 <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map(j=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a,j)=>a+(parseFloat(String(j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
-                <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
+                <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">â</span>
               </div>
             </Link>
           </div>
