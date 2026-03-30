@@ -128,7 +128,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
               </tr>
             </thead>
             <tbody>
-              {jobs.filter(j => (!filterStatus || j.Status === filterStatus) && (!filterState || j.State === filterState)).map((job: any, i: number) => {
+              {jobs.filter((j: any) => (!filterStatus || j.Status === filterStatus) && (!filterState || j.State === filterState)).map((job: any, i: number) => {
                 const pct = Math.round(job.Pct_Complete || 0);
                 const health = ['Signed','Pending','Bid'].includes(job.Status) ? '\u2014' : getJobHealth(job, reportMap[job.Job_Number]);
                 const statusColor = job.Status === 'Executed' ? '#20BC64' : job.Status === 'Signed' ? '#60a5fa' : job.Status === 'Received' ? '#fb923c' : '#9ca3af';
