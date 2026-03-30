@@ -344,7 +344,7 @@ function computeRisks(
   }
 
   // ââ CONDITION 2: Material Overrun âââââââââââââââââââââââââââââââââââââââââ
-  // Cumulative Jotform tonnage > estimated tonnage from Project Scorecards
+  // Cumulative field report tonnage > estimated tonnage from Project Scorecards
   for (const [jobNum, report] of Object.entries(reportMap)) {
     const est = scorecardEstimates[jobNum];
     if (!est || est.estTons === 0) continue;

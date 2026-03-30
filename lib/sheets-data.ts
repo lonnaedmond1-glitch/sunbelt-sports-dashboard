@@ -1,5 +1,5 @@
 /**
- * Shared data-fetching functions that call Google Sheets / Jotform directly.
+ * Shared data-fetching functions that call Google Sheets directly.
  * Use these in Server Components instead of fetching internal API routes.
  * This fixes Vercel deployment where SSR can't call its own API endpoints.
  */
@@ -414,107 +414,213 @@ export async function fetchVisionLinkAssets() {
   } catch { return []; }
 }
 
-// ──────────────────────────── FIELD REPORTS (Jotform) ────────────────────────────
+// ──────────────────────────── FIELD REPORTS (Google Forms → Google Sheets) ────────────
+// Source: Google Form "Sunbelt Sports Daily Field Report" responses
+// Spreadsheet: 1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY
+// Tab: "Form Responses 1"
 
-const JOTFORM_API_KEY = process.env.JOTFORM_API_KEY || 'c02f5c097f06c28304f3a766d48f51e6';
-const FORM_ID = process.env.JOTFORM_FORM_ID || '240915802348154';
-
-interface JotformSubmission {
-  id: string; created_at: string;
-  answers: Record<string, { name: string; text: string; answer: string | Record<string, string> }>;
-}
-
-function getAnswer(submission: JotformSubmission, questionName: string): string {
-  const entry = Object.values(submission.answers).find(a => a.name === questionName);
-  if (!entry) return '';
-  if (typeof entry.answer === 'object') return Object.values(entry.answer).join(', ');
-  return String(entry.answer || '');
-}
+const FIELD_REPORT_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
+const FIELD_REPORT_TAB = 'Form Responses 1';
 
 function safeNum(val: string): number { const n = parseFloat(val?.replace(/[^0-9.-]/g, '') || '0'); return isNaN(n) ? 0 : n; }
 
-export async function fetchLiveFieldReports() {
+// Fetch all rows from the Google Form response sheet
+async function fetchFormResponseRows(): Promise<string[][]> {
   try {
-    const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const submissions: JotformSubmission[] = json.content || [];
-    const jobTotals: Record<string, any> = {};
-    for (const sub of submissions) {
-      const jobWidget = getAnswer(sub, 'typeA56');
-      let jobNum = '', jobName = '';
-      if (jobWidget && jobWidget !== 'Job Name Not Listed') { const parts = jobWidget.split('\t'); jobNum = parts[0]?.trim() || ''; jobName = parts.slice(1).join(' ').trim(); }
-      if (!jobNum) jobNum = getAnswer(sub, 'jobNumber').trim();
-      if (!jobNum) { const subName = getAnswer(sub, 'sjhb').trim(); if (subName && subName !== 'Job Name Not Listed') { const parts = subName.split('\t'); jobNum = parts[0]?.trim() || ''; jobName = parts.slice(1).join(' ').trim(); } }
-      if (!jobNum || jobNum === 'Job Name Not Listed') continue;
-      jobNum = jobNum.trim();
-      if (!jobTotals[jobNum]) { jobTotals[jobNum] = { Job_Number: jobNum, Job_Name: jobName, GAB_Tonnage: 0, Binder_Tonnage: 0, Topping_Tonnage: 0, Concrete_CY: 0, Concrete_Curb_LF: 0, Milling_SY: 0, Total_Man_Hours: 0, Crew_Count: 0, Truck_Count: 0, Last_Report_Date: sub.created_at, Latest_Summary: '', Job_Difficulty: '', Days_Active: 0 }; }
-      const entry = jobTotals[jobNum];
-      entry.GAB_Tonnage += safeNum(getAnswer(sub, 'gabTonnage'));
-      entry.Binder_Tonnage += safeNum(getAnswer(sub, 'tonnage27'));
-      entry.Topping_Tonnage += safeNum(getAnswer(sub, 'tonnage28'));
-      entry.Concrete_CY += safeNum(getAnswer(sub, 'concreteCy'));
-      entry.Total_Man_Hours += safeNum(getAnswer(sub, 'totalMan'));
-      entry.Truck_Count = Math.max(entry.Truck_Count, safeNum(getAnswer(sub, 'howMany')));
-      entry.Crew_Count = Math.max(entry.Crew_Count, safeNum(getAnswer(sub, 'numberOf')));
-      const summary = getAnswer(sub, 'jobSummary');
-      if (summary && summary !== 'no' && !entry.Latest_Summary) entry.Latest_Summary = summary;
-      const diff = getAnswer(sub, 'howDifficult');
-      if (diff && !entry.Job_Difficulty) entry.Job_Difficulty = diff;
-      entry.Days_Active++;
+    // Try gviz endpoint first (works for sheets shared "anyone with link")
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${FIELD_REPORT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(FIELD_REPORT_TAB)}`;
+    const res = await fetch(gvizUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const text = await res.text();
+      if (text && !text.includes('<!DOCTYPE')) {
+        return parseCSV(text);
+      }
     }
-    return Object.values(jobTotals).map((r: any) => ({ ...r, Base_Actual: r.GAB_Tonnage, Asphalt_Actual: r.Binder_Tonnage + r.Topping_Tonnage, Concrete_Actual: r.Concrete_CY }));
+    // Fallback: try direct CSV export
+    const exportUrl = `https://docs.google.com/spreadsheets/d/${FIELD_REPORT_SHEET_ID}/export?format=csv&gid=0`;
+    const res2 = await fetch(exportUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      cache: 'no-store',
+    });
+    if (res2.ok) {
+      const text2 = await res2.text();
+      if (text2 && !text2.includes('<!DOCTYPE')) {
+        return parseCSV(text2);
+      }
+    }
+    return [];
   } catch { return []; }
 }
 
+// Header-based column finder for form responses
+function findFormCol(headers: string[], ...fragments: string[]): number {
+  for (const frag of fragments) {
+    const lower = frag.toLowerCase();
+    const idx = headers.findIndex(h => h.toLowerCase().includes(lower));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+// Extract job number from form job label (e.g. "26-040 Chateau Elan" → "26-040")
+function extractJobNum(jobLabel: string): string {
+  const match = jobLabel.match(/\b(\d{2}-\d{3})\b/);
+  return match ? match[1] : '';
+}
+
+// Extract job name from form job label (e.g. "26-040 Chateau Elan" → "Chateau Elan")
+function extractJobName(jobLabel: string): string {
+  return jobLabel.replace(/^\d{2}-\d{3}\s*/, '').trim();
+}
+
+export function fetchLiveFieldReports() {
+  return cached('liveFieldReports', 5 * 60 * 1000, async () => {
+    try {
+      const rows = await fetchFormResponseRows();
+      if (rows.length < 2) return [];
+
+      const headers = rows[0].map(h => h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
+
+      // Find columns by header fragments
+      const iTimestamp = findFormCol(headers, 'timestamp');
+      const iDate = findFormCol(headers, 'date of activity', 'fecha de actividad');
+      const iForeman = findFormCol(headers, 'foreman name', 'nombre del capataz');
+      const iJob = findFormCol(headers, 'job name', 'nombre del trabajo');
+      const iActivity = findFormCol(headers, 'activity type', 'tipo de actividad');
+      const iCrew = findFormCol(headers, 'crew size', 'tamaño del equipo');
+      const iGAB = findFormCol(headers, 'gab tons', 'toneladas gab');
+      const iSoil = findFormCol(headers, 'soil tons', 'toneladas de suelo');
+      const iBinder = findFormCol(headers, 'binder tons', 'toneladas de aglutinante');
+      const iTopping = findFormCol(headers, 'topping tons', 'toneladas de capa superior');
+      const iPatch = findFormCol(headers, 'patch tons', 'toneladas de parche');
+      const iSummary = findFormCol(headers, 'job summary', 'resumen');
+      const iWentWrong = findFormCol(headers, 'go wrong', 'algo salió mal');
+
+      const g = (row: string[], idx: number): string => (idx >= 0 && idx < row.length) ? (row[idx]?.trim() || '') : '';
+
+      const jobTotals: Record<string, any> = {};
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const jobLabel = g(row, iJob);
+        if (!jobLabel) continue;
+
+        const jobNum = extractJobNum(jobLabel);
+        if (!jobNum) continue;
+
+        const jobName = extractJobName(jobLabel);
+        const timestamp = g(row, iTimestamp) || g(row, iDate);
+
+        if (!jobTotals[jobNum]) {
+          jobTotals[jobNum] = {
+            Job_Number: jobNum, Job_Name: jobName,
+            GAB_Tonnage: 0, Binder_Tonnage: 0, Topping_Tonnage: 0,
+            Soil_Tonnage: 0, Patch_Tonnage: 0,
+            Concrete_CY: 0, Concrete_Curb_LF: 0, Milling_SY: 0,
+            Total_Man_Hours: 0, Crew_Count: 0, Truck_Count: 0,
+            Last_Report_Date: timestamp, Latest_Summary: '',
+            Job_Difficulty: '', Days_Active: 0,
+            Foreman: '',
+          };
+        }
+
+        const entry = jobTotals[jobNum];
+        entry.GAB_Tonnage += safeNum(g(row, iGAB));
+        entry.Soil_Tonnage += safeNum(g(row, iSoil));
+        entry.Binder_Tonnage += safeNum(g(row, iBinder));
+        entry.Topping_Tonnage += safeNum(g(row, iTopping));
+        entry.Patch_Tonnage += safeNum(g(row, iPatch));
+
+        const crewSize = safeNum(g(row, iCrew));
+        entry.Crew_Count = Math.max(entry.Crew_Count, crewSize);
+
+        const summary = g(row, iSummary);
+        if (summary && summary.toLowerCase() !== 'no' && !entry.Latest_Summary) {
+          entry.Latest_Summary = summary;
+        }
+
+        const foreman = g(row, iForeman);
+        if (foreman && !entry.Foreman) entry.Foreman = foreman;
+
+        // Update last report date to most recent
+        if (timestamp && timestamp > entry.Last_Report_Date) {
+          entry.Last_Report_Date = timestamp;
+        }
+
+        entry.Days_Active++;
+      }
+
+      return Object.values(jobTotals).map((r: any) => ({
+        ...r,
+        Base_Actual: r.GAB_Tonnage + r.Soil_Tonnage,
+        Asphalt_Actual: r.Binder_Tonnage + r.Topping_Tonnage + r.Patch_Tonnage,
+        Concrete_Actual: r.Concrete_CY,
+      }));
+    } catch { return []; }
+  });
+}
+
 // ──────────────────────────── FIELD REPORT FEED (Individual Submissions) ────────────
-// Returns individual Jotform submissions for a specific job, sorted chronologically
+// Returns individual Google Form submissions for a specific job, sorted chronologically
 // Used by the Job Snapshot Production tab to show a daily report review feed
 
 export async function fetchFieldReportFeed(jobNumber: string): Promise<any[]> {
   try {
-    const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const submissions: JotformSubmission[] = json.content || [];
+    const rows = await fetchFormResponseRows();
+    if (rows.length < 2) return [];
+
+    const headers = rows[0].map(h => h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
+
+    const iTimestamp = findFormCol(headers, 'timestamp');
+    const iDate = findFormCol(headers, 'date of activity', 'fecha de actividad');
+    const iForeman = findFormCol(headers, 'foreman name', 'nombre del capataz');
+    const iJob = findFormCol(headers, 'job name', 'nombre del trabajo');
+    const iActivity = findFormCol(headers, 'activity type', 'tipo de actividad');
+    const iCrew = findFormCol(headers, 'crew size', 'tamaño del equipo');
+    const iGAB = findFormCol(headers, 'gab tons', 'toneladas gab');
+    const iSoil = findFormCol(headers, 'soil tons', 'toneladas de suelo');
+    const iBinder = findFormCol(headers, 'binder tons', 'toneladas de aglutinante');
+    const iTopping = findFormCol(headers, 'topping tons', 'toneladas de capa superior');
+    const iPatch = findFormCol(headers, 'patch tons', 'toneladas de parche');
+    const iSummary = findFormCol(headers, 'job summary', 'resumen');
+    const iWentWrong = findFormCol(headers, 'go wrong', 'algo salió mal');
+
+    const g = (row: string[], idx: number): string => (idx >= 0 && idx < row.length) ? (row[idx]?.trim() || '') : '';
+
     const feed: any[] = [];
 
-    for (const sub of submissions) {
-      // Match job number from multiple possible widgets
-      const jobWidget = getAnswer(sub, 'typeA56');
-      let jobNum = '';
-      if (jobWidget && jobWidget !== 'Job Name Not Listed') {
-        const parts = jobWidget.split('\t');
-        jobNum = parts[0]?.trim() || '';
-      }
-      if (!jobNum) jobNum = getAnswer(sub, 'jobNumber').trim();
-      if (!jobNum) {
-        const subName = getAnswer(sub, 'sjhb').trim();
-        if (subName && subName !== 'Job Name Not Listed') {
-          const parts = subName.split('\t');
-          jobNum = parts[0]?.trim() || '';
-        }
-      }
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const jobLabel = g(row, iJob);
+      const jobNum = extractJobNum(jobLabel);
       if (!jobNum || jobNum.trim() !== jobNumber.trim()) continue;
 
       feed.push({
-        id: sub.id,
-        date: sub.created_at,
-        gabTons: safeNum(getAnswer(sub, 'gabTonnage')),
-        binderTons: safeNum(getAnswer(sub, 'tonnage27')),
-        toppingTons: safeNum(getAnswer(sub, 'tonnage28')),
-        concreteCY: safeNum(getAnswer(sub, 'concreteCy')),
-        crewCount: safeNum(getAnswer(sub, 'numberOf')),
-        truckCount: safeNum(getAnswer(sub, 'howMany')),
-        manHours: safeNum(getAnswer(sub, 'totalMan')),
-        summary: getAnswer(sub, 'jobSummary') || '',
-        difficulty: getAnswer(sub, 'howDifficult') || '',
+        id: `gf-${i}`,
+        date: g(row, iTimestamp) || g(row, iDate),
+        foreman: g(row, iForeman),
+        activity: g(row, iActivity),
+        gabTons: safeNum(g(row, iGAB)),
+        soilTons: safeNum(g(row, iSoil)),
+        binderTons: safeNum(g(row, iBinder)),
+        toppingTons: safeNum(g(row, iTopping)),
+        patchTons: safeNum(g(row, iPatch)),
+        concreteCY: 0,
+        crewCount: safeNum(g(row, iCrew)),
+        truckCount: 0,
+        manHours: 0,
+        summary: g(row, iSummary) || '',
+        wentWrong: g(row, iWentWrong) || '',
+        difficulty: '',
       });
     }
 
-    return feed; // Already sorted DESC by created_at from API
+    // Sort newest first
+    feed.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    return feed;
   } catch { return []; }
 }
 
