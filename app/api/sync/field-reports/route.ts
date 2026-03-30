@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { fetchLiveFieldReports } from '@/lib/sheets-data';
 
-// API route now delegates to the shared Google Sheets-based fetcher
-// Source: Google Form "Sunbelt Sports Daily Field Report" → Form Responses 1 tab
+// API route delegates to the shared dual-source fetcher (Jotform + Google Forms merged)
 
 export async function GET() {
   try {
@@ -10,7 +9,7 @@ export async function GET() {
     return NextResponse.json({
       data: fieldReports,
       count: fieldReports.length,
-      source: 'google-forms',
+      source: 'jotform+google-forms',
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
