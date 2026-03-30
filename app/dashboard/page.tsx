@@ -623,7 +623,7 @@ export default async function MasterDashboard() {
           </div>
           {/* Fleet Tracking */}
           <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p>
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><p className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer" onClick={() => document.getElementById('risk-alerts')?.scrollIntoView({behavior:'smooth'})}>↑ See Live Map</p>
             <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
             <p className="text-xs text-[#757A7F] mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
           </div>
@@ -655,7 +655,7 @@ export default async function MasterDashboard() {
             </div>
             <div style={{ height: '460px' }}>
               <MapWrapper
-                jobs={scheduledJobs.map((j: any) => {
+                jobs={[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].map((j: any) => {
                   const jobLat = parseFloat(j.Lat);
                   const jobLng = parseFloat(j.Lng);
                   // Module 2: Find nearest Samsara vehicle within 10 miles
@@ -793,7 +793,7 @@ export default async function MasterDashboard() {
           <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="p-5 border-b border-[#F1F3F4]">
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard — Estimated vs. Actual</h2>
-              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p>
+              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">ℹ️ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
             </div>
             <div className="p-5 space-y-5">
 
@@ -873,7 +873,7 @@ export default async function MasterDashboard() {
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
-              {scheduledJobs.map((job: any) => {
+              {[...new Map(scheduledJobs.map(j => [j.Job_Number, j])).values()].map((job: any) => {
                 const health = getJobHealth(job, reportMap[job.Job_Number]);
                 const pct = Math.round(job.Pct_Complete || 0);
                 const report = reportMap[job.Job_Number];
@@ -897,7 +897,7 @@ export default async function MasterDashboard() {
                         {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
                       </span>
                     </div>
-                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Name}</p>
+                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} — {job.Job_Name}</p>
                     <div className="flex flex-col gap-1">
                       <div>
                         <div className="flex justify-between text-[9px] text-[#757A7F] mb-0.5">
@@ -956,7 +956,7 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
                   {isBehind && (
                     <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
                       ⚠️ BASE CREW BELOW PAVING THRESHOLD
@@ -1072,7 +1072,7 @@ export default async function MasterDashboard() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Name}</p>
+                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} — {job.Job_Name}</p>
                         <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
                       </div>
                       <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: healthColor[health] }}>{pct}%</span>
@@ -1095,13 +1095,13 @@ export default async function MasterDashboard() {
 
           {/* FULL PORTFOLIO — moved to /portfolio */}
           <div className="col-span-12 lg:col-span-8 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-            <Link href="/portfolio" className="block p-8 hover:bg-[#F1F3F4] transition-colors group">
+            <Link href="/portfolio" className="block p-5 hover:bg-[#F1F3F4] transition-colors group">
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
                   <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
-                </div>
+                <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map(j=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a,j)=>a+(parseFloat(String(j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
                 <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
               </div>
             </Link>
