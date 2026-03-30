@@ -76,7 +76,7 @@ export default async function SchedulePage() {
     return forecasts.reduce((worst: any, f: any) => (!worst || f.precipProb > worst.precipProb) ? f : worst, null);
   };
 
-  // Per-job weather icon lookup â always shows weather when data available
+  // Per-job weather icon lookup — always shows weather when data available
   // Weather API returns loc.jobs as array of Job_Number strings (e.g. ["26-040", "25-300"])
   const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
     if (!jobRef) return null;
@@ -314,7 +314,7 @@ export default async function SchedulePage() {
                             )
                             );
                           })() : (
-                            <span className="text-sm text-[#757A7F]/40 px-2">â</span>
+                            <span className="text-sm text-[#757A7F]/40 px-2">—</span>
                           )}
                         </td>
                       );
@@ -367,7 +367,7 @@ export default async function SchedulePage() {
                               )}
                             </div>
                             );
-                          })() : <span className="text-sm text-[#757A7F]/40 px-2">â</span>}
+                          })() : <span className="text-sm text-[#757A7F]/40 px-2">—</span>}
                         </td>
                       );
                     })}
@@ -426,7 +426,7 @@ export default async function SchedulePage() {
           <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-[#F1F3F4] flex items-center gap-2">
               <span className="text-sm">ð</span>
-              <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Active Projects â Timeline</h2>
+              <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Active Projects — Timeline</h2>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
               {(schedule.activeGanttJobs || []).map((job: any) => {
@@ -447,7 +447,7 @@ export default async function SchedulePage() {
                       </span>
                     </div>
                     <p className="text-[11px] font-bold text-[#3C4043] mb-1 line-clamp-2">{job.Job_Name}</p>
-                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} · {job.Start} â {job.End}</p>
+                    <p className="text-[9px] text-[#757A7F] mb-2">{job.Project_Type} · {job.Start} → {job.End}</p>
                     <div className="w-full bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
                       <div className={`h-full rounded-full ${isOverdue ? 'bg-[#E04343]' : 'bg-[#20BC64]'}`} style={{ width: `${pct}%` }} />
                     </div>
@@ -485,14 +485,14 @@ export default async function SchedulePage() {
                 ))
               ) : (
                 <div className="text-center py-8 opacity-40">
-                  <span className="text-2xl block mb-2">â</span>
+                  <span className="text-2xl block mb-2">✅</span>
                   <p className="text-xs font-bold uppercase tracking-widest">No loose ends</p>
                 </div>
               )}
             </div>
           </div>
 
-          {/* EQUIPMENT MAP â GPS pins only, no lists */}
+          {/* EQUIPMENT MAP — GPS pins only, no lists */}
           <div className="lg:col-span-3 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
               <div className="flex items-center gap-2">

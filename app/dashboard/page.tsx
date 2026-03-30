@@ -96,7 +96,7 @@ async function getSamsaraData() {
 }
 
 
-// Cross-check is now inlined â no more self-referencing fetch
+// Cross-check is now inlined — no more self-referencing fetch
 function computeCrossCheck(vehicles: any[], jobs: any[], reportMap: Record<string, any>) {
   const PROXIMITY_MILES = 0.5;
   const geoJobs = jobs
@@ -148,7 +148,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
   const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
 
   try {
-    // Dedupe locations â only fetch once per unique lat/lng rounded to 1 decimal
+    // Dedupe locations — only fetch once per unique lat/lng rounded to 1 decimal
     const seen = new Set<string>();
     const locationJobs: { lat: number; lng: number; job: any }[] = [];
     for (const job of jobsPreloaded) {
@@ -185,7 +185,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
               job: job?.Job_Number, jobName: job?.Job_Name,
               pm: job?.Project_Manager || '',
               precipProb, wind, condition: condLabel,
-              message: `âï¸ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} â ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
+              message: `âï¸ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} — ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
             });
           }
         }
@@ -211,7 +211,7 @@ function parseJobDate(dateStr: string): Date | null {
 
 // âââ Scheduled Jobs State Engine âââââââââââââââââââââââââââââââââââââââââââââ
 // A job is SCHEDULED if it appears on a crew row in THIS WEEK's schedule grid.
-// Source of truth: currentWeek parsed day assignments ONLY (MonâFri this week).
+// Source of truth: currentWeek parsed day assignments ONLY (Mon–Fri this week).
 // Resolve a schedule assignment to a job number (mirrors schedule page logic)
 // IMPORTANT: Format is "Job Name - Scope - State - Vendor"
 // We must use decoded.jobRef (just the job name) for name matching, NOT raw text
@@ -283,10 +283,10 @@ function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
   const hasReport = !!report;
   const scheduled = isJobScheduled(job);
 
-  // If the job hasn't hit its start date yet, it's pre-construction â green
+  // If the job hasn't hit its start date yet, it's pre-construction → green
   if (!scheduled) return 'green';
 
-  // Scheduled and active â now check real indicators
+  // Scheduled and active — now check real indicators
   if (pct === 0 && !hasReport) return 'red';      // should have started, zero activity
   if (pct > 0 && pct < 30 && !hasReport) return 'amber'; // some billing but no field data
   if (pct >= 80 && report && (report.Base_Actual + report.Asphalt_Actual) === 0) return 'amber';
@@ -310,7 +310,7 @@ function computeRisks(
 
   const risks: { level: 'critical' | 'warning' | 'info'; job?: string; message: string }[] = [];
   const now = new Date();
-  // Use Eastern time â UTC can flip to next day after 8PM EDT
+  // Use Eastern time — UTC can flip to next day after 8PM EDT
   const eastNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
 
@@ -338,7 +338,7 @@ function computeRisks(
         return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
       if (matchedJob && !reportMap[matchedJob.Job_Number]) {
-        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT â ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
+        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
       }
     }
   }
@@ -352,7 +352,7 @@ function computeRisks(
     if (actualTons > est.estTons) {
       const pctOver = Math.round(((actualTons - est.estTons) / est.estTons) * 100);
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN â ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN — ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
@@ -365,11 +365,11 @@ function computeRisks(
     if (actualDays > est.estDays) {
       const daysOver = actualDays - est.estDays;
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN â ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN — ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
-  // ââ CONDITION 4: Weather Risk (â¥40% rain during working hours) âââââââââââ
+  // ââ CONDITION 4: Weather Risk (≥40% rain during working hours) âââââââââââ
   // Look back 1 day (today in EST may already be tomorrow in UTC) and forward 3 days
   const yesterdayISO = new Date(eastNow.getTime() - 86400000).toISOString().split('T')[0];
   const threeDaysOut = new Date(eastNow.getTime() + 3 * 86400000).toISOString().split('T')[0];
@@ -378,11 +378,11 @@ function computeRisks(
     .slice(0, 8)
     .forEach((wx: any) => {
       const lvl = (wx.isToday || wx.severity === 'critical' || (wx.precipProb || 0) >= 70) ? 'critical' as const : 'warning' as const;
-      const todayTag = wx.isToday ? 'TODAY â ' : `${wx.date} â `;
+      const todayTag = wx.isToday ? 'TODAY — ' : `${wx.date} — `;
       risks.push({
         level: lvl,
         job: wx.job,
-        message: `âï¸ WEATHER â ${wx.jobName} (${todayTag.replace(' â ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
+        message: `âï¸ WEATHER — ${wx.jobName} (${todayTag.replace(' — ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
       });
     });
 
@@ -397,12 +397,12 @@ function computeRisks(
       const job = jobs.find(j => j.Job_Number === prep.Job_Number);
       if (job) {
         const bad = [isBad(creditStatus) ? 'Asphalt Plant' : '', isBad(quarryStatus) ? 'Quarry' : ''].filter(Boolean).join(' & ');
-        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD â ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
+        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD — ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
       }
     }
   }
 
-  // ââ CONDITION 6: Schedule Deviation â truck GPS at wrong job âââââââââââââ
+  // ââ CONDITION 6: Schedule Deviation — truck GPS at wrong job âââââââââââââ
   // Map crew schedule names to Samsara vehicle names (first name match)
   if (vehicles.length > 0) {
     const todayAssignments = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
@@ -438,7 +438,7 @@ function computeRisks(
             return haversineDistance(vehicle.lat, vehicle.lng, oLat, oLng) <= 2;
           });
           if (atOtherJob) {
-            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION â ${assignment.crew}: GPS at ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
+            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION — ${assignment.crew}: GPS at ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
           }
         }
       }
@@ -457,7 +457,7 @@ export default async function MasterDashboard() {
     fetchScheduleData(),
   ]);
 
-  // Build report map first â needed by both crossCheck and weather
+  // Build report map first — needed by both crossCheck and weather
   const reportMap: Record<string, any> = {};
   for (const r of fieldReports) reportMap[r.Job_Number] = r;
 
@@ -487,7 +487,7 @@ export default async function MasterDashboard() {
 
 
   // ââ Scheduled Jobs State Engine ââââââââââââââââââââââââââââââââââââââââââ
-  // ScheduledStatus = TRUE: appears on master schedule within Â±7 days of today
+  // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
   const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData, jobs));
 
   // On schedule this week but no field report yet
@@ -579,12 +579,12 @@ export default async function MasterDashboard() {
           <div className="flex items-center gap-4">
             {criticalCount > 0 && (
               <a href="#risk-alerts" className="pill pill-danger cursor-pointer hover:opacity-80 transition-opacity">
-                ð´ {criticalCount} Critical
+                🔴 {criticalCount} Critical
               </a>
             )}
             {warningCount > 0 && (
               <a href="#risk-alerts" className="pill pill-warning cursor-pointer hover:opacity-80 transition-opacity">
-                â ï¸ {warningCount} Warnings
+                ⚠️ {warningCount} Warnings
               </a>
             )}
             <div className="flex items-center gap-2">
@@ -700,7 +700,7 @@ export default async function MasterDashboard() {
             <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
               {risks.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="text-4xl mb-2">â</p>
+                  <p className="text-4xl mb-2">✅</p>
                   <p className="text-[#20BC64] font-bold text-sm">All Clear</p>
                   <p className="text-[#757A7F] text-xs mt-1">No active risks detected</p>
                 </div>
@@ -712,12 +712,12 @@ export default async function MasterDashboard() {
                 >
                   <div className="flex items-start gap-2">
                     <span className="text-sm flex-shrink-0 mt-0.5">
-                      {risk.level === 'critical' ? 'ð´' : risk.level === 'warning' ? 'â ï¸' : 'â¹ï¸'}
+                      {risk.level === 'critical' ? '🔴' : risk.level === 'warning' ? '⚠️' : 'ℹ️'}
                     </span>
                     <div>
                       {risk.job && (
                         <Link href={`/jobs/${risk.job}`} className="text-[10px] font-black uppercase tracking-widest mb-1 block hover:text-[#3C4043] transition-colors" style={{ color: riskColor[risk.level] }}>
-                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `· ${j.Job_Name}` : ''; })()} â
+                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `· ${j.Job_Name}` : ''; })()} →
                         </Link>
                       )}
                       <p className="text-xs text-[#3C4043] leading-relaxed">{risk.message}</p>
@@ -741,14 +741,14 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command â Jose De Lara</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command — Jose De Lara</h2>
                   {lowboyVehicle && (
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
                       {lowboyVehicle.speed > 2 ? `ð¢ EN ROUTE · ${lowboyVehicle.speed} mph` : 'ð¡ PARKED'}
                     </span>
                   )}
                 </div>
-                <span className="text-[9px] font-bold text-emerald-400 px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">â PERMANENT PERMIT</span>
+                <span className="text-[9px] font-bold text-emerald-400 px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">✅ PERMANENT PERMIT</span>
               </div>
               {lowboyVehicle ? (
                 <div className="p-5">
@@ -792,8 +792,8 @@ export default async function MasterDashboard() {
           {/* PORTFOLIO SCORECARD */}
           <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="p-5 border-b border-[#F1F3F4]">
-              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard â Estimated vs. Actual</h2>
-              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">â¹ï¸ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard — Estimated vs. Actual</h2>
+              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">ℹ️ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
             </div>
             <div className="p-5 space-y-5">
 
@@ -867,9 +867,9 @@ export default async function MasterDashboard() {
             <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Quick Job Health</h2>
               <div className="flex items-center gap-3 text-xs">
-                <span className="text-[#20BC64] font-bold">â On Track</span>
-                <span className="text-[#F5A623] font-bold">â Watch</span>
-                <span className="text-[#E04343] font-bold">â At Risk</span>
+                <span className="text-[#20BC64] font-bold">● On Track</span>
+                <span className="text-[#F5A623] font-bold">● Watch</span>
+                <span className="text-[#E04343] font-bold">● At Risk</span>
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
@@ -894,10 +894,10 @@ export default async function MasterDashboard() {
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-black text-[#757A7F]">{job.Job_Number}</span>
                       <span className="text-[10px] font-black uppercase" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? 'â OK' : health === 'amber' ? 'â Watch' : 'â Risk'}
+                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
                       </span>
                     </div>
-                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} â {job.Job_Name}</p>
+                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} — {job.Job_Name}</p>
                     <div className="flex flex-col gap-1">
                       <div>
                         <div className="flex justify-between text-[9px] text-[#757A7F] mb-0.5">
@@ -959,7 +959,7 @@ export default async function MasterDashboard() {
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">â¡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
                   {isBehind && (
                     <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
-                      â ï¸ BASE CREW BELOW PAVING THRESHOLD
+                      ⚠️ BASE CREW BELOW PAVING THRESHOLD
                     </span>
                   )}
                 </div>
@@ -1011,12 +1011,12 @@ export default async function MasterDashboard() {
                 {/* Alert Banner */}
                 {isBehind && (
                   <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
-                    <span className="text-[#F5A623] text-lg shrink-0">â ï¸</span>
+                    <span className="text-[#F5A623] text-lg shrink-0">⚠️</span>
                     <div>
                       <p className="text-amber-300 font-black text-xs">BASE CREW VELOCITY BELOW PAVING THRESHOLD</p>
                       <p className="text-amber-200/50 text-[10px] mt-0.5">
                         Stone crews are producing {stoneVelocity} t/day vs. {asphaltVelocity} t/day asphalt demand.
-                        Base must lead asphalt by â¥20% to prevent paving crew downtime. Contact Juan / Martin / Julio immediately.
+                        Base must lead asphalt by ≥20% to prevent paving crew downtime. Contact Juan / Martin / Julio immediately.
                       </p>
                     </div>
                   </div>
@@ -1028,17 +1028,17 @@ export default async function MasterDashboard() {
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Ratio</p>
                       <p className={`text-lg font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : 'â'}x
+                        {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : '—'}x
                       </p>
                     </div>
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Required</p>
-                      <p className="text-lg font-black text-[#757A7F]">â¥1.20x</p>
+                      <p className="text-lg font-black text-[#757A7F]">≥1.20x</p>
                     </div>
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Status</p>
                       <p className={`text-xs font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {isBehind ? 'ð´ BEHIND' : 'ð¢ ON TRACK'}
+                        {isBehind ? '🔴 BEHIND' : 'ð¢ ON TRACK'}
                       </p>
                     </div>
                   </div>
@@ -1072,7 +1072,7 @@ export default async function MasterDashboard() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} â {job.Job_Name}</p>
+                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} — {job.Job_Name}</p>
                         <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
                       </div>
                       <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: healthColor[health] }}>{pct}%</span>
@@ -1093,7 +1093,7 @@ export default async function MasterDashboard() {
             </div>
           </div>
 
-          {/* FULL PORTFOLIO â moved to /portfolio */}
+          {/* FULL PORTFOLIO — moved to /portfolio */}
           <div className="col-span-12 lg:col-span-8 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <Link href="/portfolio" className="block p-5 hover:bg-[#F1F3F4] transition-colors group">
               <div className="flex justify-between items-center">
@@ -1102,7 +1102,7 @@ export default async function MasterDashboard() {
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
                   <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
                 <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
-                <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">â</span>
+                <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
               </div>
             </Link>
           </div>

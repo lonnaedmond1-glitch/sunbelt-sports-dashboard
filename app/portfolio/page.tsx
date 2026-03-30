@@ -50,9 +50,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       <header className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Full Portfolio</h1>
-          <p className="text-[#757A7F] text-sm">{jobs.length} jobs across {Object.keys(stateCounts).length} states â ${totalValue.toLocaleString()} total contract value</p>
+          <p className="text-[#757A7F] text-sm">{jobs.length} jobs across {Object.keys(stateCounts).length} states — ${totalValue.toLocaleString()} total contract value</p>
         </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-white transition-colors">â Dashboard</Link>
+        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-white transition-colors">← Dashboard</Link>
       </header>
 
       {/* KPI Row */}
@@ -78,7 +78,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
           <div className="flex gap-3 mt-1">
             {(['green', 'amber', 'red'] as const).map(h => (
               <span key={h} className="text-sm font-black" style={{ color: healthColor[h] }}>
-                â {healthCounts[h]}
+                ● {healthCounts[h]}
               </span>
             ))}
           </div>
@@ -115,7 +115,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {/* Main Table */}
       <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden shadow-md">
         <div className="px-6 py-4 border-b border-[#F1F3F4] bg-black/20 flex justify-between items-center">
-          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs â {jobs.length}</h2>
+          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs — {jobs.length}</h2>
           <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Data Feed</span>
         </div>
         <div className="overflow-x-auto">
@@ -154,7 +154,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs font-black" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? 'â OK' : health === 'amber' ? 'â Watch' : 'â Risk'}
+                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
                       </span>
                     </td>
                   </tr>
