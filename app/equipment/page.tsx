@@ -56,6 +56,31 @@ export default async function EquipmentPage() {
 
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
+
+      {/* API Connection Status Banners */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="flex items-center gap-3 bg-[#1a1a2e] border border-[#F1F3F4]/20 rounded-lg px-4 py-3">
+          <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
+          <div>
+            <p className="text-sm font-bold text-white">Samsara API</p>
+            <p className="text-xs text-[#757A7F]">Connected &mdash; Fleet GPS live</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 bg-[#1a1a2e] border border-yellow-600/40 rounded-lg px-4 py-3">
+          <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+          <div>
+            <p className="text-sm font-bold text-white">Sunbelt Rentals API</p>
+            <p className="text-xs text-yellow-400">Pending &mdash; awaiting credentials</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 bg-[#1a1a2e] border border-yellow-600/40 rounded-lg px-4 py-3">
+          <span className="w-3 h-3 rounded-full bg-yellow-500"></span>
+          <div>
+            <p className="text-sm font-bold text-white">Sunbelt Sports Fleet</p>
+            <p className="text-xs text-yellow-400">Pending &mdash; integration in progress</p>
+          </div>
+        </div>
+      </div>
       <header className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-2">Active Rentals</h1>
@@ -70,7 +95,7 @@ export default async function EquipmentPage() {
             Active Rentals {isLive && <span className="ml-1 text-[8px] px-1 bg-[#20BC64]/20 rounded tracking-normal">LIVE</span>}
           </p>
           <p className="text-4xl font-black">{totalActive}</p>
-          <div className="absolute right-[-20px] bottom-[-20px] text-[#20BC64]/10 text-8xl font-black">🚜</div>
+          <div className="absolute right-[-20px] bottom-[-20px] text-[#20BC64]/10 text-8xl font-black">ð</div>
         </div>
 
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4] shadow-lg relative overflow-hidden">
