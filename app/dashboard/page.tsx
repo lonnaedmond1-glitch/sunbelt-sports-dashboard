@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
@@ -573,7 +574,7 @@ export default async function MasterDashboard() {
       <header className="flex flex-col w-full sticky top-0 z-50 shadow-md">
         <div className="px-8 py-4 bg-white flex justify-between items-center border-b border-[#F1F3F4]">
           <div className="flex items-center gap-4">
-            <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-10 w-auto" />
+            <Image src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" width={512} height={160} className="h-10 w-auto" priority unoptimized />
           </div>
           <div className="flex items-center gap-4">
             {criticalCount > 0 && (

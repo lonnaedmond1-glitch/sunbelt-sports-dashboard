@@ -147,7 +147,7 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
         {/* Top bar: nav + live indicator */}
         <div className="px-4 md:px-8 py-3 bg-[#2A2D31] flex justify-between items-center border-b border-white/5">
           <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-7 w-auto" />
+            <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-7 w-auto" style={{ filter: 'brightness(0) invert(1)' }} />
             <span className="text-white/60 font-bold text-xs uppercase tracking-wide">← Dashboard</span>
           </Link>
           <div className="flex items-center gap-3">
