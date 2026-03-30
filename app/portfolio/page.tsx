@@ -14,7 +14,11 @@ function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
 
 const healthColor: Record<string, string> = { green: '#20BC64', amber: '#fb923c', red: '#ef4444' };
 
-export default async function PortfolioPage() {
+export default async function PortfolioPage({ searchParams }: { searchParams: Promise<{ status?: string; state?: string }> }) {
+  const params = await searchParams;
+  const filterStatus = params?.status || '';
+  const filterState = params?.state || '';
+
   const [jobs, fieldReports] = await Promise.all([
     fetchLiveJobs(),
     fetchLiveFieldReports(),
@@ -46,9 +50,9 @@ export default async function PortfolioPage() {
       <header className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Full Portfolio</h1>
-          <p className="text-[#757A7F] text-sm">{jobs.length} jobs across {Object.keys(stateCounts).length} states — ${totalValue.toLocaleString()} total contract value</p>
+          <p className="text-[#757A7F] text-sm">{jobs.length} jobs across {Object.keys(stateCounts).length} states â ${totalValue.toLocaleString()} total contract value</p>
         </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-white transition-colors">← Dashboard</Link>
+        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-white transition-colors">â Dashboard</Link>
       </header>
 
       {/* KPI Row */}
@@ -74,7 +78,7 @@ export default async function PortfolioPage() {
           <div className="flex gap-3 mt-1">
             {(['green', 'amber', 'red'] as const).map(h => (
               <span key={h} className="text-sm font-black" style={{ color: healthColor[h] }}>
-                ● {healthCounts[h]}
+                â {healthCounts[h]}
               </span>
             ))}
           </div>
@@ -84,25 +88,25 @@ export default async function PortfolioPage() {
       {/* Status + State breakdown */}
       <div className="grid grid-cols-2 gap-4 mb-8">
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-3">By Status</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-3">By Status {filterStatus && <a href="/portfolio" className="text-xs text-blue-400 ml-2">(clear)</a>}</p>
           <div className="flex flex-wrap gap-2">
             {Object.entries(statusCounts).sort((a, b) => b[1] - a[1]).map(([status, count]) => {
               const color = status === 'Executed' ? '#20BC64' : status === 'Signed' ? '#60a5fa' : status === 'Received' ? '#fb923c' : '#9ca3af';
               return (
-                <span key={status} className="text-xs font-bold px-3 py-1.5 rounded-full" style={{ color, backgroundColor: `${color}15`, border: `1px solid ${color}30` }}>
+                <a href={`/portfolio?status=${encodeURIComponent(status)}`} style={filterStatus === status ? {fontWeight:"bold",outline:"2px solid currentColor"} : {}} key={status} className="cursor-pointer hover:opacity-80 text-xs font-bold px-3 py-1.5 rounded-full" style={{ color, backgroundColor: `${color}15`, border: `1px solid ${color}30` }}>
                   {status} ({count})
-                </span>
+                </a>
               );
             })}
           </div>
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-3">By State</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-3">By State {filterState && <a href="/portfolio" className="text-xs text-blue-400 ml-2">(clear)</a>}</p>
           <div className="flex flex-wrap gap-2">
             {Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).map(([state, count]) => (
-              <span key={state} className="text-xs font-bold px-3 py-1.5 rounded-full bg-[#F1F3F4] text-[#3C4043]/70 border border-[#3C4043]/15">
+              <a href={`/portfolio?state=${encodeURIComponent(state)}`} style={filterState === state ? {fontWeight:"bold",outline:"2px solid currentColor"} : {}} key={state} className="cursor-pointer hover:opacity-80 text-xs font-bold px-3 py-1.5 rounded-full bg-[#F1F3F4] text-[#3C4043]/70 border border-[#3C4043]/15">
                 {state} ({count})
-              </span>
+              </a>
             ))}
           </div>
         </div>
@@ -111,7 +115,7 @@ export default async function PortfolioPage() {
       {/* Main Table */}
       <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden shadow-md">
         <div className="px-6 py-4 border-b border-[#F1F3F4] bg-black/20 flex justify-between items-center">
-          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs — {jobs.length}</h2>
+          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs â {jobs.length}</h2>
           <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Data Feed</span>
         </div>
         <div className="overflow-x-auto">
@@ -124,9 +128,9 @@ export default async function PortfolioPage() {
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job: any, i: number) => {
+              {jobs.filter(j => (!filterStatus || j.Status === filterStatus) && (!filterState || j.State === filterState)).map((job: any, i: number) => {
                 const pct = Math.round(job.Pct_Complete || 0);
-                const health = getJobHealth(job, reportMap[job.Job_Number]);
+                const health = ['Signed','Pending','Bid'].includes(job.Status) ? '\u2014' : getJobHealth(job, reportMap[job.Job_Number]);
                 const statusColor = job.Status === 'Executed' ? '#20BC64' : job.Status === 'Signed' ? '#60a5fa' : job.Status === 'Received' ? '#fb923c' : '#9ca3af';
                 return (
                   <tr key={job.Job_Number} className={`border-b border-[#F1F3F4] hover:bg-[#F1F3F4] transition-colors ${i % 2 === 0 ? 'bg-transparent' : 'bg-[#F1F3F4]/50'}`}>
@@ -150,7 +154,7 @@ export default async function PortfolioPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs font-black" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
+                        {health === 'green' ? 'â OK' : health === 'amber' ? 'â Watch' : 'â Risk'}
                       </span>
                     </td>
                   </tr>
