@@ -17,7 +17,7 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-16 hover:w-52 bg-[#202325] z-[60] flex flex-col transition-all duration-300 group overflow-hidden shadow-xl bg-turf-lines">
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10 flex-shrink-0">
-        <div className="w-8 h-8 bg-[#20BC64] rounded flex items-center justify-center font-display font-black text-white text-sm flex-shrink-0">S</div>
+        <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-8 w-auto flex-shrink-0" />
         <span className="font-display font-black text-sm tracking-wide whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-white">SUNBELT</span>
       </div>
 

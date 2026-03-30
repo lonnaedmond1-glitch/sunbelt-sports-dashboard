@@ -573,8 +573,7 @@ export default async function MasterDashboard() {
       <header className="flex flex-col w-full sticky top-0 z-50 shadow-md">
         <div className="px-8 py-4 bg-white flex justify-between items-center border-b border-[#F1F3F4]">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-[#20BC64] rounded flex items-center justify-center font-display font-black text-white text-lg">S</div>
-            <span className="font-display font-black text-xl tracking-wide text-[#3C4043]">SUNBELT SPORTS</span>
+            <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-10 w-auto" />
           </div>
           <div className="flex items-center gap-4">
             {criticalCount > 0 && (
