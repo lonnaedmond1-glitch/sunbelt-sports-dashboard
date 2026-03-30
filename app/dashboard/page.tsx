@@ -15,7 +15,7 @@ const getBaseUrl = () => {
 const getLiveJobs = fetchLiveJobs;
 const getLiveFieldReports = fetchLiveFieldReports;
 
-// âââ Load Project Scorecards for est/actual comparison âââââââââââââââââââââââ
+// ─── Load Project Scorecards for est/actual comparison ───────────────────────
 function loadScorecardEstimates(): Record<string, { estTons: number; estDays: number }> {
   try {
     const filePath = path.join(process.cwd(), 'data', 'Project_Scorecards.csv');
@@ -36,7 +36,7 @@ function loadScorecardEstimates(): Record<string, { estTons: number; estDays: nu
   } catch { return {}; }
 }
 
-// âââ Haversine distance (miles) âââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── Haversine distance (miles) ───────────────────────────────────────────────
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8;
   const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -185,7 +185,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
               job: job?.Job_Number, jobName: job?.Job_Name,
               pm: job?.Project_Manager || '',
               precipProb, wind, condition: condLabel,
-              message: `âï¸ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} — ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
+              message: `⛈️ WEATHER RISK${isToday ? ' TODAY' : ` ${dateStr}`} — ${condLabel} at ${job?.Job_Name || job?.Job_Number}: ${precipProb}% rain, wind ${wind}mph`,
             });
           }
         }
@@ -197,7 +197,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
 
 
 
-// âââ Parse schedule date ââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── Parse schedule date ────────────────────────────────────────────────────
 function parseJobDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('/');
@@ -209,7 +209,7 @@ function parseJobDate(dateStr: string): Date | null {
 }
 
 
-// âââ Scheduled Jobs State Engine âââââââââââââââââââââââââââââââââââââââââââââ
+// ─── Scheduled Jobs State Engine ─────────────────────────────────────────────
 // A job is SCHEDULED if it appears on a crew row in THIS WEEK's schedule grid.
 // Source of truth: currentWeek parsed day assignments ONLY (Mon–Fri this week).
 // Resolve a schedule assignment to a job number (mirrors schedule page logic)
@@ -277,7 +277,7 @@ function isJobScheduled(job: any): boolean {
   return start <= new Date();
 }
 
-// âââ Health scoring ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+// ─── Health scoring ──────────────────────────────────────────────────────────
 function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
   const pct = job.Pct_Complete || 0;
   const hasReport = !!report;
@@ -293,7 +293,7 @@ function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
   return 'green';
 }
 
-// âââ Module 3: Risk & Alerts Engine âââââââââââââââââââââââââââââââââââââââââ
+// ─── Module 3: Risk & Alerts Engine ─────────────────────────────────────────
 function computeRisks(
   jobs: any[],
   reportMap: Record<string, any>,
@@ -318,7 +318,7 @@ function computeRisks(
   const estMinute = eastNow.getMinutes();
   const timeStr12 = `${estHour > 12 ? estHour - 12 : estHour || 12}:${estMinute.toString().padStart(2, '0')} ${estHour >= 12 ? 'PM' : 'AM'}`;
 
-  // ââ CONDITION 1: Missing Field Report from YESTERDAY's schedule âââââââââ
+  // ── CONDITION 1: Missing Field Report from YESTERDAY's schedule ─────────
   const yesterdayDate = new Date(eastNow);
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
@@ -343,7 +343,7 @@ function computeRisks(
     }
   }
 
-  // ââ CONDITION 2: Material Overrun âââââââââââââââââââââââââââââââââââââââââ
+  // ── CONDITION 2: Material Overrun ─────────────────────────────────────────
   // Cumulative field report tonnage > estimated tonnage from Project Scorecards
   for (const [jobNum, report] of Object.entries(reportMap)) {
     const est = scorecardEstimates[jobNum];
@@ -356,7 +356,7 @@ function computeRisks(
     }
   }
 
-  // ââ CONDITION 3: Days on Site Overrun ââââââââââââââââââââââââââââââââââââ
+  // ── CONDITION 3: Days on Site Overrun ────────────────────────────────────
   // Field report day count > allotted days from Project Scorecards
   for (const [jobNum, report] of Object.entries(reportMap)) {
     const est = scorecardEstimates[jobNum];
@@ -369,7 +369,7 @@ function computeRisks(
     }
   }
 
-  // ââ CONDITION 4: Weather Risk (≥40% rain during working hours) âââââââââââ
+  // ── CONDITION 4: Weather Risk (≥40% rain during working hours) ───────────
   // Look back 1 day (today in EST may already be tomorrow in UTC) and forward 3 days
   const yesterdayISO = new Date(eastNow.getTime() - 86400000).toISOString().split('T')[0];
   const threeDaysOut = new Date(eastNow.getTime() + 3 * 86400000).toISOString().split('T')[0];
@@ -382,12 +382,12 @@ function computeRisks(
       risks.push({
         level: lvl,
         job: wx.job,
-        message: `âï¸ WEATHER — ${wx.jobName} (${todayTag.replace(' — ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
+        message: `⛈️ WEATHER — ${wx.jobName} (${todayTag.replace(' — ', '')}): ${wx.condition || 'Rain'}, ${wx.precipProb}% rain, ${wx.wind}mph wind. PM: ${wx.pm || 'N/A'}.`,
       });
     });
 
 
-  // ââ CONDITION 5: Vendor/Credit Account Missing âââââââââââââââââââââââââââ
+  // ── CONDITION 5: Vendor/Credit Account Missing ───────────────────────────
   // Uses Job Prep Board credit status as proxy for vendor account status
   for (const prep of prepBoard) {
     const creditStatus = (prep.Asphalt_Plant_Credit || prep.Plant_Credit || '').toLowerCase();
@@ -402,7 +402,7 @@ function computeRisks(
     }
   }
 
-  // ââ CONDITION 6: Schedule Deviation — truck GPS at wrong job âââââââââââââ
+  // ── CONDITION 6: Schedule Deviation — truck GPS at wrong job ─────────────
   // Map crew schedule names to Samsara vehicle names (first name match)
   if (vehicles.length > 0) {
     const todayAssignments = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
@@ -486,7 +486,7 @@ export default async function MasterDashboard() {
 
 
 
-  // ââ Scheduled Jobs State Engine ââââââââââââââââââââââââââââââââââââââââââ
+  // ── Scheduled Jobs State Engine ──────────────────────────────────────────
   // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
   const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData, jobs));
 
@@ -509,7 +509,7 @@ export default async function MasterDashboard() {
   const totalManHours = fieldReports.reduce((s: number, r: any) => s + (r.Total_Man_Hours || 0), 0);
   const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
-  // ââ Fleet at Jobsites: trucks within 2 miles of any job ââââââââââââââââââ
+  // ── Fleet at Jobsites: trucks within 2 miles of any job ──────────────────
   const fleetAtJobsites = samsara.configured ? samsara.vehicles.filter((v: any) => {
     if (!v.lat || !v.lng) return false;
     return jobs.some((j: any) => {
@@ -519,7 +519,7 @@ export default async function MasterDashboard() {
     });
   }) : [];
 
-  // ââ Missing Reports: jobs assigned YESTERDAY with no field report âââââââââ
+  // ── Missing Reports: jobs assigned YESTERDAY with no field report ─────────
   const scheduledJobNames = scheduledJobs.map((j: any) => j.Job_Name).filter(Boolean);
   // Find yesterday's date in EST
   const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -569,7 +569,7 @@ export default async function MasterDashboard() {
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body flex flex-col pb-10 antialiased overflow-x-hidden">
 
-      {/* ââ HEADER âââââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+      {/* ── HEADER ─────────────────────────────────────────────────────── */}
       <header className="flex flex-col w-full sticky top-0 z-50 shadow-md">
         <div className="px-8 py-4 bg-white flex justify-between items-center border-b border-[#F1F3F4]">
           <div className="flex items-center gap-4">
@@ -601,7 +601,7 @@ export default async function MasterDashboard() {
 
       <div className="flex flex-col gap-6 w-full max-w-[1920px] mx-auto p-6">
 
-        {/* ââ KPI STRIP ââââââââââââââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {/* Scheduled Jobs */}
           <div className="card p-5">
@@ -635,7 +635,7 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ââ ROW 2: MAP + RISK BOX âââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ── ROW 2: MAP + RISK BOX ───────────────────────────────────────── */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MAP */}
@@ -729,7 +729,7 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ââ LOWBOY COMMAND âââââââââââââââââââââââââââââââââââââââââââââââ */}
+        {/* ── LOWBOY COMMAND ─────────────────────────────────────────────── */}
         {(() => {
           const lowboyVehicle = samsara.configured
             ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('jose') || (v.name || '').toLowerCase().includes('lowboy'))
@@ -786,7 +786,7 @@ export default async function MasterDashboard() {
           );
         })()}
 
-        {/* ââ ROW 3: SCORECARD + JOB HEALTH ââââââââââââââââââââââââââââââââ */}
+        {/* ── ROW 3: SCORECARD + JOB HEALTH ──────────────────────────────── */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* PORTFOLIO SCORECARD */}
@@ -923,7 +923,7 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ââ ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ââââââââââââââââââââââ */}
+        {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ────────────────────── */}
         {(() => {
           // Compute velocity from scorecard data
           const scorecards: any[] = [];
@@ -956,7 +956,7 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">â¡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
                   {isBehind && (
                     <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
                       ⚠️ BASE CREW BELOW PAVING THRESHOLD
@@ -1049,7 +1049,7 @@ export default async function MasterDashboard() {
           );
         })()}
 
-        {/* ââ ROW 4: JOB LIST + PORTFOLIO TABLE âââââââââââââââââââââââââââ */}
+        {/* ── ROW 4: JOB LIST + PORTFOLIO TABLE ─────────────────────────── */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MISSION PROGRESS */}

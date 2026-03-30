@@ -101,7 +101,7 @@ export default async function SchedulePage() {
         if (f) {
           const prob = f.precipProb || 0;
           let icon = 'âï¸';
-          if (f.severe) icon = 'âï¸';
+          if (f.severe) icon = '⛈️';
           else if (prob >= 60) icon = 'ð§ï¸';
           else if (prob >= 30) icon = 'ð¦ï¸';
           else if (prob >= 10) icon = 'â';
@@ -393,7 +393,7 @@ export default async function SchedulePage() {
           <div className="flex items-center gap-3">
             {weatherAlerts.length > 0 && (
               <span className="text-xs font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 rounded-full px-3 py-1.5">
-                âï¸ {weatherAlerts.length} Weather Alerts
+                ⛈️ {weatherAlerts.length} Weather Alerts
               </span>
             )}
             {schedule.deliveries?.length > 0 && (
