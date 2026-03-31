@@ -1060,3 +1060,25 @@ export async function fetchScheduleData() {
     };
   } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
 }
+// ──────────────────────────── PROJECT SCORECARDS (Google Sheets Hub) ────────────────────────────
+const SCORECARD_HUB_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
+
+export async function fetchProjectScorecards(): Promise<Record<string, string>[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/export?format=csv&gid=0`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(function(l) { return l.trim(); });
+    if (rows.length < 2) return [];
+    const headers = parseCSVLine(rows[0]);
+    return rows.slice(1).map(function(line) {
+      const cols = parseCSVLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach(function(h: string, i: number) { row[h] = cols[i] !== undefined ? cols[i] : ''; });
+      return row;
+    });
+  } catch {
+    return [];
+  }
+}
