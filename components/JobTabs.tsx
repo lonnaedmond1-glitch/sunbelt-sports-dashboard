@@ -482,6 +482,7 @@ export default function JobTabs({
                     { label: 'Concrete', actual: report ? (report.Concrete_Actual || report.Concrete_CY || 0) : 0, est: 0, unit: 'CY', color: '#f472b6' },
                     { label: 'Total Man-Hours', actual: report ? (report.Total_Man_Hours || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Man_Hours) || 0 : 0, unit: 'hrs', color: '#fb923c' },
                     { label: 'Days Active', actual: report ? (report.Days_Active || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Days_On_Site) || 0 : 0, unit: 'days', color: '#fbbf24' },
+                  ].map(m => {
                     const act = m.actual || 0;
                     const est = m.est;
                     const pctUsed = est > 0 ? Math.min(130, Math.round((act / est) * 100)) : 0;
