@@ -4,7 +4,7 @@ import Image from 'next/image';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards } from '@/lib/sheets-data';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -451,11 +451,12 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, scheduleData] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData, projectScorecards] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
     fetchScheduleData(),
+    fetchProjectScorecards(),
   ]);
 
   // Build report map first — needed by both crossCheck and weather
@@ -467,6 +468,14 @@ export default async function MasterDashboard() {
     getWeatherAlerts(jobs),
     Promise.resolve(computeCrossCheck(samsara.vehicles || [], jobs, reportMap)),
   ]);
+
+  // Live scorecard throughput from API (replaces CSV fallback)
+  const liveActiveJobs = (projectScorecards as any[]).map((sc: any) => ({
+    actStone: parseFloat(sc.Act_Stone_Tons || '0') || 0,
+    actBinder: parseFloat(sc.Act_Binder_Tons || '0') || 0,
+    actTopping: parseFloat(sc.Act_Topping_Tons || '0') || 0,
+    actDays: parseFloat(sc.Act_Days_On_Site || '0') || 0,
+  })).filter((sc: any) => sc.actDays > 0);
 
   // Load local estimates for risk engine
   const scorecardEstimates = loadScorecardEstimates();
@@ -602,7 +611,19 @@ export default async function MasterDashboard() {
       <div className="flex flex-col gap-6 w-full max-w-[1920px] mx-auto p-6">
 
         {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+          {/* Total Jobs */}
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Total Jobs</p>
+            <p className="text-4xl font-display font-black text-[#3C4043]">{jobs.length}</p>
+            <p className="text-xs text-[#757A7F] mt-1">Live — WIP sheet</p>
+          </div>
+          {/* Active Jobs */}
+          <div className="card p-5">
+            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Active Jobs</p>
+            <p className="text-4xl font-display font-black text-[#10BE66]">{liveActiveJobs.length}</p>
+            <p className="text-xs text-[#757A7F] mt-1">Reporting to scorecard</p>
+          </div>
           {/* Scheduled Jobs */}
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Scheduled Jobs</p>
@@ -926,21 +947,7 @@ export default async function MasterDashboard() {
         {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ────────────────────── */}
         {(() => {
           // Compute velocity from scorecard data
-          const scorecards: any[] = [];
-          try {
-            const scPath = path.join(process.cwd(), 'data', 'Project_Scorecards.csv');
-            const scText = fs.readFileSync(scPath, 'utf-8');
-            const scLines = scText.trim().split('\n');
-            for (let i = 1; i < scLines.length; i++) {
-              const cols = scLines[i].split(',');
-              scorecards.push({
-                actStone: parseFloat(cols[4] || '0') || 0,
-                actBinder: parseFloat(cols[6] || '0') || 0,
-                actTopping: parseFloat(cols[8] || '0') || 0,
-                actDays: parseFloat(cols[10] || '0') || 0,
-              });
-            }
-          } catch {}
+          const scorecards = liveActiveJobs;
 
           const activeJobs = scorecards.filter(sc => sc.actDays > 0);
           const totalStoneTons = activeJobs.reduce((s, sc) => s + sc.actStone, 0);
@@ -963,7 +970,7 @@ export default async function MasterDashboard() {
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Source: Scorecards CSV</span>
+                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live — Scorecard API</span>
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-2 gap-6">
