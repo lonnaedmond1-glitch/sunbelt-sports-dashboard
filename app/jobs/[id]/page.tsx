@@ -125,15 +125,8 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
     fetchScheduleData(),
   ]);
 
-  const report = liveReport || (csvReport ? {
-    GAB_Tonnage: parseFloat(csvReport.Base_Actual), Binder_Tonnage: 0,
-    Topping_Tonnage: parseFloat(csvReport.Asphalt_Actual),
-    Concrete_CY: parseFloat(csvReport.Concrete_Actual),
-    Base_Actual: parseFloat(csvReport.Base_Actual),
-    Asphalt_Actual: parseFloat(csvReport.Asphalt_Actual),
-    Concrete_Actual: parseFloat(csvReport.Concrete_Actual),
-    Crew_Count: 0, Total_Man_Hours: 0, Days_Active: 0, Latest_Summary: '',
-  } : null);
+    // Only use live field reports -- CSV fallback removed to avoid showing placeholder zeros
+  const report = liveReport || null;
 
   const asphaltCredit = prep?.Asphalt_Credit_Status || 'Unknown';
   const baseCredit = prep?.Base_Credit_Status || 'Unknown';

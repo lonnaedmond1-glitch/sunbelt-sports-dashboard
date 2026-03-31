@@ -58,6 +58,16 @@ export default async function EquipmentPage() {
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
 
+      {/* CSV fallback warning -- shown when live Gmail rental sync is unavailable */}
+      {!isLive && (
+        <div className='mb-5 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3'>
+          <span className='text-amber-400 text-lg mt-0.5'>&#9888;</span>
+          <div>
+            <p className='text-xs font-black uppercase tracking-widest text-amber-400'>Showing Static CSV Data</p>
+            <p className='text-xs text-white/40 mt-0.5'>Live rental data from Gmail sync is unavailable. Figures below come from Equipment_On_Rent.csv and may not reflect current on-rent status.</p>
+          </div>
+        </div>
+      )}
       {/* API Connection Status Banners */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="flex items-center gap-3 bg-[#1a1a2e] border border-[#F1F3F4]/20 rounded-lg px-4 py-3">

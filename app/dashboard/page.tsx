@@ -963,7 +963,7 @@ export default async function MasterDashboard() {
                     </span>
                   )}
                 </div>
-                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Telemetry</span>
+                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Source: Scorecards CSV</span>
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-2 gap-6">

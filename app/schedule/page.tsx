@@ -518,19 +518,8 @@ export default async function SchedulePage() {
                     id: `rental-${i}`, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
                     speed: 0, driver: '', status: 'rental'
                   })),
-                  ...vlAssets.filter((a: any) => {
-                    // Pin VisionLink assets at nearest scheduled job site
-                    return scheduledJobLocations.length > 0;
-                  }).map((a: any, i: number) => {
-                    // Distribute VisionLink assets across scheduled job sites
-                    const jobIdx = i % scheduledJobLocations.length;
-                    const job = scheduledJobLocations[jobIdx];
-                    return {
-                      id: `asset-${a.Asset_ID}`, name: getEquipType(a.Make, a.Model),
-                      lat: job.lat, lng: job.lng, address: `#${a.Asset_ID} · ${a.Hours}h`,
-                      speed: 0, driver: '', status: 'asset'
-                    };
-                  }),
+                  // VisionLink GPS pins removed -- assets had no real coordinates;
+                  // distributing them across job sites would misrepresent equipment location.
                 ]}
               />
             </div>

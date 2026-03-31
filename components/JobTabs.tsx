@@ -475,13 +475,13 @@ export default function JobTabs({
               {report ? (
                 <div className="space-y-5">
                   {[
-                    { label: 'GAB / Base', actual: scorecard ? parseFloat(scorecard.Act_Stone_Tons) || (report.Base_Actual || report.GAB_Tonnage || 0) : (report.Base_Actual || report.GAB_Tonnage || 0), est: scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0, unit: 'tons', color: '#20BC64' },
-                    { label: 'Asphalt Binder', actual: scorecard ? parseFloat(scorecard.Act_Binder_Tons) || (report.Binder_Tonnage || 0) : (report.Binder_Tonnage || 0), est: scorecard ? parseFloat(scorecard.Est_Binder_Tons) || 0 : 0, unit: 'tons', color: '#60a5fa' },
-                    { label: 'Asphalt Topping', actual: scorecard ? parseFloat(scorecard.Act_Topping_Tons) || (report.Topping_Tonnage || 0) : (report.Topping_Tonnage || 0), est: scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0, unit: 'tons', color: '#a78bfa' },
-                    { label: 'Concrete', actual: report.Concrete_Actual || report.Concrete_CY, est: 0, unit: 'CY', color: '#f472b6' },
-                    { label: 'Total Man-Hours', actual: scorecard ? parseFloat(scorecard.Act_Man_Hours) || (report.Total_Man_Hours || 0) : (report.Total_Man_Hours || 0), est: scorecard ? parseFloat(scorecard.Est_Man_Hours) || 0 : 0, unit: 'hrs', color: '#fb923c' },
-                    { label: 'Days Active', actual: scorecard ? parseFloat(scorecard.Act_Days_On_Site) || (report.Days_Active || 0) : (report.Days_Active || 0), est: scorecard ? parseFloat(scorecard.Est_Days_On_Site) || 0 : 0, unit: 'days', color: '#fbbf24' },
-                  ].map(m => {
+                    # Actuals: live field reports only. Estimates: scorecard CSV.
+                    { label: 'GAB / Base', actual: report ? (report.Base_Actual || report.GAB_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0, unit: 'tons', color: '#20BC64' },
+                    { label: 'Asphalt Binder', actual: report ? (report.Binder_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Binder_Tons) || 0 : 0, unit: 'tons', color: '#60a5fa' },
+                    { label: 'Asphalt Topping', actual: report ? (report.Topping_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0, unit: 'tons', color: '#a78bfa' },
+                    { label: 'Concrete', actual: report ? (report.Concrete_Actual || report.Concrete_CY || 0) : 0, est: 0, unit: 'CY', color: '#f472b6' },
+                    { label: 'Total Man-Hours', actual: report ? (report.Total_Man_Hours || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Man_Hours) || 0 : 0, unit: 'hrs', color: '#fb923c' },
+                    { label: 'Days Active', actual: report ? (report.Days_Active || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Days_On_Site) || 0 : 0, unit: 'days', color: '#fbbf24' },
                     const act = m.actual || 0;
                     const est = m.est;
                     const pctUsed = est > 0 ? Math.min(130, Math.round((act / est) * 100)) : 0;

@@ -65,6 +65,14 @@ export default async function ProjectScorecardPage() {
         <h1 className="text-2xl font-black uppercase tracking-tight text-white mb-1">Project Scorecard</h1>
         <p className="text-white/40 text-sm">Estimated vs Actual — Man Hours, Materials &amp; Schedule across all projects.</p>
       </header>
+      {/* Static data warning */}
+      <div className='mb-6 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3'>
+        <span className='text-amber-400 text-lg mt-0.5'>&#9888;</span>
+        <div>
+          <p className='text-xs font-black uppercase tracking-widest text-amber-400'>Static Data — Scorecards CSV</p>
+          <p className='text-xs text-white/40 mt-0.5'>Actuals on this page come from Project_Scorecards.csv and are not updated in real time. For live production data, see individual job field reports.</p>
+        </div>
+      </div>
 
       {/* Portfolio Totals */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-8">
