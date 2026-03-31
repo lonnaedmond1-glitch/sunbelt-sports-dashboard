@@ -475,7 +475,7 @@ export default function JobTabs({
               {report ? (
                 <div className="space-y-5">
                   {[
-                    # Actuals: live field reports only. Estimates: scorecard CSV.
+                    // Actuals: live field reports only. Estimates: scorecard CSV.
                     { label: 'GAB / Base', actual: report ? (report.Base_Actual || report.GAB_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0, unit: 'tons', color: '#20BC64' },
                     { label: 'Asphalt Binder', actual: report ? (report.Binder_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Binder_Tons) || 0 : 0, unit: 'tons', color: '#60a5fa' },
                     { label: 'Asphalt Topping', actual: report ? (report.Topping_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0, unit: 'tons', color: '#a78bfa' },
