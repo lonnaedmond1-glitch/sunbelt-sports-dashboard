@@ -5,7 +5,7 @@ import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchVisionLinkA
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 86400; // Daily ISR
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;

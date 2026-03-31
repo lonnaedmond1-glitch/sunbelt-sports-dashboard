@@ -48,7 +48,7 @@ function StatusBadge({ status }: { status: string }) {
     </div>
   );
   if (status === 'Pending') return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25 animate-pulse">
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25">
       <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
       <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">⛔ PENDING — DO NOT EXECUTE SCOPE</span>
     </div>

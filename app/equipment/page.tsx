@@ -1,5 +1,5 @@
 import React from 'react';
-export const dynamic = 'force-dynamic';
+export const revalidate = 86400; // Daily ISR
 import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveRentals } from '@/lib/sheets-data';
@@ -174,9 +174,9 @@ export default async function EquipmentPage() {
                   </td>
                   <td className="px-6 py-4 text-center">
                     {r.isOverdue ? (
-                      <span className="text-[10px] font-black tracking-widest uppercase text-[#E04343] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#E04343] animate-pulse"></span> Overdue</span>
+                      <span className="text-[10px] font-black tracking-widest uppercase text-[#E04343] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#E04343]</span> Overdue</span>
                     ) : r.days > 14 && r.rate === 0 ? (
-                      <span className="text-[10px] font-black tracking-widest uppercase text-[#F5A623] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A623] animate-pulse"></span> INACTIVE</span>
+                      <span className="text-[10px] font-black tracking-widest uppercase text-[#F5A623] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A623]</span> INACTIVE</span>
                     ) : (
                       <span className="text-[10px] font-black tracking-widest uppercase text-[#20BC64] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#20BC64]"></span> Active</span>
                     )}

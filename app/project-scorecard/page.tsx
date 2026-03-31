@@ -1,3 +1,4 @@
+export const revalidate = 86400; // Daily ISR
 import React from 'react';
 import Link from 'next/link';
 import { getAllScorecards } from '@/lib/csv-parser';

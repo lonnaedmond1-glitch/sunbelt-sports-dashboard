@@ -76,12 +76,12 @@ const JOB_LIST_GID = '623969002';
 
 // ──────────────────────────── LEVEL 10 MEETING ────────────────────────────
 export function fetchLevel10Meeting() {
-  return cached('level10Meeting', 15 * 60 * 1000, async () => {
+  return cached('level10Meeting', 24 * 60 * 60 * 1000, async () => {
     try {
       const L10_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
       const MEETING_GID = '683987594'; // Specifically the Level 10 meeting tabs sheet
       const url = `https://docs.google.com/spreadsheets/d/${L10_SHEET_ID}/export?format=csv&gid=${MEETING_GID}`;
-      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
       if (!response.ok) return { screaming: [], looseEnds: [] };
       const csvText = await response.text();
       const lines = csvText.split('\r\n');
@@ -132,10 +132,10 @@ export function fetchLevel10Meeting() {
 }
 
 export function fetchLiveJobs() {
-  return cached('liveJobs', 5 * 60 * 1000, async () => {
+  return cached('liveJobs', 24 * 60 * 60 * 1000, async () => {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${JOB_LIST_SHEET_ID}/export?format=csv&gid=${JOB_LIST_GID}`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (!response.ok) return [];
     const csvText = await response.text();
     const lines = csvText.split('\r\n').filter(l => l.trim());
@@ -214,14 +214,14 @@ const FLEET_ASSETS_GID = '852503706';   // Sports Fleet Assets tab
 const FLEET_VEHICLES_GID = '1839763446'; // Sports Vehicle Fleet tab
 
 export function fetchFleetAssets() {
-  return cached('fleetAssets', 5 * 60 * 1000, async () => {
+  return cached('fleetAssets', 24 * 60 * 60 * 1000, async () => {
     try {
       const [assetsRes, vehiclesRes] = await Promise.all([
         fetch(`https://docs.google.com/spreadsheets/d/${FLEET_SHEET_ID}/export?format=csv&gid=${FLEET_ASSETS_GID}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 },
+          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
         }),
         fetch(`https://docs.google.com/spreadsheets/d/${FLEET_SHEET_ID}/export?format=csv&gid=${FLEET_VEHICLES_GID}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 },
+          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
         }),
       ]);
 
@@ -300,7 +300,7 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 300 },
+      next: { revalidate: 86400 },
     });
     if (!res.ok) return [];
     const text = await res.text();
@@ -309,7 +309,7 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
 }
 
 export function fetchLiveRentals() {
-  return cached('liveRentals', 5 * 60 * 1000, async () => {
+  return cached('liveRentals', 24 * 60 * 60 * 1000, async () => {
     try {
       const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
       const [sunbeltRows, unitedRows] = await Promise.all([
@@ -442,7 +442,7 @@ function safeNum(val: string): number { const n = parseFloat(val?.replace(/[^0-9
 async function fetchJotformReports(): Promise<Record<string, any>> {
   try {
     const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return {};
     const json = await res.json();
     const submissions: JotformSubmission[] = json.content || [];
@@ -477,7 +477,7 @@ async function fetchJotformReports(): Promise<Record<string, any>> {
 async function fetchJotformFeed(jobNumber: string): Promise<any[]> {
   try {
     const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const json = await res.json();
     const submissions: JotformSubmission[] = json.content || [];
@@ -513,13 +513,13 @@ const FIELD_REPORT_TAB = 'Form Responses 1';
 async function fetchFormResponseRows(): Promise<string[][]> {
   try {
     const gvizUrl = `https://docs.google.com/spreadsheets/d/${FIELD_REPORT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(FIELD_REPORT_TAB)}`;
-    const res = await fetch(gvizUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' });
+    const res = await fetch(gvizUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (res.ok) {
       const text = await res.text();
       if (text && !text.includes('<!DOCTYPE')) return parseCSV(text);
     }
     const exportUrl = `https://docs.google.com/spreadsheets/d/${FIELD_REPORT_SHEET_ID}/export?format=csv&gid=0`;
-    const res2 = await fetch(exportUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' });
+    const res2 = await fetch(exportUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (res2.ok) {
       const text2 = await res2.text();
       if (text2 && !text2.includes('<!DOCTYPE')) return parseCSV(text2);
@@ -672,7 +672,7 @@ function mergeJobTotals(jotform: Record<string, any>, gforms: Record<string, any
 }
 
 export function fetchLiveFieldReports() {
-  return cached('liveFieldReports', 5 * 60 * 1000, async () => {
+  return cached('liveFieldReports', 24 * 60 * 60 * 1000, async () => {
     // Fetch BOTH sources in parallel — historical Jotform + new Google Forms
     const [jotformData, gformsData] = await Promise.all([
       fetchJotformReports(),
@@ -705,8 +705,8 @@ const BACKLOG_GID = '1136500140';
 export async function fetchEstimatingData() {
   try {
     const [bidLogRes, backlogRes] = await Promise.all([
-      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BID_LOG_GID}`, { next: { revalidate: 60 } }),
-      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BACKLOG_GID}`, { next: { revalidate: 60 } }),
+      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BID_LOG_GID}`, { next: { revalidate: 86400 } }),
+      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BACKLOG_GID}`, { next: { revalidate: 86400 } }),
     ]);
     const bidLogData = parseCSV(await bidLogRes.text());
     const backlogData = parseCSV(await backlogRes.text());
@@ -747,7 +747,7 @@ const CS_GID = '1255706057';
 async function fetchTab(sheetId: string, gid: string): Promise<string[]> {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const text = await res.text();
     return text.split('\n').map(l => l.replace(/\r$/, ''));
@@ -942,10 +942,10 @@ export async function fetchScheduleData() {
   try {
     const [schedRes, ganttRes] = await Promise.all([
       fetch(`https://docs.google.com/spreadsheets/d/${SCHEDULE_SHEET_ID}/export?format=csv&gid=${SCHEDULE_GID}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
       }),
       fetch(`https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=${GANTT_GID}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
       }),
     ]);
 

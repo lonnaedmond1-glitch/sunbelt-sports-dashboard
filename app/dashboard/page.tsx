@@ -6,7 +6,7 @@ import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData } from '@/lib/sheets-data';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 86400; // Daily ISR
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -65,8 +65,8 @@ async function getSamsaraData() {
 
 
     const [vehicleRes, driverRes] = await Promise.all([
-      fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 60 } }),
-      fetch('https://api.samsara.com/fleet/drivers?driverActivationStatus=active', { headers, next: { revalidate: 300 } }),
+      fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 86400 } }),
+      fetch('https://api.samsara.com/fleet/drivers?driverActivationStatus=active', { headers, next: { revalidate: 86400 } }),
     ]);
 
     const vehicles = vehicleRes.ok
@@ -167,7 +167,7 @@ async function getWeatherAlerts(jobsPreloaded: any[]) {
     await Promise.all(locationJobs.slice(0, 15).map(async ({ lat, lng, job }) => {
       try {
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&daily=temperature_2m_max,precipitation_probability_max,weathercode,windspeed_10m_max&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&timezone=America%2FNew_York&forecast_days=7`;
-        const res = await fetch(url, { next: { revalidate: 1800 } });
+        const res = await fetch(url, { next: { revalidate: 86400 } });
         if (!res.ok) return;
         const weather = await res.json();
         const daily = weather.daily;
@@ -958,7 +958,7 @@ export default async function MasterDashboard() {
                 <div className="flex items-center gap-3">
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
                   {isBehind && (
-                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full animate-pulse">
+                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
                       ⚠️ BASE CREW BELOW PAVING THRESHOLD
                     </span>
                   )}
