@@ -73,20 +73,50 @@ function syncEstimatesVsActuals(ss) {
   if (threads.length === 0) { Logger.log('No Estimates vs Actuals email found'); return; }
 
   const { blob, messageDate } = getLatestAttachment_(threads, /\.xlsx$/i);
-  if (!blob) return;
+  if (!blob) { Logger.log('Est vs Actuals: no xlsx attachment'); return; }
 
   const rows = readXlsxToMatrix_(blob);
-  if (!rows || rows.length === 0) { Logger.log('Est vs Actuals: empty'); return; }
+  if (!rows || rows.length === 0) { Logger.log('Est vs Actuals: empty xlsx'); return; }
 
-  // Normalize into flat rows keyed by job number.
-  const header = rows[0].map(String);
-  const iProject  = header.indexOf('Project');
-  const iEstCost  = header.indexOf('Total Est. Costs');
-  const iActCost  = header.indexOf('Total Act. Costs');
-  const iEstInc   = header.indexOf('Total Est. Income');
-  const iActInc   = header.indexOf('Total Act. Income');
-  const iProfit   = header.indexOf('Profit');
-  const iMargin   = header.indexOf('Profit Margin');
+  // QBO sometimes puts report title rows above the real header.
+  // Find the header row by scanning for one whose first cell equals 'Project'.
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    if (String(rows[i][0] || '').trim().toLowerCase() === 'project') { headerIdx = i; break; }
+  }
+  if (headerIdx < 0) {
+    Logger.log('Est vs Actuals: could not find header row (looking for "Project" in col A)');
+    Logger.log('  First 5 rows were:');
+    for (let i = 0; i < Math.min(5, rows.length); i++) Logger.log('    ' + JSON.stringify(rows[i]));
+    return;
+  }
+
+  // Build a fuzzy header map — tolerant of whitespace, punctuation, case.
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const header = rows[headerIdx];
+  const hMap = {};
+  header.forEach((h, i) => { const k = norm(h); if (k) hMap[k] = i; });
+
+  const findCol = (...keys) => {
+    for (const k of keys) {
+      const n = norm(k);
+      if (hMap[n] !== undefined) return hMap[n];
+    }
+    return -1;
+  };
+
+  const iProject  = findCol('Project');
+  const iEstCost  = findCol('Total Est. Costs', 'Est Costs', 'Estimated Costs');
+  const iActCost  = findCol('Total Act. Costs', 'Act Costs', 'Actual Costs');
+  const iEstInc   = findCol('Total Est. Income', 'Est Income', 'Estimated Income');
+  const iActInc   = findCol('Total Act. Income', 'Act Income', 'Actual Income');
+  const iProfit   = findCol('Profit');
+  const iMargin   = findCol('Profit Margin', 'Margin');
+
+  if (iProject < 0) {
+    Logger.log('Est vs Actuals: "Project" column not found in header. Headers were: ' + JSON.stringify(header));
+    return;
+  }
 
   const out = [[
     'Job_Number', 'Project_Name', 'Est_Cost', 'Act_Cost',
@@ -94,26 +124,29 @@ function syncEstimatesVsActuals(ss) {
   ]];
   const stamp = Utilities.formatDate(messageDate, 'America/New_York', 'yyyy-MM-dd HH:mm:ss');
 
-  for (let r = 1; r < rows.length; r++) {
+  let skipped = 0;
+  for (let r = headerIdx + 1; r < rows.length; r++) {
     const row = rows[r];
     const project = String(row[iProject] || '').trim();
-    if (!project) continue;
+    if (!project) { skipped++; continue; }
+    // Skip QBO total/subtotal rows
+    if (/^total\b/i.test(project) || project === 'TOTAL') { skipped++; continue; }
     const { jobNo, jobName } = splitProject_(project);
     out.push([
       jobNo,
-      jobName,
-      safeNum_(row[iEstCost]),
-      safeNum_(row[iActCost]),
-      safeNum_(row[iEstInc]),
-      safeNum_(row[iActInc]),
-      safeNum_(row[iProfit]),
-      safeNum_(row[iMargin]),
+      jobName || project,
+      iEstCost >= 0 ? safeNum_(row[iEstCost]) : 0,
+      iActCost >= 0 ? safeNum_(row[iActCost]) : 0,
+      iEstInc  >= 0 ? safeNum_(row[iEstInc])  : 0,
+      iActInc  >= 0 ? safeNum_(row[iActInc])  : 0,
+      iProfit  >= 0 ? safeNum_(row[iProfit])  : 0,
+      iMargin  >= 0 ? safeNum_(row[iMargin])  : 0,
       stamp,
     ]);
   }
 
   writeTab_(ss, TAB_EST_VS_ACTUALS, out);
-  Logger.log(`Est vs Actuals: wrote ${out.length - 1} rows`);
+  Logger.log(`Est vs Actuals: headerIdx=${headerIdx}, wrote ${out.length - 1} rows, skipped ${skipped}`);
 }
 
 // ═══════════════════════════════════════════════════════════
