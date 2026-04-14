@@ -272,6 +272,13 @@ function isScheduledCurrently(job: any, scheduleData: any, jobs: any[]): boolean
 }
 
 
+// Closed jobs: hidden from dashboard per Jackie 4/9 — should only focus on open jobs.
+// Source sheet has a separate 'closed jobs' tab; when a job moves there its status becomes COMPLETE/Closed.
+function isJobClosed(job: any): boolean {
+  const s = String(job?.Status || '').trim().toLowerCase();
+  return s === 'complete' || s === 'closed';
+}
+
 function isJobScheduled(job: any): boolean {
   const start = parseJobDate(job.Start_Date);
   if (!start) return false;
@@ -279,17 +286,21 @@ function isJobScheduled(job: any): boolean {
 }
 
 // ─── Health scoring ──────────────────────────────────────────────────────────
-function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
+// Returns one of: 'green' (On Track), 'amber' (Watch), 'red' (At Risk), 'gray' (Not Started).
+// Per Jackie 4/9 review: unstarted jobs (0% billed, no reports) should NOT be flagged as At Risk.
+function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' | 'gray' {
   const pct = job.Pct_Complete || 0;
   const hasReport = !!report;
   const scheduled = isJobScheduled(job);
 
-  // If the job hasn't hit its start date yet, it's pre-construction → green
+  // Not Started: billed % = 0 AND no field reports submitted.
+  if (pct === 0 && !hasReport) return 'gray';
+
+  // Pre-construction (start date in the future) but with some billing → on track
   if (!scheduled) return 'green';
 
-  // Scheduled and active — now check real indicators
-  if (pct === 0 && !hasReport) return 'red';      // should have started, zero activity
-  if (pct > 0 && pct < 30 && !hasReport) return 'amber'; // some billing but no field data
+  // Scheduled and active — check real overrun indicators
+  if (pct > 0 && pct < 30 && !hasReport) return 'amber';
   if (pct >= 80 && report && (report.Base_Actual + report.Asphalt_Actual) === 0) return 'amber';
   return 'green';
 }
@@ -339,7 +350,7 @@ function computeRisks(
         return jName.length > 4 && jobRef.includes(jName.split(' ')[0]);
       });
       if (matchedJob && !reportMap[matchedJob.Job_Number]) {
-        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
+        risks.push({ level: 'critical', job: matchedJob.Job_Number, message: `NO FIELD REPORT — ${matchedJob.Job_Number} · ${matchedJob.Job_Name} (${crewName}). No report from yesterday. PM: ${matchedJob.Project_Manager || 'N/A'}.` });
       }
     }
   }
@@ -353,7 +364,7 @@ function computeRisks(
     if (actualTons > est.estTons) {
       const pctOver = Math.round(((actualTons - est.estTons) / est.estTons) * 100);
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN — ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN — ${job.Job_Number} · ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
@@ -366,7 +377,7 @@ function computeRisks(
     if (actualDays > est.estDays) {
       const daysOver = actualDays - est.estDays;
       const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN — ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
+      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN — ${job.Job_Number} · ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
     }
   }
 
@@ -398,7 +409,7 @@ function computeRisks(
       const job = jobs.find(j => j.Job_Number === prep.Job_Number);
       if (job) {
         const bad = [isBad(creditStatus) ? 'Asphalt Plant' : '', isBad(quarryStatus) ? 'Quarry' : ''].filter(Boolean).join(' & ');
-        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD — ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
+        risks.push({ level: 'warning', job: prep.Job_Number, message: `CREDIT HOLD — ${job.Job_Number} · ${job.Job_Name}: ${bad} account not active. PM: ${job.Project_Manager || 'N/A'}. Resolve before mobilization.` });
       }
     }
   }
@@ -439,7 +450,7 @@ function computeRisks(
             return haversineDistance(vehicle.lat, vehicle.lng, oLat, oLng) <= 2;
           });
           if (atOtherJob) {
-            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION — ${assignment.crew}: GPS at ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
+            risks.push({ level: 'warning', job: scheduledJob.Job_Number, message: `SCHEDULE DEVIATION — ${assignment.crew}: GPS at ${atOtherJob.Job_Number} · ${atOtherJob.Job_Name} but scheduled at ${scheduledJob.Job_Number} · ${scheduledJob.Job_Name}. PM: ${scheduledJob.Project_Manager || 'N/A'}.` });
           }
         }
       }
@@ -498,15 +509,15 @@ export default async function MasterDashboard() {
 
   // ── Scheduled Jobs State Engine ──────────────────────────────────────────
   // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
-  const scheduledJobs = jobs.filter((j: any) => isScheduledCurrently(j, scheduleData, jobs));
+  const scheduledJobs = jobs.filter((j: any) => !isJobClosed(j) && isScheduledCurrently(j, scheduleData, jobs));
 
   // On schedule this week but no field report yet
   const scheduledNotMobilized = jobs.filter((j: any) =>
-    isScheduledCurrently(j, scheduleData, jobs) && !reportMap[j.Job_Number]
+    !isJobClosed(j) && isScheduledCurrently(j, scheduleData, jobs) && !reportMap[j.Job_Number]
   );
 
   // Not on current schedule window
-  const upcomingJobs = jobs.filter((j: any) => !isScheduledCurrently(j, scheduleData, jobs));
+  const upcomingJobs = jobs.filter((j: any) => !isJobClosed(j) && !isScheduledCurrently(j, scheduleData, jobs));
 
 
   const totalPortfolio = jobs.reduce((sum: number, j: any) => sum + (j.Contract_Amount || 0), 0);
@@ -516,7 +527,17 @@ export default async function MasterDashboard() {
   // Scorecard aggregates
   const totalAsphaltLogged = fieldReports.reduce((s: number, r: any) => s + (r.Asphalt_Actual || 0), 0);
   const totalBaseLogged = fieldReports.reduce((s: number, r: any) => s + (r.Base_Actual || 0), 0);
-  const totalManHours = fieldReports.reduce((s: number, r: any) => s + (r.Total_Man_Hours || 0), 0);
+  // FYTD man-hours: FY starts Oct 1 (per Jackie 4/9). If today is before Oct 1, FY started Oct 1 last year.
+  const _now = new Date();
+  const _fyStart = _now.getMonth() >= 9 /* Oct=9 */
+    ? new Date(_now.getFullYear(), 9, 1)
+    : new Date(_now.getFullYear() - 1, 9, 1);
+  const _fyStartISO = _fyStart.toISOString().slice(0, 10);
+  const totalManHours = fieldReports.reduce((s: number, r: any) => {
+    const lastDate = (r.Last_Report_Date || '').slice(0, 10);
+    if (lastDate && lastDate >= _fyStartISO) return s + (r.Total_Man_Hours || 0);
+    return s;
+  }, 0);
   const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
   // ── Fleet at Jobsites: trucks within 2 miles of any job ──────────────────
@@ -530,7 +551,7 @@ export default async function MasterDashboard() {
   }) : [];
 
   // ── Missing Reports: jobs assigned YESTERDAY with no field report ─────────
-  const scheduledJobNames = scheduledJobs.map((j: any) => j.Job_Name).filter(Boolean);
+  const scheduledJobNames = scheduledJobs.map((j: any) => ({ num: j.Job_Number, name: j.Job_Name })).filter((x: any) => x.name);
   // Find yesterday's date in EST
   const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const yesterday = new Date(estNow);
@@ -568,10 +589,10 @@ export default async function MasterDashboard() {
   const warningCount = risks.filter(r => r.level === 'warning').length;
 
   // Job health summary
-  const healthCounts = { green: 0, amber: 0, red: 0 };
+  const healthCounts = { green: 0, amber: 0, red: 0, gray: 0 };
   scheduledJobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
 
-  const healthColor: Record<string, string> = { green: '#20BC64', amber: '#F5A623', red: '#E04343' };
+  const healthColor: Record<string, string> = { green: '#20BC64', amber: '#F5A623', red: '#E04343', gray: '#9CA3AF' };
   const riskColor: Record<string, string> = { critical: '#E04343', warning: '#F5A623', info: '#3C4043' };
   const riskBg: Record<string, string> = { critical: '#FDECEC', warning: '#FEF3DB', info: '#F1F3F4' };
   const riskBorder: Record<string, string> = { critical: 'rgba(224,67,67,0.3)', warning: 'rgba(245,166,35,0.3)', info: 'rgba(60,64,67,0.15)' };
@@ -615,7 +636,7 @@ export default async function MasterDashboard() {
           {/* Total Jobs */}
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Total Jobs</p>
-            <p className="text-4xl font-display font-black text-[#3C4043]">{jobs.length}</p>
+            <p className="text-4xl font-display font-black text-[#3C4043]">{jobs.filter((j: any) => !isJobClosed(j)).length}</p>
             <p className="text-xs text-[#757A7F] mt-1">Live — WIP sheet</p>
           </div>
           {/* Active Jobs */}
@@ -628,7 +649,7 @@ export default async function MasterDashboard() {
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Scheduled Jobs</p>
             <p className="text-4xl font-display font-black text-[#20BC64]">{scheduledJobs.length}</p>
-            <div className="text-xs text-[#757A7F] mt-1 leading-relaxed">{scheduledJobNames.length > 0 ? scheduledJobNames.slice(0, 8).map((name, i) => (<div key={i}>{name}</div>)) : 'None this week'}</div>
+            <div className="text-xs text-[#757A7F] mt-1 leading-relaxed">{scheduledJobNames.length > 0 ? scheduledJobNames.slice(0, 8).map((j: any, i: number) => (<div key={i}>{j.num ? `${j.num} — ${j.name}` : j.name}</div>)) : 'None this week'}</div>
           </div>
           {/* Portfolio Value */}
           <div className="card p-5">
@@ -859,7 +880,7 @@ export default async function MasterDashboard() {
                 <div className="bg-black/20 rounded-xl p-3 text-center">
                   <p className="text-xs text-[#757A7F] font-bold uppercase mb-1">Total Man-Hours</p>
                   <p className="text-2xl font-black text-[#F5A623]">{totalManHours.toLocaleString()}</p>
-                  <p className="text-[10px] text-[#757A7F]/60">from field reports</p>
+                  <p className="text-[10px] text-[#757A7F]/60">FYTD (from Oct 1)</p>
                 </div>
                 <div className="bg-black/20 rounded-xl p-3 text-center">
                   <p className="text-xs text-[#757A7F] font-bold uppercase mb-1">Reported Jobs</p>
@@ -871,11 +892,11 @@ export default async function MasterDashboard() {
               {/* Per-job billing vs activity mismatch summary */}
               <div className="pt-2 border-t border-[#F1F3F4]">
                 <p className="text-xs font-black uppercase tracking-widest text-[#757A7F] mb-3">Billing vs. Activity Summary</p>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  {(['green','amber','red'] as const).map(h => (
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {(['green','amber','red','gray'] as const).map(h => (
                     <div key={h} className="rounded-lg p-2" style={{ background: `${healthColor[h]}10`, border: `1px solid ${healthColor[h]}20` }}>
                       <p className="text-xl font-black" style={{ color: healthColor[h] }}>{healthCounts[h]}</p>
-                      <p className="text-[10px] font-bold uppercase text-[#757A7F]">{h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : 'At Risk'}</p>
+                      <p className="text-[10px] font-bold uppercase text-[#757A7F]">{h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : h === 'red' ? 'At Risk' : 'Not Started'}</p>
                     </div>
                   ))}
                 </div>
@@ -891,6 +912,7 @@ export default async function MasterDashboard() {
                 <span className="text-[#20BC64] font-bold">● On Track</span>
                 <span className="text-[#F5A623] font-bold">● Watch</span>
                 <span className="text-[#E04343] font-bold">● At Risk</span>
+                <span className="text-[#9CA3AF] font-bold">● Not Started</span>
               </div>
             </div>
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
@@ -915,7 +937,7 @@ export default async function MasterDashboard() {
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-[10px] font-black text-[#757A7F]">{job.Job_Number}</span>
                       <span className="text-[10px] font-black uppercase" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
+                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : health === 'red' ? '● Risk' : '● N/S'}
                       </span>
                     </div>
                     <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} — {job.Job_Name}</p>
@@ -935,7 +957,8 @@ export default async function MasterDashboard() {
                           {baseT > 0 && <span className="text-purple-400/60">{baseT.toLocaleString()}t base</span>}
                         </div>
                       )}
-                      {!report && <p className="text-[9px] text-[#E04343]/60 mt-1">No field reports</p>}
+                      {!report && health !== 'gray' && <p className="text-[9px] text-[#E04343]/60 mt-1">No field reports</p>}
+                      {health === 'gray' && <p className="text-[9px] text-[#9CA3AF]/80 mt-1">Awaiting first field report</p>}
                     </div>
                   </Link>
                 );

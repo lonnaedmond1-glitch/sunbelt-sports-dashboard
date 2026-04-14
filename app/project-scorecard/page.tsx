@@ -71,7 +71,7 @@ export default async function ProjectScorecardPage() {
         <span className='text-amber-400 text-lg mt-0.5'>&#9888;</span>
         <div>
           <p className='text-xs font-black uppercase tracking-widest text-amber-400'>Static Data — Scorecards CSV</p>
-          <p className='text-xs text-white/40 mt-0.5'>Actuals on this page come from Project_Scorecards.csv and are not updated in real time. For live production data, see individual job field reports.</p>
+          <p className='text-xs text-white/40 mt-0.5'>Actuals on this page come from Project_Scorecards.csv and are not updated in real time. Totals below are lifetime-since-start, not fiscal-year. For FYTD Man Hours, see the dashboard.</p>
         </div>
       </div>
 

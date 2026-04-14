@@ -103,11 +103,11 @@ export default async function SchedulePage() {
         const f = dateStr ? forecasts.find((fx: any) => fx.date === dateStr) : forecasts[0];
         if (f) {
           const prob = f.precipProb || 0;
-          let icon = 'âï¸';
+          let icon = '☀️';
           if (f.severe) icon = '⛈️';
-          else if (prob >= 60) icon = 'ð§ï¸';
-          else if (prob >= 30) icon = 'ð¦ï¸';
-          else if (prob >= 10) icon = 'â';
+          else if (prob >= 60) icon = '🌧️';
+          else if (prob >= 30) icon = '🌦️';
+          else if (prob >= 10) icon = '☁️';
           return { icon: f.icon || icon, prob, severe: f.severe, temp: f.high || 0 };
         }
       }
@@ -460,6 +460,32 @@ export default async function SchedulePage() {
             </div>
           </div>
         )}
+
+        {/* 14-DAY WEATHER OUTLOOK */}
+        <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm mb-4 overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+            <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">14-Day Weather Outlook</h2>
+            <span className="text-xs text-[#757A7F]/60 font-bold">Open-Meteo · updated daily</span>
+          </div>
+          <div className="p-3 grid grid-cols-7 md:grid-cols-14 gap-2">
+            {[...(schedule.currentWeek?.days || []), ...(schedule.nextWeek?.days || [])].slice(0, 14).map((d: any) => {
+              const wx = getDayWeather(d.date);
+              const prob = wx?.precipProb || 0;
+              const severe = !!wx?.severe;
+              const risk = severe || prob >= 40;
+              return (
+                <div key={d.date} className={`rounded-lg px-2 py-2 text-center border text-[11px] ${risk ? 'bg-[#E04343]/5 border-[#E04343]/30' : prob >= 20 ? 'bg-[#F5A623]/5 border-[#F5A623]/25' : 'bg-[#20BC64]/5 border-[#20BC64]/20'}`}>
+                  <div className="font-bold text-[#3C4043]">{(d.dayOfWeek || '').slice(0,3)}</div>
+                  <div className="text-[#757A7F]">{(d.dateDisplay || d.date || '').replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '').slice(0, 6)}</div>
+                  <div className="text-xl my-1">{wx?.icon || '—'}</div>
+                  <div className={`font-black ${risk ? 'text-[#E04343]' : 'text-[#3C4043]'}`}>{wx?.high != null ? `${wx.high}°` : '—'}</div>
+                  <div className="text-[9px] text-[#757A7F]/70">{prob}% rain</div>
+                  {risk && <div className="text-[9px] font-black text-[#E04343] uppercase mt-0.5">Risk</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         {/* CURRENT WEEK CREW GRID */}
         {renderWeekGrid(schedule.currentWeek, 'Current Week', true)}
