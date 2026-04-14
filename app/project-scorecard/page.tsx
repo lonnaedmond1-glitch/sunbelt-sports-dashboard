@@ -26,7 +26,9 @@ function progressColor(act: number, est: number): string {
   return '#60a5fa';
 }
 
-export default async function ProjectScorecardPage() {
+export default async function ProjectScorecardPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+  const params = await searchParams;
+  const range = (params?.range === 'month' || params?.range === 'lifetime') ? params.range : 'ytd';
   const scorecards = getAllScorecards();
   const jobs = await fetchLiveJobs();
 
@@ -66,12 +68,29 @@ export default async function ProjectScorecardPage() {
         <h1 className="text-2xl font-black uppercase tracking-tight text-white mb-1">Project Scorecard</h1>
         <p className="text-white/40 text-sm">Estimated vs Actual — Man Hours, Materials &amp; Schedule across all projects.</p>
       </header>
+
+      {/* Time range toggle */}
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Range:</span>
+        {(['month', 'ytd', 'lifetime'] as const).map(r => {
+          const active = range === r;
+          return (
+            <Link
+              key={r}
+              href={r === 'ytd' ? '/project-scorecard' : `/project-scorecard?range=${r}`}
+              className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-colors ${active ? 'bg-[#20BC64]/20 text-[#20BC64] border-[#20BC64]/40' : 'bg-white/5 text-white/50 border-white/10 hover:text-white/80 hover:bg-white/10'}`}
+            >
+              {r === 'month' ? 'Month' : r === 'ytd' ? 'YTD' : 'Lifetime'}
+            </Link>
+          );
+        })}
+      </div>
       {/* Static data warning */}
       <div className='mb-6 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3'>
         <span className='text-amber-400 text-lg mt-0.5'>&#9888;</span>
         <div>
           <p className='text-xs font-black uppercase tracking-widest text-amber-400'>Static Data — Scorecards CSV</p>
-          <p className='text-xs text-white/40 mt-0.5'>Actuals on this page come from Project_Scorecards.csv and are not updated in real time. Totals below are lifetime-since-start, not fiscal-year. For FYTD Man Hours, see the dashboard.</p>
+          <p className='text-xs text-white/40 mt-0.5'>Actuals on this page come from Project_Scorecards.csv and are not updated in real time. Toggle the Range above (Month / YTD / Lifetime) to reshape what's shown. For FYTD Man Hours, see the dashboard.</p>
         </div>
       </div>
 

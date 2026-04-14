@@ -4,7 +4,7 @@ import Image from 'next/image';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog } from '@/lib/sheets-data';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -48,7 +48,7 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
 
 async function getSamsaraData() {
   const SAMSARA_API_KEY = process.env.SAMSARA_API_KEY || '';
-  if (!SAMSARA_API_KEY) return { vehicles: [], crews: [], configured: false };
+  if (!SAMSARA_API_KEY) return { vehicles: [], crews: [], hos: [], configured: false };
   try {
     const headers = { Authorization: `Bearer ${SAMSARA_API_KEY}`, 'Content-Type': 'application/json' };
     const KEY_NAMES = [
@@ -64,9 +64,10 @@ async function getSamsaraData() {
     ];
 
 
-    const [vehicleRes, driverRes] = await Promise.all([
+    const [vehicleRes, driverRes, hosRes] = await Promise.all([
       fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 86400 } }),
       fetch('https://api.samsara.com/fleet/drivers?driverActivationStatus=active', { headers, next: { revalidate: 86400 } }),
+      fetch('https://api.samsara.com/fleet/hos/daily-logs?limit=50', { headers, next: { revalidate: 300 } }),
     ]);
 
     const vehicles = vehicleRes.ok
@@ -92,8 +93,26 @@ async function getSamsaraData() {
         }))
       : [];
 
-    return { vehicles, crews, configured: true, timestamp: new Date().toISOString() };
-  } catch { return { vehicles: [], crews: [], configured: false }; }
+    // DOT Hours of Service — remaining legal hours per driver
+    const hos = hosRes.ok
+      ? ((await hosRes.json()).data || []).map((d: any) => {
+          const latest = Array.isArray(d.dailyLogs) && d.dailyLogs.length > 0
+            ? d.dailyLogs[d.dailyLogs.length - 1]
+            : null;
+          return {
+            driverId: d.driver?.id || '',
+            driverName: d.driver?.name || '',
+            logDate: latest?.logDate || '',
+            driveRemainingHrs: latest?.driveRemaining != null ? latest.driveRemaining / 3600000 : null,
+            shiftRemainingHrs: latest?.shiftRemaining != null ? latest.shiftRemaining / 3600000 : null,
+            cycleRemainingHrs: latest?.cycleRemaining != null ? latest.cycleRemaining / 3600000 : null,
+            currentStatus: latest?.currentDutyStatus || '',
+          };
+        })
+      : [];
+
+    return { vehicles, crews, hos, configured: true, timestamp: new Date().toISOString() };
+  } catch { return { vehicles: [], crews: [], hos: [], configured: false }; }
 }
 
 
@@ -462,7 +481,7 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging, reworkLog] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
@@ -470,6 +489,7 @@ export default async function MasterDashboard() {
     fetchProjectScorecards(),
     fetchQboFinancials(),
     fetchArAging(),
+    fetchReworkLog(),
   ]);
 
   // Build report map first — needed by both crossCheck and weather
@@ -617,6 +637,14 @@ export default async function MasterDashboard() {
     .filter(q => q.Profit < 0)
     .sort((a, b) => a.Profit - b.Profit)
     .slice(0, 5);
+
+  // Rework aggregates (FYTD from Oct 1)
+  const _fyReworkStart = _fyStartISO;
+  const reworkFytd = reworkLog.filter(r => (r.Date || '') >= _fyReworkStart);
+  const reworkCost = reworkFytd.reduce((s, r) => s + (r.Cost || 0), 0);
+  const reworkHours = reworkFytd.reduce((s, r) => s + (r.Hours || 0), 0);
+  const reworkJobs = new Set(reworkFytd.map(r => r.Job_Number).filter(Boolean)).size;
+
 
   const qboStale = qboFinancials.length === 0 || !qboFinancials[0]?.Updated_At;
 
@@ -812,7 +840,7 @@ export default async function MasterDashboard() {
         {/* ── LOWBOY COMMAND ─────────────────────────────────────────────── */}
         {(() => {
           const lowboyVehicle = samsara.configured
-            ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('jose') || (v.name || '').toLowerCase().includes('lowboy'))
+            ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('lowboy') || (v.name || '').toLowerCase().includes('hudson') || (v.name || '').toLowerCase().includes('david'))
             : null;
 
           if (!lowboyVehicle && !samsara.configured) return null;
@@ -821,7 +849,7 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command — Jose De Lara</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command — David Hudson</h2>
                   {lowboyVehicle && (
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
                       {lowboyVehicle.speed > 2 ? `ð¢ EN ROUTE · ${lowboyVehicle.speed} mph` : 'ð¡ PARKED'}
@@ -847,9 +875,63 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
-                      <p className="text-sm font-black text-[#3C4043]">Jose De Lara</p>
+                      <p className="text-sm font-black text-[#3C4043]">David Hudson</p>
                     </div>
                   </div>
+                  {/* DOT HOS gauges (remaining legal time) */}
+                  {(() => {
+                    const lowboyHos = (samsara.hos || []).find((h: any) => {
+                      const n = (h.driverName || '').toLowerCase();
+                      return n.includes('david') || n.includes('hudson');
+                    });
+                    if (!lowboyHos) {
+                      return (
+                        <div className="mt-3 p-3 rounded-xl bg-[#F1F3F4] border border-[#F1F3F4] flex items-center gap-3">
+                          <span className="text-[#9CA3AF]">○</span>
+                          <p className="text-xs text-[#757A7F] font-bold">DOT Hours of Service — awaiting Samsara HOS log for David Hudson.</p>
+                        </div>
+                      );
+                    }
+                    const toneFor = (hrs: number | null, critical: number, warn: number) => {
+                      if (hrs == null) return { color: '#9CA3AF', bg: '#F1F3F4', label: 'N/A' };
+                      if (hrs <= critical) return { color: '#E04343', bg: '#FDECEC', label: 'STOP' };
+                      if (hrs <= warn)     return { color: '#F5A623', bg: '#FEF3DB', label: 'WATCH' };
+                      return { color: '#20BC64', bg: '#DFF5E6', label: 'OK' };
+                    };
+                    const d = toneFor(lowboyHos.driveRemainingHrs, 0.5, 2);
+                    const s = toneFor(lowboyHos.shiftRemainingHrs, 1, 3);
+                    const c = toneFor(lowboyHos.cycleRemainingHrs, 5, 15);
+                    const hrs = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}h`;
+                    return (
+                      <div className="mt-4 pt-4 border-t border-[#F1F3F4]">
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">DOT Hours of Service — Remaining</p>
+                          <span className="text-[9px] text-[#757A7F]/60 font-bold uppercase">Source: Samsara HOS API</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="rounded-xl p-3 border" style={{ background: d.bg, borderColor: `${d.color}33` }}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Drive Time (11h cap)</p>
+                            <p className="text-2xl font-black" style={{ color: d.color }}>{hrs(lowboyHos.driveRemainingHrs)}</p>
+                            <p className="text-[9px] font-bold" style={{ color: d.color }}>{d.label}</p>
+                          </div>
+                          <div className="rounded-xl p-3 border" style={{ background: s.bg, borderColor: `${s.color}33` }}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">On-Duty Shift (14h cap)</p>
+                            <p className="text-2xl font-black" style={{ color: s.color }}>{hrs(lowboyHos.shiftRemainingHrs)}</p>
+                            <p className="text-[9px] font-bold" style={{ color: s.color }}>{s.label}</p>
+                          </div>
+                          <div className="rounded-xl p-3 border" style={{ background: c.bg, borderColor: `${c.color}33` }}>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Weekly Cycle (60h / 7d)</p>
+                            <p className="text-2xl font-black" style={{ color: c.color }}>{hrs(lowboyHos.cycleRemainingHrs)}</p>
+                            <p className="text-[9px] font-bold" style={{ color: c.color }}>{c.label}</p>
+                          </div>
+                        </div>
+                        {lowboyHos.currentStatus && (
+                          <p className="text-[10px] text-[#757A7F]/70 mt-2">Current status: <span className="font-bold text-[#3C4043]">{lowboyHos.currentStatus}</span></p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {lowboyVehicle.speed > 2 && (
                     <div className="mt-3 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
                       <span className="text-emerald-400">ð</span>
@@ -859,7 +941,7 @@ export default async function MasterDashboard() {
                 </div>
               ) : (
                 <div className="p-5 text-center">
-                  <p className="text-[#757A7F] text-sm">Awaiting Samsara GPS signal for Jose De Lara&apos;s lowboy unit.</p>
+                  <p className="text-[#757A7F] text-sm">Awaiting Samsara GPS signal for David Hudson&apos;s lowboy unit.</p>
                 </div>
               )}
             </div>
@@ -945,6 +1027,17 @@ export default async function MasterDashboard() {
                           <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Avg Job Margin</p>
                           <p className={`text-xl font-black text-${tone}`}>{pct.toFixed(1)}%</p>
                           <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{qboActive.length} active jobs · target 25%</p>
+                        </div>
+                      );
+                    })()}
+                    {/* Rework Spend FYTD */}
+                    {(() => {
+                      const tone = reworkCost > 0 ? '[#E04343]' : '[#20BC64]';
+                      return (
+                        <div className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3`}>
+                          <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Rework FYTD</p>
+                          <p className={`text-xl font-black text-${tone}`}>${(reworkCost / 1000).toFixed(0)}K</p>
+                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{reworkHours.toFixed(0)} hrs · {reworkJobs} jobs</p>
                         </div>
                       );
                     })()}

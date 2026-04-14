@@ -8,6 +8,9 @@ const navItems = [
   { href: '/portfolio', label: 'Portfolio', icon: '📋' },
   { href: '/schedule', label: 'Schedule', icon: '📅' },
   { href: '/equipment', label: 'Equipment', icon: '🚜' },
+  { href: '/project-scorecard', label: 'Scorecard', icon: '🏆' },
+  { href: '/sales', label: 'Sales', icon: '💰' },
+  { href: '/marketing', label: 'Marketing', icon: '📣' },
 ];
 
 export default function Sidebar() {

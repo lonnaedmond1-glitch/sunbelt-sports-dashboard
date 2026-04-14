@@ -1231,3 +1231,116 @@ export async function fetchArAging(): Promise<QboArSummary> {
   }
 }
 
+// ──────────────────────────── REWORK LOG (Google Sheets) ────────────────────────────
+// Populated manually or via a Rework flag on the field-report form.
+// Tab: "REWORK_LOG" columns: Date | Job_Number | Job_Name | Crew | Hours | Cost | Note
+
+export interface ReworkEntry {
+  Date: string;
+  Job_Number: string;
+  Job_Name: string;
+  Crew: string;
+  Hours: number;
+  Cost: number;
+  Note: string;
+}
+
+export async function fetchReworkLog(): Promise<ReworkEntry[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('REWORK_LOG')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (s: string) => hdr.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === s.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    const iDate = idx('Date');
+    const iJob  = idx('Job_Number');
+    const iName = idx('Job_Name');
+    const iCrew = idx('Crew');
+    const iHrs  = idx('Hours');
+    const iCost = idx('Cost');
+    const iNote = idx('Note');
+    return rows.slice(1)
+      .map(r => ({
+        Date: (r[iDate] || '').trim(),
+        Job_Number: (r[iJob] || '').trim(),
+        Job_Name: (r[iName] || '').trim(),
+        Crew: (r[iCrew] || '').trim(),
+        Hours: parseFloat(String(r[iHrs] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+        Cost: parseFloat(String(r[iCost] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+        Note: (r[iNote] || '').trim(),
+      }))
+      .filter(r => r.Date || r.Job_Number);
+  } catch { return []; }
+}
+
+// ──────────────────────────── SALES PIPELINE ────────────────────────────
+export interface PipelineDeal {
+  Job_Number: string;
+  Client: string;
+  Project_Name: string;
+  Stage: string;
+  Value: number;
+  State: string;
+  PM: string;
+  Bid_Date: string;
+  Days_In_Stage: number;
+}
+
+export async function fetchSalesPipeline(): Promise<PipelineDeal[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Sales_Pipeline')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (s: string) => hdr.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === s.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    return rows.slice(1).map(r => ({
+      Job_Number: (r[idx('Job_Number')] || '').trim(),
+      Client: (r[idx('Client')] || '').trim(),
+      Project_Name: (r[idx('Project_Name')] || '').trim(),
+      Stage: (r[idx('Stage')] || 'Proposal Sent').trim(),
+      Value: parseFloat(String(r[idx('Value')] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+      State: (r[idx('State')] || '').trim(),
+      PM: (r[idx('PM')] || '').trim(),
+      Bid_Date: (r[idx('Bid_Date')] || '').trim(),
+      Days_In_Stage: parseInt(String(r[idx('Days_In_Stage')] || '0'), 10) || 0,
+    })).filter(r => r.Client || r.Project_Name);
+  } catch { return []; }
+}
+
+// ──────────────────────────── MARKETING LEADS ────────────────────────────
+export interface MarketingLead {
+  Date: string;
+  Source: string;
+  Contact: string;
+  Project: string;
+  Status: string;
+  Owner: string;
+}
+
+export async function fetchMarketingLeads(): Promise<MarketingLead[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Marketing_Leads')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (s: string) => hdr.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === s.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    return rows.slice(1).map(r => ({
+      Date: (r[idx('Date')] || '').trim(),
+      Source: (r[idx('Source')] || '').trim(),
+      Contact: (r[idx('Contact')] || '').trim(),
+      Project: (r[idx('Project')] || '').trim(),
+      Status: (r[idx('Status')] || 'New').trim(),
+      Owner: (r[idx('Owner')] || '').trim(),
+    })).filter(r => r.Date || r.Contact);
+  } catch { return []; }
+}
+
