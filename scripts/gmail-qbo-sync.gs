@@ -8,7 +8,9 @@
  * 1. Open https://script.google.com
  * 2. Create a new project called "QBO Email Sync"
  * 3. Paste this entire file in
- * 4. Click Run > syncQboEmails (authorize Gmail + Drive + Sheets access when prompted)
+ * 4. Click Run > syncQboEmails (authorize Gmail + Drive + Sheets access when prompted —
+ *    this script uses the Drive REST API via UrlFetchApp; no Advanced Services
+ *    need to be enabled, but you DO need to accept the Drive scope on first run)
  * 5. Click Triggers (clock icon) > Add Trigger:
  *      Function: syncQboEmails
  *      Event source: Time-driven
@@ -16,6 +18,13 @@
  *
  * After that it runs automatically. New QBO reports hitting your inbox
  * get parsed and pushed to the sheet within an hour.
+ *
+ * ──────────────────────────────────────────────────────────────
+ * Required OAuth scopes (auto-requested on first Run):
+ *   - https://www.googleapis.com/auth/script.external_request   (UrlFetchApp)
+ *   - https://www.googleapis.com/auth/drive                     (upload/delete temp file)
+ *   - https://www.googleapis.com/auth/gmail.readonly            (read QBO emails)
+ *   - https://www.googleapis.com/auth/spreadsheets              (write tabs)
  */
 
 // ═══════════════════════════════════════════════════════════
@@ -37,6 +46,15 @@ const SUBJ_ARAGER = 'ar ager';  // Subject is literally "ar ager" in QBO export
 // MAIN ENTRY POINT
 // ═══════════════════════════════════════════════════════════
 function syncQboEmails() {
+  // Scope warm-up: referencing these services ensures Apps Script requests the
+  // Drive + Gmail OAuth scopes on first run, so the UrlFetchApp call to
+  // googleapis.com/drive has the right token.
+  // These are no-ops; they just force scope declaration at parse time.
+  if (false) {
+    DriveApp.getRootFolder();
+    GmailApp.getInboxUnreadCount();
+  }
+
   const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
   syncEstimatesVsActuals(ss);
   syncArAging(ss);
@@ -206,22 +224,64 @@ function getLatestAttachment_(threads, filenamePattern) {
   return best || { blob: null, messageDate: null };
 }
 
-// Convert an XLSX blob into a 2D array by uploading it as a Google Sheet,
-// reading the values, then deleting the temp file.
+// Convert an XLSX blob into a 2D array.
+// Uses DriveApp (no Advanced Drive Service required) + the standard XLSX->Sheets
+// conversion that happens automatically when you upload a .xlsx via DriveApp
+// and then re-download it as Google Sheets. We use the Drive REST API directly
+// through UrlFetchApp — this needs only the default Drive scope and doesn't
+// require enabling the "Drive API" advanced service.
 function readXlsxToMatrix_(xlsxBlob) {
-  const tempFile = Drive.Files.insert(
-    { title: 'qbo-temp-' + Date.now(), mimeType: MimeType.GOOGLE_SHEETS },
-    xlsxBlob,
-    { convert: true }
-  );
+  // Step 1 — upload the XLSX with conversion=true via a multipart REST request.
+  // This creates a Google Sheet from the XLSX content.
+  const boundary = '---qbo-boundary-' + Date.now();
+  const metadata = {
+    name: 'qbo-temp-' + Date.now(),
+    mimeType: MimeType.GOOGLE_SHEETS,
+  };
+
+  const bytes = xlsxBlob.getBytes();
+  const metaPart =
+    '--' + boundary + '\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) + '\r\n' +
+    '--' + boundary + '\r\n' +
+    'Content-Type: ' + xlsxBlob.getContentType() + '\r\n\r\n';
+  const closing = '\r\n--' + boundary + '--';
+
+  const payload = Utilities.newBlob(metaPart).getBytes()
+    .concat(bytes)
+    .concat(Utilities.newBlob(closing).getBytes());
+
+  const uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
+  const token = ScriptApp.getOAuthToken();
+  const uploadRes = UrlFetchApp.fetch(uploadUrl, {
+    method: 'post',
+    contentType: 'multipart/related; boundary=' + boundary,
+    payload: payload,
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true,
+  });
+
+  if (uploadRes.getResponseCode() >= 300) {
+    throw new Error('Drive upload failed: ' + uploadRes.getContentText());
+  }
+  const fileId = JSON.parse(uploadRes.getContentText()).id;
+
   try {
-    const ss = SpreadsheetApp.openById(tempFile.id);
+    // Step 2 — read the converted sheet's values via SpreadsheetApp.
+    const ss = SpreadsheetApp.openById(fileId);
     const sheet = ss.getSheets()[0];
     const range = sheet.getDataRange();
-    const values = range.getValues();
-    return values;
+    return range.getValues();
   } finally {
-    try { Drive.Files.remove(tempFile.id); } catch (e) { /* ignore */ }
+    // Step 3 — delete the temp file via REST DELETE.
+    try {
+      UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + fileId, {
+        method: 'delete',
+        headers: { Authorization: 'Bearer ' + token },
+        muteHttpExceptions: true,
+      });
+    } catch (e) { /* best-effort cleanup */ }
   }
 }
 
