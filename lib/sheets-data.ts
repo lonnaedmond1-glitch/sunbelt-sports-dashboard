@@ -1082,3 +1082,152 @@ export async function fetchProjectScorecards(): Promise<Record<string, string>[]
     return [];
   }
 }
+
+
+// ──────────────────────────── QBO FINANCIALS (Google Sheets Hub) ────────────────────────────
+// Populated by scripts/gmail-qbo-sync.gs which auto-pulls daily QBO email reports.
+// Tabs: "QBO Est vs Actuals" (job-level profit/margin) and "QBO AR Aging" (receivables).
+
+export interface QboJobFinancials {
+  Job_Number: string;
+  Project_Name: string;
+  Est_Cost: number;
+  Act_Cost: number;
+  Est_Income: number;
+  Act_Income: number;
+  Profit: number;
+  Profit_Margin: number;
+  Updated_At: string;
+}
+
+export interface QboArJob {
+  Job_Number: string;
+  Project_Name: string;
+  Customer: string;
+  Current: number;
+  Days_1_30: number;
+  Days_31_60: number;
+  Days_61_90: number;
+  Days_91_Plus: number;
+  Total: number;
+  Updated_At: string;
+}
+
+export interface QboArSummary {
+  rows: QboArJob[];
+  totals: { current: number; d1_30: number; d31_60: number; d61_90: number; d91Plus: number; total: number };
+}
+
+async function fetchScorecardTabCsv(tabName: string): Promise<string[][]> {
+  const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
+  const res = await fetch(url, { next: { revalidate: 86400 } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  return text
+    .split(/\r\n|\n|\r/)
+    .filter(l => l.trim())
+    .map(l => parseCSVLine(l));
+}
+
+function n(v: string | undefined): number {
+  if (!v) return 0;
+  const s = String(v).replace(/[$,\s"]/g, '').replace(/%$/, '');
+  const x = parseFloat(s);
+  return isNaN(x) ? 0 : x;
+}
+
+export async function fetchQboFinancials(): Promise<QboJobFinancials[]> {
+  try {
+    const rows = await fetchScorecardTabCsv('QBO Est vs Actuals');
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (name: string) => hdr.indexOf(name);
+    const iJob   = idx('Job_Number');
+    const iName  = idx('Project_Name');
+    const iEstC  = idx('Est_Cost');
+    const iActC  = idx('Act_Cost');
+    const iEstI  = idx('Est_Income');
+    const iActI  = idx('Act_Income');
+    const iProf  = idx('Profit');
+    const iMarg  = idx('Profit_Margin');
+    const iUpd   = idx('Updated_At');
+    return rows.slice(1).map(r => ({
+      Job_Number: (r[iJob] || '').trim(),
+      Project_Name: (r[iName] || '').trim(),
+      Est_Cost: n(r[iEstC]),
+      Act_Cost: n(r[iActC]),
+      Est_Income: n(r[iEstI]),
+      Act_Income: n(r[iActI]),
+      Profit: n(r[iProf]),
+      Profit_Margin: n(r[iMarg]),
+      Updated_At: (r[iUpd] || '').trim(),
+    })).filter(r => r.Job_Number || r.Project_Name);
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchArAging(): Promise<QboArSummary> {
+  const empty: QboArSummary = { rows: [], totals: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 } };
+  try {
+    const rows = await fetchScorecardTabCsv('QBO AR Aging');
+    if (rows.length < 2) return empty;
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (name: string) => hdr.indexOf(name);
+    const iJob    = idx('Job_Number');
+    const iName   = idx('Project_Name');
+    const iCust   = idx('Customer');
+    const iCurr   = idx('Current');
+    const iD1     = idx('Days_1_30');
+    const iD31    = idx('Days_31_60');
+    const iD61    = idx('Days_61_90');
+    const iD91    = idx('Days_91_Plus');
+    const iTot    = idx('Total');
+    const iUpd    = idx('Updated_At');
+
+    const parsed: QboArJob[] = rows.slice(1).map(r => ({
+      Job_Number: (r[iJob] || '').trim(),
+      Project_Name: (r[iName] || '').trim(),
+      Customer: (r[iCust] || '').trim(),
+      Current: n(r[iCurr]),
+      Days_1_30: n(r[iD1]),
+      Days_31_60: n(r[iD31]),
+      Days_61_90: n(r[iD61]),
+      Days_91_Plus: n(r[iD91]),
+      Total: n(r[iTot]),
+      Updated_At: (r[iUpd] || '').trim(),
+    }));
+
+    const totalRow = parsed.find(r => r.Job_Number === '__TOTAL__');
+    const lines = parsed.filter(r => r.Job_Number !== '__TOTAL__');
+    if (totalRow) {
+      return {
+        rows: lines,
+        totals: {
+          current: totalRow.Current,
+          d1_30: totalRow.Days_1_30,
+          d31_60: totalRow.Days_31_60,
+          d61_90: totalRow.Days_61_90,
+          d91Plus: totalRow.Days_91_Plus,
+          total: totalRow.Total,
+        },
+      };
+    }
+    // No synthetic total row — recompute
+    const totals = lines.reduce(
+      (acc, r) => ({
+        current: acc.current + r.Current,
+        d1_30: acc.d1_30 + r.Days_1_30,
+        d31_60: acc.d31_60 + r.Days_31_60,
+        d61_90: acc.d61_90 + r.Days_61_90,
+        d91Plus: acc.d91Plus + r.Days_91_Plus,
+        total: acc.total + r.Total,
+      }),
+      { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 }
+    );
+    return { rows: lines, totals };
+  } catch {
+    return empty;
+  }
+}
+

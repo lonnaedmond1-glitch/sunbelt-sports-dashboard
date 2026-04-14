@@ -4,7 +4,7 @@ import Image from 'next/image';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging } from '@/lib/sheets-data';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -462,12 +462,14 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, scheduleData, projectScorecards] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
     fetchScheduleData(),
     fetchProjectScorecards(),
+    fetchQboFinancials(),
+    fetchArAging(),
   ]);
 
   // Build report map first — needed by both crossCheck and weather
@@ -581,6 +583,42 @@ export default async function MasterDashboard() {
     .filter(jn => !reportMap[jn])
     .map(jn => jobs.find((j: any) => j.Job_Number === jn))
     .filter(Boolean);
+
+    // ── Portfolio Financials (QBO daily sync) ───────────────────────
+  // Partition jobs between those in WIP vs overhead/admin (not in WIP)
+  const wipJobNums = new Set((jobs as any[]).map((j: any) => j.Job_Number));
+  const qboWip = qboFinancials.filter(q => q.Job_Number && wipJobNums.has(q.Job_Number));
+  const qboOverhead = qboFinancials.filter(q => !q.Job_Number || !wipJobNums.has(q.Job_Number));
+
+  // Margin at Risk: sum of negative profits + jobs under 15% margin
+  const UNDER_MARGIN = 0.15;
+  const lossJobs = qboWip.filter(q => q.Profit < 0);
+  const underMarginJobs = qboWip.filter(q => q.Act_Income > 0 && q.Profit_Margin < UNDER_MARGIN);
+  const marginAtRiskDollars = lossJobs.reduce((s, q) => s + Math.abs(q.Profit), 0);
+
+  // Top money loser (worst single job by dollar loss)
+  const topLoser = [...qboWip].sort((a, b) => a.Profit - b.Profit)[0] || null;
+
+  // Average portfolio margin across active jobs with income > 0
+  const qboActive = qboWip.filter(q => q.Act_Income > 0);
+  const totalAct = qboActive.reduce((s, q) => s + q.Act_Income, 0);
+  const totalProf = qboActive.reduce((s, q) => s + q.Profit, 0);
+  const avgMargin = totalAct > 0 ? totalProf / totalAct : 0;
+
+  // Change Orders FYTD from WIP sheet (if Change_Orders column present)
+  const fyCoTotal = (jobs as any[]).reduce((s: number, j: any) => {
+    const raw = j.Change_Orders || j.CO_Added || j['CO Added'] || 0;
+    const n = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/[$,\s]/g, '')) || 0;
+    return s + n;
+  }, 0);
+
+  // Worst offenders list (top 5 by dollar loss)
+  const worstOffenders = [...qboWip]
+    .filter(q => q.Profit < 0)
+    .sort((a, b) => a.Profit - b.Profit)
+    .slice(0, 5);
+
+  const qboStale = qboFinancials.length === 0 || !qboFinancials[0]?.Updated_At;
 
   const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs, samsara.vehicles || []);
 
@@ -833,63 +871,113 @@ export default async function MasterDashboard() {
 
           {/* PORTFOLIO SCORECARD */}
           <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-[#F1F3F4]">
-              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Scorecard — Estimated vs. Actual</h2>
-              <p className="text-xs text-[#757A7F] mt-1">Billing % · Production tonnage from field reports</p><p className="text-[9px] text-[#757A7F]/40 mt-0.5">ℹ️ Tonnage bars = actual field-reported tons vs. total estimated portfolio tons. Billing bar = billed $ vs. contract $.</p>
+            <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-start">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Health — Financials</h2>
+                <p className="text-xs text-[#757A7F] mt-1">Live job P&amp;L, margin & receivables</p>
+              </div>
+              <span className="text-[10px] font-bold uppercase text-[#757A7F]/70 tracking-widest">{qboStale ? 'Awaiting QBO Sync' : 'QBO Daily Sync'}</span>
             </div>
-            <div className="p-5 space-y-5">
+            <div className="p-5 space-y-4">
 
-              {/* Billing Progress */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Portfolio Billed</span>
-                  <span className="text-xs font-bold text-[#20BC64]">${(totalBilled/1000000).toFixed(2)}M / ${(totalPortfolio/1000000).toFixed(2)}M</span>
+              {/* ── 6 FINANCIAL KPI TILES (QBO daily sync) ───────────────────── */}
+              {qboStale ? (
+                <div className="rounded-xl p-5 bg-amber-500/10 border border-amber-500/30 text-center">
+                  <p className="text-xs font-black uppercase tracking-widest text-amber-600 mb-1">Awaiting QBO Sync</p>
+                  <p className="text-xs text-[#757A7F]">Financials populate once the daily QBO email reports are parsed. Run <code className="font-mono text-[10px]">scripts/gmail-qbo-sync.gs</code> in Google Apps Script.</p>
                 </div>
-                <div className="relative h-6 bg-[#F1F3F4] rounded-full overflow-hidden">
-                  <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-[#20BC64] to-[#16a558] rounded-full transition-all" style={{ width: `${overallPct}%` }} />
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">{overallPct}% Billed</span>
-                </div>
-              </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Margin at Risk */}
+                    <div className="bg-[#E04343]/5 border border-[#E04343]/20 rounded-xl p-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#E04343]/80 mb-1">Margin at Risk</p>
+                      <p className="text-xl font-black text-[#E04343]">${(marginAtRiskDollars/1000).toFixed(0)}K</p>
+                      <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{lossJobs.length} job{lossJobs.length === 1 ? '' : 's'} losing money</p>
+                    </div>
+                    {/* Top Money Loser */}
+                    <div className="bg-[#E04343]/5 border border-[#E04343]/20 rounded-xl p-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#E04343]/80 mb-1">Top Money Loser</p>
+                      {topLoser && topLoser.Profit < 0 ? (
+                        <>
+                          <p className="text-xl font-black text-[#E04343]">${(topLoser.Profit/1000).toFixed(0)}K</p>
+                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5 truncate" title={`${topLoser.Job_Number} · ${topLoser.Project_Name}`}>
+                            {topLoser.Job_Number || '—'} · {(topLoser.Profit_Margin * 100).toFixed(0)}%
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xl font-black text-[#20BC64]">None 🎉</p>
+                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">All active jobs profitable</p>
+                        </>
+                      )}
+                    </div>
+                    {/* Change Orders FYTD */}
+                    <div className="bg-[#20BC64]/5 border border-[#20BC64]/20 rounded-xl p-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64]/80 mb-1">Change Orders FYTD</p>
+                      <p className="text-xl font-black text-[#20BC64]">+${(fyCoTotal/1000).toFixed(0)}K</p>
+                      <p className="text-[10px] text-[#757A7F]/70 mt-0.5">From WIP sheet</p>
+                    </div>
+                    {/* A/R Outstanding */}
+                    <div className="bg-[#60a5fa]/5 border border-[#60a5fa]/25 rounded-xl p-3">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa] mb-1">A/R Outstanding</p>
+                      <p className="text-xl font-black text-[#60a5fa]">${(arAging.totals.total/1000000).toFixed(2)}M</p>
+                      <p className="text-[10px] text-[#757A7F]/70 mt-0.5">${(arAging.totals.current/1000).toFixed(0)}K current</p>
+                    </div>
+                    {/* A/R Overdue (91+) */}
+                    {(() => {
+                      const overduePct = arAging.totals.total > 0 ? (arAging.totals.d91Plus / arAging.totals.total) * 100 : 0;
+                      const tone = overduePct >= 20 ? '[#E04343]' : overduePct >= 10 ? '[#F5A623]' : '[#20BC64]';
+                      return (
+                        <div className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3`}>
+                          <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>A/R Overdue (91+ d)</p>
+                          <p className={`text-xl font-black text-${tone}`}>${(arAging.totals.d91Plus/1000).toFixed(0)}K</p>
+                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{overduePct.toFixed(0)}% of total AR</p>
+                        </div>
+                      );
+                    })()}
+                    {/* Average Job Margin */}
+                    {(() => {
+                      const pct = avgMargin * 100;
+                      const tone = pct >= 20 ? '[#20BC64]' : pct >= 10 ? '[#F5A623]' : '[#E04343]';
+                      return (
+                        <div className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3`}>
+                          <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Avg Job Margin</p>
+                          <p className={`text-xl font-black text-${tone}`}>{pct.toFixed(1)}%</p>
+                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{qboActive.length} active jobs · target 25%</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
 
-              {/* Asphalt Tonnage */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Asphalt Tonnage (Live)</span>
-                  <span className="text-xs font-bold text-blue-600">{totalAsphaltLogged.toLocaleString()} tons logged</span>
-                </div>
-                <div className="relative h-5 bg-[#F1F3F4] rounded-full overflow-hidden">
-                  <div className="absolute left-0 top-0 h-full bg-blue-500/70 rounded-full" style={{ width: `${Math.min(100, (totalAsphaltLogged / Math.max(1, totalAsphaltLogged * 1.3)) * 100)}%` }} />
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">{totalAsphaltLogged.toLocaleString()} tons</span>
-                </div>
-              </div>
+                  {/* Worst Offenders list */}
+                  {worstOffenders.length > 0 && (
+                    <div className="pt-3 border-t border-[#F1F3F4]">
+                      <p className="text-xs font-black uppercase tracking-widest text-[#757A7F] mb-2">Worst Offenders — Active Jobs Losing Money</p>
+                      <div className="space-y-1.5">
+                        {worstOffenders.map(q => (
+                          <Link key={q.Job_Number} href={`/jobs/${q.Job_Number}`} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#E04343]/5 border border-[#E04343]/15 hover:bg-[#E04343]/10 transition-colors">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-[#3C4043] truncate">
+                                {q.Job_Number}{q.Project_Name ? ` · ${q.Project_Name}` : ''}
+                              </p>
+                              <p className="text-[10px] text-[#757A7F]/70">
+                                ${(q.Act_Income/1000).toFixed(0)}K revenue · ${(q.Act_Cost/1000).toFixed(0)}K cost
+                              </p>
+                            </div>
+                            <div className="text-right ml-3 flex-shrink-0">
+                              <p className="text-sm font-black text-[#E04343]">-${Math.abs(q.Profit/1000).toFixed(0)}K</p>
+                              <p className="text-[10px] text-[#E04343]/70">{(q.Profit_Margin * 100).toFixed(0)}% margin</p>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
 
-              {/* Base Tonnage */}
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Base / GAB Tonnage (Live)</span>
-                  <span className="text-xs font-bold text-purple-400">{totalBaseLogged.toLocaleString()} tons logged</span>
-                </div>
-                <div className="relative h-5 bg-[#F1F3F4] rounded-full overflow-hidden">
-                  <div className="absolute left-0 top-0 h-full bg-purple-500/70 rounded-full" style={{ width: `${Math.min(100, (totalBaseLogged / Math.max(1, totalBaseLogged * 1.3)) * 100)}%` }} />
-                  <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">{totalBaseLogged.toLocaleString()} tons</span>
-                </div>
-              </div>
-
-              {/* Labour */}
-              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-[#F1F3F4]">
-                <div className="bg-black/20 rounded-xl p-3 text-center">
-                  <p className="text-xs text-[#757A7F] font-bold uppercase mb-1">Total Man-Hours</p>
-                  <p className="text-2xl font-black text-[#F5A623]">{totalManHours.toLocaleString()}</p>
-                  <p className="text-[10px] text-[#757A7F]/60">FYTD (from Oct 1)</p>
-                </div>
-                <div className="bg-black/20 rounded-xl p-3 text-center">
-                  <p className="text-xs text-[#757A7F] font-bold uppercase mb-1">Reported Jobs</p>
-                  <p className="text-2xl font-black text-[#20BC64]">{fieldReports.length}</p>
-                  <p className="text-[10px] text-[#757A7F]/60">of {jobs.length} total</p>
-                </div>
-              </div>
-
-              {/* Per-job billing vs activity mismatch summary */}
+              {/* Per-job billing vs activity mismatch summary (kept from old card) */}
               <div className="pt-2 border-t border-[#F1F3F4]">
                 <p className="text-xs font-black uppercase tracking-widest text-[#757A7F] mb-3">Billing vs. Activity Summary</p>
                 <div className="grid grid-cols-4 gap-2 text-center">
@@ -979,7 +1067,9 @@ export default async function MasterDashboard() {
 
           const stoneVelocity = totalDays > 0 ? Math.round(totalStoneTons / totalDays) : 0;
           const asphaltVelocity = totalDays > 0 ? Math.round(totalAsphaltTons / totalDays) : 0;
-          const isBehind = stoneVelocity > 0 && asphaltVelocity > 0 && stoneVelocity < asphaltVelocity * 1.2;
+          const activeReporting = activeJobs.length;
+          const hasData = activeReporting > 0 && (stoneVelocity > 0 || asphaltVelocity > 0);
+          const isBehind = hasData && stoneVelocity > 0 && asphaltVelocity > 0 && stoneVelocity < asphaltVelocity * 1.2;
           const maxVelocity = Math.max(stoneVelocity, asphaltVelocity, 1);
 
           return (
@@ -987,6 +1077,11 @@ export default async function MasterDashboard() {
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
+                  {!hasData && (
+                    <span className="text-[10px] font-black text-[#9CA3AF] bg-[#9CA3AF]/10 border border-[#9CA3AF]/20 px-2 py-0.5 rounded-full">
+                      ○ NO JOBS REPORTING ACT_DAYS
+                    </span>
+                  )}
                   {isBehind && (
                     <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
                       ⚠️ BASE CREW BELOW PAVING THRESHOLD
@@ -1067,8 +1162,8 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="text-center">
                       <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Status</p>
-                      <p className={`text-xs font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {isBehind ? '🔴 BEHIND' : 'ð¢ ON TRACK'}
+                      <p className={`text-xs font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
+                        {!hasData ? '○ NO DATA' : isBehind ? '🔴 BEHIND' : '🟢 ON TRACK'}
                       </p>
                     </div>
                   </div>
