@@ -1397,3 +1397,126 @@ export async function fetchProjectScorecardsEstVsAct(): Promise<LiveScorecardRow
   } catch { return []; }
 }
 
+// ──────────────────────────── 2026 GANTT SCHEDULE ────────────────────────────
+// Source: https://docs.google.com/spreadsheets/d/178t9iioyveWqP6o8x2lQwMagexDP0W9FA4I2jfutJmw
+// Columns: Job_Number | Job_Name | Project_Type | Start | End | (weekly flags...)
+
+export interface GanttRow {
+  Job_Number: string;
+  Job_Name: string;
+  Project_Type: string;
+  Start_Date: string;
+  End_Date: string;
+}
+
+export async function fetchGanttSchedule(): Promise<GanttRow[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=0`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+    if (lines.length < 3) return [];
+    // Row 0 is header ("Job #, Job Name, Project Type, Start, End, ...weeks").
+    // Row 1 may be empty/state row. Data starts at row 2+.
+    return lines.slice(1).map(l => {
+      const cols = parseCSVLine(l);
+      return {
+        Job_Number: (cols[0] || '').trim(),
+        Job_Name: (cols[1] || '').trim(),
+        Project_Type: (cols[2] || '').trim(),
+        Start_Date: (cols[3] || '').trim(),
+        End_Date: (cols[4] || '').trim(),
+      };
+    }).filter(r => /^\d{2,3}-\d{3}/.test(r.Job_Number));
+  } catch { return []; }
+}
+
+// ──────────────────────────── BUD'S 2026 BID LOG ────────────────────────────
+// Source: https://docs.google.com/spreadsheets/d/1RhHIJooRFj-ChTwQlIl-EYx8IIcW02QT
+// Sheet tab "2026_Bid_Log" has a top dashboard section; bid rows start later.
+
+const BID_LOG_SHEET_ID = '1RhHIJooRFj-ChTwQlIl-EYx8IIcW02QT';
+
+export interface BidLogRow {
+  Bid_Number: string;
+  Date_Bid: string;
+  Customer: string;
+  Job_Name: string;
+  Location: string;
+  Feedback: string;
+  Probability: number;  // percent 0..100
+  Proposal: number;
+  Awarded: number;
+  Pipe: number;
+  Lost: number;
+  Status: string;  // WIN, LOSS, UNDER REVIEW, BUDGETARY
+  Expected_Start: string;
+  Risk_Score: string;
+}
+
+function _parseDollar(v: string | undefined): number {
+  if (!v) return 0;
+  const s = String(v).replace(/[$,\s"]/g, '').replace(/%$/, '');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+export async function fetchBidLog(): Promise<BidLogRow[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${BID_LOG_SHEET_ID}/export?format=csv&gid=0`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+    // Find the header row that starts with "Job #" (bid rows follow).
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(lines.length, 40); i++) {
+      const cells = parseCSVLine(lines[i]);
+      if (cells[0] && /job\s*#/i.test(cells[0])) { headerIdx = i; break; }
+    }
+    if (headerIdx < 0) return [];
+    const hdr = parseCSVLine(lines[headerIdx]).map(c => c.trim());
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const col = (name: string) => hdr.findIndex(h => norm(h) === norm(name));
+    const iBid    = col('Job #');
+    const iDate   = col('Date Bid');
+    const iCust   = col('Customer');
+    const iName   = col('Job Name');
+    const iLoc    = col('Location');
+    const iFeed   = col('Feedback');
+    const iProb   = col('Probability');
+    const iProp   = col('Proposal');
+    const iAward  = col('Awarded');
+    const iPipe   = col('Pipe');
+    const iLost   = col('Lost - 0%');
+    const iStat   = hdr.findIndex(h => /win.*loss.*review/i.test(h));
+    const iStart  = col('expected start date');
+    const iRisk   = col('Job risk score');
+
+    const rows: BidLogRow[] = [];
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i]);
+      const bidNo = (cells[iBid] || '').trim();
+      if (!/^2\d{3}-\d{3}$/.test(bidNo)) continue;
+      rows.push({
+        Bid_Number: bidNo,
+        Date_Bid: (cells[iDate] || '').trim(),
+        Customer: (cells[iCust] || '').trim(),
+        Job_Name: (cells[iName] || '').trim(),
+        Location: (cells[iLoc] || '').trim(),
+        Feedback: (cells[iFeed] || '').trim(),
+        Probability: _parseDollar(cells[iProb]),
+        Proposal: _parseDollar(cells[iProp]),
+        Awarded: _parseDollar(cells[iAward]),
+        Pipe: _parseDollar(cells[iPipe]),
+        Lost: _parseDollar(cells[iLost]),
+        Status: (iStat >= 0 ? cells[iStat] || '' : '').trim().toUpperCase(),
+        Expected_Start: (cells[iStart] || '').trim(),
+        Risk_Score: (cells[iRisk] || '').trim(),
+      });
+    }
+    return rows;
+  } catch { return []; }
+}
+
