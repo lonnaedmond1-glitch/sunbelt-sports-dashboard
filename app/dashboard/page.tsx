@@ -66,10 +66,16 @@ async function getSamsaraData() {
     ];
 
 
+    // HOS daily-logs requires startTime + endTime. Use last 24h window so we always
+    // get the current/most-recent log row for each active driver.
+    const hosEnd = new Date();
+    const hosStart = new Date(hosEnd.getTime() - 24 * 60 * 60 * 1000);
+    const hosUrl = `https://api.samsara.com/fleet/hos/daily-logs?startTime=${encodeURIComponent(hosStart.toISOString())}&endTime=${encodeURIComponent(hosEnd.toISOString())}&limit=512`;
+
     const [vehicleRes, driverRes, hosRes] = await Promise.all([
       fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 86400 } }),
       fetch('https://api.samsara.com/fleet/drivers?driverActivationStatus=active', { headers, next: { revalidate: 86400 } }),
-      fetch('https://api.samsara.com/fleet/hos/daily-logs?limit=50', { headers, next: { revalidate: 300 } }),
+      fetch(hosUrl, { headers, next: { revalidate: 300 } }),
     ]);
 
     const vehicles = vehicleRes.ok
@@ -95,23 +101,52 @@ async function getSamsaraData() {
         }))
       : [];
 
-    // DOT Hours of Service — remaining legal hours per driver
-    const hos = hosRes.ok
-      ? ((await hosRes.json()).data || []).map((d: any) => {
-          const latest = Array.isArray(d.dailyLogs) && d.dailyLogs.length > 0
-            ? d.dailyLogs[d.dailyLogs.length - 1]
-            : null;
-          return {
-            driverId: d.driver?.id || '',
-            driverName: d.driver?.name || '',
-            logDate: latest?.logDate || '',
-            driveRemainingHrs: latest?.driveRemaining != null ? latest.driveRemaining / 3600000 : null,
-            shiftRemainingHrs: latest?.shiftRemaining != null ? latest.shiftRemaining / 3600000 : null,
-            cycleRemainingHrs: latest?.cycleRemaining != null ? latest.cycleRemaining / 3600000 : null,
-            currentStatus: latest?.currentDutyStatus || '',
-          };
-        })
-      : [];
+    // DOT Hours of Service — remaining legal hours per driver.
+    // Samsara API: response has data[] of daily-log rows. Each row may either be:
+    //   (A) flat: { driver, logDate, driveRemainingDurationMs, shiftRemainingDurationMs,
+    //               cycleRemainingDurationMs, currentDutyStatus }
+    //   (B) grouped: { driver, dailyLogs: [ ...rows in shape (A)... ] }
+    // Be robust to both. Pick the row with the most recent logDate per driver.
+    // All *RemainingDurationMs fields are milliseconds — divide by 3_600_000 for hours.
+    const MS_PER_HR = 3_600_000;
+    let hosParsed: any[] = [];
+    if (hosRes.ok) {
+      const rawJson = await hosRes.json();
+      const rawRows: any[] = rawJson?.data || [];
+      const byDriver: Record<string, any> = {};
+      const ingestRow = (row: any, driverFallback: any) => {
+        const driver = row?.driver || driverFallback || {};
+        const driverId = driver?.id || '';
+        const driverName = driver?.name || '';
+        if (!driverId && !driverName) return;
+        const key = driverId || driverName;
+        const logDate = row?.logDate || row?.startTime || '';
+        const drive = row?.driveRemainingDurationMs ?? row?.driveRemaining ?? null;
+        const shift = row?.shiftRemainingDurationMs ?? row?.shiftRemaining ?? null;
+        const cycle = row?.cycleRemainingDurationMs ?? row?.cycleRemaining ?? null;
+        const status = row?.currentDutyStatus || row?.activeDutyStatus || '';
+        const candidate = {
+          driverId, driverName, logDate,
+          driveRemainingHrs: drive != null ? drive / MS_PER_HR : null,
+          shiftRemainingHrs: shift != null ? shift / MS_PER_HR : null,
+          cycleRemainingHrs: cycle != null ? cycle / MS_PER_HR : null,
+          currentStatus: status,
+        };
+        const existing = byDriver[key];
+        if (!existing || (logDate && logDate > (existing.logDate || ''))) {
+          byDriver[key] = candidate;
+        }
+      };
+      for (const r of rawRows) {
+        if (Array.isArray(r?.dailyLogs)) {
+          for (const dl of r.dailyLogs) ingestRow(dl, r.driver);
+        } else {
+          ingestRow(r, null);
+        }
+      }
+      hosParsed = Object.values(byDriver);
+    }
+    const hos = hosParsed;
 
     return { vehicles, crews, hos, configured: true, timestamp: new Date().toISOString() };
   } catch { return { vehicles: [], crews: [], hos: [], configured: false }; }
@@ -1033,9 +1068,11 @@ export default async function MasterDashboard() {
                   </div>
                   {/* DOT HOS gauges (remaining legal time) */}
                   {(() => {
+                    // Exact match on "David Hudson" — avoids accidentally pairing
+                    // with David Moctezuma or any other David in the fleet.
                     const lowboyHos = (samsara.hos || []).find((h: any) => {
-                      const n = (h.driverName || '').toLowerCase();
-                      return n.includes('david') || n.includes('hudson');
+                      const n = (h.driverName || '').toLowerCase().trim();
+                      return n === 'david hudson' || (n.includes('hudson') && n.includes('david'));
                     });
                     if (!lowboyHos) {
                       return (
