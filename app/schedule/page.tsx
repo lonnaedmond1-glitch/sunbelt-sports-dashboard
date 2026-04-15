@@ -43,8 +43,8 @@ const crewColors: Record<string, string> = {
   'Concrete Sub 1': '#9ca3af', 'Concrete Sub 2': '#6b7280', 'Bud': '#d946ef',
 };
 
-const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar', 'Pedro', 'Giovany (NC)', 'Marcos (NC)'];
-const SUPPORT_CREWS = ['Jeff', 'David', 'Lowboy 1', 'Lowboy 2', 'Sergio', 'Shawn', 'Concrete Sub 1', 'Concrete Sub 2', 'Bud'];
+const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar'];
+// SUPPORT_CREWS removed — the schedule page now shows primary crews + Lowboy card only
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
@@ -347,50 +347,6 @@ export default async function SchedulePage() {
                 </td>
               </tr>
 
-              {/* Support Crews */}
-              {SUPPORT_CREWS.map((crewName, ci) => {
-                const color = crewColors[crewName] || '#9ca3af';
-                const hasWork = week.days.some((d: any) => d.assignments?.some((a: any) => a.crew === crewName));
-                if (!hasWork) return null;
-                return (
-                  <tr key={crewName} className={`border-b border-[#F1F3F4] ${ci % 2 === 0 ? '' : 'bg-[#F1F3F4]/40'}`}>
-                    <td className="px-4 py-3 sticky left-0 bg-white z-10 border-r border-[#F1F3F4]">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }}></span>
-                        <span className="text-xs font-medium text-[#757A7F] whitespace-nowrap">{crewName}</span>
-                      </div>
-                    </td>
-                    {dayNames.map(day => {
-                      const dayData = week.days.find((d: any) => d.dayOfWeek === day);
-                      const assignment = dayData?.assignments?.find((a: any) => a.crew === crewName);
-                      return (
-                        <td key={day} className={`px-2 py-1.5 border-r border-[#F1F3F4] align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
-                          {assignment ? (() => {
-                            const linkJobId = resolveJobLink(assignment);
-                            return (
-                            <div className="text-sm text-[#757A7F] px-2 py-1 rounded bg-[#F1F3F4]/60">
-                              {assignment.decoded?.isOff ? (
-                                <span className="italic text-[#757A7F]/60">{assignment.decoded.jobRef}</span>
-                              ) : linkJobId ? (
-                                <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block hover:opacity-80 transition-opacity cursor-pointer">
-                                  <span className="font-medium text-[#3C4043] hover:text-[#20BC64] transition-colors">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50 text-[#3C4043]/70"> · {assignment.decoded.activity}</span>}
-                                </Link>
-                              ) : (
-                                <>
-                                  <span className="font-medium">{assignment.decoded?.jobRef || assignment.job}</span>
-                                  {assignment.decoded?.activity && <span className="opacity-50"> · {assignment.decoded.activity}</span>}
-                                </>
-                              )}
-                            </div>
-                            );
-                          })() : <span className="text-sm text-[#757A7F]/40 px-2">—</span>}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
             </tbody>
           </table>
         </div>
@@ -405,7 +361,7 @@ export default async function SchedulePage() {
         <div className="flex justify-between items-center max-w-[1920px] mx-auto">
           <div>
             <h1 className="text-2xl font-black uppercase tracking-tight">Weekly Schedule</h1>
-            <p className="text-xs text-[#757A7F] mt-1">Live from Level 10 · Schedule & Project Timeline · {schedule.scheduledJobCount || 0} Active Jobs</p>
+            <p className="text-xs text-[#757A7F] mt-1">Live from Schedule tab · Crew Assignments & Project Timeline · {schedule.scheduledJobCount || 0} Active Jobs</p>
           </div>
           <div className="flex items-center gap-3">
             {weatherAlerts.length > 0 && (
@@ -475,31 +431,83 @@ export default async function SchedulePage() {
           </div>
         )}
 
-        {/* 14-DAY WEATHER OUTLOOK */}
-        <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm mb-4 overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
-            <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">14-Day Weather Outlook</h2>
-            <span className="text-xs text-[#757A7F]/60 font-bold">Open-Meteo · updated daily</span>
-          </div>
-          <div className="p-3 grid grid-cols-7 md:grid-cols-14 gap-2">
-            {[...(schedule.currentWeek?.days || []), ...(schedule.nextWeek?.days || [])].slice(0, 14).map((d: any) => {
-              const wx = getDayWeather(d.date);
-              const prob = wx?.precipProb || 0;
-              const severe = !!wx?.severe;
-              const risk = severe || prob >= 40;
-              return (
-                <div key={d.date} className={`rounded-lg px-2 py-2 text-center border text-[11px] ${risk ? 'bg-[#E04343]/5 border-[#E04343]/30' : prob >= 20 ? 'bg-[#F5A623]/5 border-[#F5A623]/25' : 'bg-[#20BC64]/5 border-[#20BC64]/20'}`}>
-                  <div className="font-bold text-[#3C4043]">{(d.dayOfWeek || '').slice(0,3)}</div>
-                  <div className="text-[#757A7F]">{(d.dateDisplay || d.date || '').replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '').slice(0, 6)}</div>
-                  <div className="text-xl my-1">{wx?.icon || '—'}</div>
-                  <div className={`font-black ${risk ? 'text-[#E04343]' : 'text-[#3C4043]'}`}>{wx?.high != null ? `${wx.high}°` : '—'}</div>
-                  <div className="text-[9px] text-[#757A7F]/70">{prob}% rain</div>
-                  {risk && <div className="text-[9px] font-black text-[#E04343] uppercase mt-0.5">Risk</div>}
+        {/* LOWBOY MOVES */}
+        {(() => {
+          // Gather all Lowboy 1 / Lowboy 2 assignments across both weeks.
+          const allWeekDays = [
+            ...(schedule.currentWeek?.days || []),
+            ...(schedule.nextWeek?.days || []),
+          ];
+          const lowboyAssignments: Array<{ date: string; dayOfWeek: string; crew: string; job: string; jobRef: string; activity: string; state: string; pm: string; linkJobId: string }> = [];
+          for (const day of allWeekDays) {
+            for (const a of (day.assignments || [])) {
+              if (a.crew !== 'Lowboy 1' && a.crew !== 'Lowboy 2') continue;
+              if (a.decoded?.isOff) continue;
+              const linkJobId = resolveJobLink(a);
+              lowboyAssignments.push({
+                date: day.date,
+                dayOfWeek: day.dayOfWeek,
+                crew: a.crew,
+                job: a.job || '',
+                jobRef: a.decoded?.jobRef || a.job || '',
+                activity: a.decoded?.activity || '',
+                state: a.decoded?.state || '',
+                pm: a.pm || '',
+                linkJobId: linkJobId || '',
+              });
+            }
+          }
+          // Sort by date ascending
+          lowboyAssignments.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+          return (
+            <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
+              <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Lowboy Moves — Upcoming</h2>
+                  <p className="text-[10px] text-[#757A7F] mt-0.5">Every Lowboy 1 / Lowboy 2 assignment on the schedule over the next two weeks. Driver: David Hudson.</p>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+                <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{lowboyAssignments.length} moves scheduled</span>
+              </div>
+              {lowboyAssignments.length === 0 ? (
+                <div className="p-6 text-center">
+                  <p className="text-sm text-[#757A7F]">No lowboy moves scheduled this week or next.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[#F1F3F4]">
+                      <tr>
+                        {['Date', 'Day', 'Unit', 'Job', 'Activity', 'State', 'PM'].map(h => (
+                          <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lowboyAssignments.map((m, i) => (
+                        <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
+                          <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{m.date}</td>
+                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.dayOfWeek}</td>
+                          <td className="px-3 py-2 text-xs font-bold" style={{ color: m.crew === 'Lowboy 1' ? '#ef4444' : '#f87171' }}>{m.crew}</td>
+                          <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">
+                            {m.linkJobId ? (
+                              <Link href={`/jobs/${encodeURIComponent(m.linkJobId.trim())}`} className="text-[#20BC64] hover:underline">{m.jobRef}</Link>
+                            ) : (
+                              m.jobRef
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.activity || '—'}</td>
+                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.state || '—'}</td>
+                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.pm || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* CURRENT WEEK CREW GRID */}
         {renderWeekGrid(schedule.currentWeek, 'Current Week', true)}
