@@ -20,6 +20,10 @@ export default async function MarketingPage() {
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Marketing Funnel</h1>
           <p className="text-[#757A7F] text-sm">Leads, inbound inquiries &amp; campaign performance. Live from Marketing_Leads sheet.</p>
+          <div className="mt-3 rounded-lg bg-[#60a5fa]/5 border border-[#60a5fa]/20 px-4 py-3 max-w-3xl">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa]/80 mb-1">What this page is for</p>
+            <p className="text-xs text-[#3C4043] leading-relaxed">Track where new work is coming from — GC referrals, website inquiries, trade shows, direct outreach. Use it to decide which channels to double-down on, which to cut, and whether marketing spend is converting to qualified bids. Log every new lead in the <code className="font-mono text-[10px]">Marketing_Leads</code> sheet tab with its source and status; the funnel refreshes daily and feeds the Sales pipeline when leads get qualified.</p>
+          </div>
         </div>
         <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">← Dashboard</Link>
       </header>

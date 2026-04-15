@@ -24,6 +24,10 @@ export default async function SalesPage() {
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Sales Pipeline</h1>
           <p className="text-[#757A7F] text-sm">Bid tracking — Proposal → Signed → Executed. Live from Sales_Pipeline sheet.</p>
+          <div className="mt-3 rounded-lg bg-[#60a5fa]/5 border border-[#60a5fa]/20 px-4 py-3 max-w-3xl">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa]/80 mb-1">What this page is for</p>
+            <p className="text-xs text-[#3C4043] leading-relaxed">A single view of every open bid and where it is in the funnel. Use it at your Monday sales meeting to answer: which proposals are aging? Which are close to signing? What's the weighted pipeline value? Each card links to the job detail page once the bid is executed. Update the <code className="font-mono text-[10px]">Sales_Pipeline</code> sheet tab as deals move stages; the board refreshes daily.</p>
+          </div>
         </div>
         <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">← Dashboard</Link>
       </header>
