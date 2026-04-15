@@ -431,80 +431,74 @@ export default async function SchedulePage() {
           </div>
         )}
 
-        {/* LOWBOY MOVES */}
+        {/* LOWBOY MOVES — this week only, simple 7-day calendar view */}
         {(() => {
-          // Gather all Lowboy 1 / Lowboy 2 assignments across both weeks.
-          const allWeekDays = [
-            ...(schedule.currentWeek?.days || []),
-            ...(schedule.nextWeek?.days || []),
-          ];
-          const lowboyAssignments: Array<{ date: string; dayOfWeek: string; crew: string; job: string; jobRef: string; activity: string; state: string; pm: string; linkJobId: string }> = [];
-          for (const day of allWeekDays) {
+          const days = schedule.currentWeek?.days || [];
+          const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+          const byDay: Record<string, Array<{ crew: string; jobRef: string; activity: string; state: string; linkJobId: string }>> = {};
+          dayNames.forEach(d => { byDay[d] = []; });
+
+          for (const day of days) {
             for (const a of (day.assignments || [])) {
               if (a.crew !== 'Lowboy 1' && a.crew !== 'Lowboy 2') continue;
               if (a.decoded?.isOff) continue;
-              const linkJobId = resolveJobLink(a);
-              lowboyAssignments.push({
-                date: day.date,
-                dayOfWeek: day.dayOfWeek,
+              const key = (day.dayOfWeek || '').slice(0, 3).toUpperCase();
+              if (!byDay[key]) continue;
+              byDay[key].push({
                 crew: a.crew,
-                job: a.job || '',
                 jobRef: a.decoded?.jobRef || a.job || '',
                 activity: a.decoded?.activity || '',
                 state: a.decoded?.state || '',
-                pm: a.pm || '',
-                linkJobId: linkJobId || '',
+                linkJobId: resolveJobLink(a) || '',
               });
             }
           }
-          // Sort by date ascending
-          lowboyAssignments.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+          const total = Object.values(byDay).reduce((s2, arr) => s2 + arr.length, 0);
 
           return (
             <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Lowboy Moves — Upcoming</h2>
-                  <p className="text-[10px] text-[#757A7F] mt-0.5">Every Lowboy 1 / Lowboy 2 assignment on the schedule over the next two weeks. Driver: David Hudson.</p>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Upcoming Lowboy Moves</h2>
+                  <p className="text-[10px] text-[#757A7F] mt-0.5">Moves that need to happen this week. Driver: David Hudson.</p>
                 </div>
-                <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{lowboyAssignments.length} moves scheduled</span>
+                <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{total} move{total === 1 ? '' : 's'} this week</span>
               </div>
-              {lowboyAssignments.length === 0 ? (
-                <div className="p-6 text-center">
-                  <p className="text-sm text-[#757A7F]">No lowboy moves scheduled this week or next.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-[#F1F3F4]">
-                      <tr>
-                        {['Date', 'Day', 'Unit', 'Job', 'Activity', 'State', 'PM'].map(h => (
-                          <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lowboyAssignments.map((m, i) => (
-                        <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
-                          <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{m.date}</td>
-                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.dayOfWeek}</td>
-                          <td className="px-3 py-2 text-xs font-bold" style={{ color: m.crew === 'Lowboy 1' ? '#ef4444' : '#f87171' }}>{m.crew}</td>
-                          <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">
-                            {m.linkJobId ? (
-                              <Link href={`/jobs/${encodeURIComponent(m.linkJobId.trim())}`} className="text-[#20BC64] hover:underline">{m.jobRef}</Link>
+              <div className="grid grid-cols-7">
+                {dayNames.map((d, i) => {
+                  const dayData = days.find((x: any) => (x.dayOfWeek || '').slice(0, 3).toUpperCase() === d);
+                  const isToday = !!dayData?.isToday;
+                  const moves = byDay[d] || [];
+                  return (
+                    <div key={d} className={`px-3 py-3 border-r border-[#F1F3F4] last:border-r-0 ${isToday ? 'bg-[#20BC64]/5' : ''} ${i >= 5 ? 'bg-[#F1F3F4]/30' : ''}`} style={{ minHeight: '120px' }}>
+                      <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isToday ? 'text-[#20BC64]' : 'text-[#757A7F]'}`}>{d}</div>
+                      <div className="text-[9px] text-[#757A7F]/60 mb-2">{dayData?.dateDisplay?.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '') || ''}</div>
+                      {moves.length === 0 ? (
+                        <div className="text-sm text-[#757A7F]/30">—</div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {moves.map((m, idx) => {
+                            const unitColor = m.crew === 'Lowboy 1' ? '#ef4444' : '#f87171';
+                            const body = (
+                              <div className="rounded px-2 py-1.5 border" style={{ borderColor: `${unitColor}30`, backgroundColor: `${unitColor}08` }}>
+                                <div className="text-[9px] font-black uppercase" style={{ color: unitColor }}>{m.crew}</div>
+                                <div className="text-xs font-bold text-[#3C4043] truncate" title={m.jobRef}>{m.jobRef}</div>
+                                {m.activity && <div className="text-[9px] text-[#757A7F] truncate">{m.activity}{m.state ? ` · ${m.state}` : ''}</div>}
+                              </div>
+                            );
+                            return m.linkJobId ? (
+                              <Link key={idx} href={`/jobs/${encodeURIComponent(m.linkJobId.trim())}`} className="block hover:opacity-80">{body}</Link>
                             ) : (
-                              m.jobRef
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.activity || '—'}</td>
-                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.state || '—'}</td>
-                          <td className="px-3 py-2 text-xs text-[#757A7F]">{m.pm || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                              <div key={idx}>{body}</div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           );
         })()}
