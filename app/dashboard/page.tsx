@@ -708,8 +708,8 @@ export default async function MasterDashboard() {
           {/* Active Jobs */}
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Active Jobs</p>
-            <p className="text-4xl font-display font-black text-[#10BE66]">{liveActiveJobs.length}</p>
-            <p className="text-xs text-[#757A7F] mt-1">Reporting to scorecard</p>
+            <p className="text-4xl font-display font-black text-[#10BE66]">{qboActive.length}</p>
+            <p className="text-xs text-[#757A7F] mt-1">Generating revenue (QBO)</p>
           </div>
           {/* Scheduled Jobs */}
           <div className="card p-5">
@@ -1323,7 +1323,7 @@ export default async function MasterDashboard() {
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
                   <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
-                <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
+                <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Pct_Complete||j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
                 <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
               </div>
             </Link>
