@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { ClickableKpiTile } from '@/components/EvidenceDrawer';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
@@ -648,6 +649,155 @@ export default async function MasterDashboard() {
 
   const qboStale = qboFinancials.length === 0 || !qboFinancials[0]?.Updated_At;
 
+  // ── Evidence payloads for ClickableKpiTile drawers ──────────
+  const _qboUpdated = qboFinancials[0]?.Updated_At || '';
+  const _arUpdated = arAging.rows[0]?.Updated_At || '';
+
+  const _marginAtRiskRows = lossJobs
+    .sort((a, b) => a.Profit - b.Profit)
+    .map(q => ({
+      label: `${q.Job_Number}${q.Project_Name ? ' · ' + q.Project_Name : ''}`,
+      value: `-$${Math.abs(q.Profit / 1000).toFixed(0)}K`,
+      detail: `${(q.Profit_Margin * 100).toFixed(0)}% margin · $${(q.Act_Cost / 1000).toFixed(0)}K cost on $${(q.Act_Income / 1000).toFixed(0)}K revenue`,
+      href: q.Job_Number ? `/jobs/${q.Job_Number}` : undefined,
+    }));
+
+  const _topLoserRows = topLoser ? [{
+    label: `${topLoser.Job_Number}${topLoser.Project_Name ? ' · ' + topLoser.Project_Name : ''}`,
+    value: `$${(topLoser.Profit / 1000).toFixed(0)}K`,
+    detail: `Revenue $${(topLoser.Act_Income / 1000).toFixed(0)}K − Cost $${(topLoser.Act_Cost / 1000).toFixed(0)}K = ${(topLoser.Profit_Margin * 100).toFixed(0)}% margin`,
+    href: topLoser.Job_Number ? `/jobs/${topLoser.Job_Number}` : undefined,
+  }] : [];
+
+  const _arOverdueRows = arAging.rows
+    .filter(r => r.Days_91_Plus > 0)
+    .sort((a, b) => b.Days_91_Plus - a.Days_91_Plus)
+    .map(r => ({
+      label: `${r.Job_Number || r.Project_Name}${r.Customer ? ' · ' + r.Customer : ''}`,
+      value: `$${(r.Days_91_Plus / 1000).toFixed(1)}K`,
+      detail: r.Project_Name && r.Project_Name !== r.Job_Number ? r.Project_Name : '',
+      href: r.Job_Number && /^\d{2,3}-\d{3}/.test(r.Job_Number) ? `/jobs/${r.Job_Number}` : undefined,
+    }));
+
+  const _arAllRows = arAging.rows
+    .sort((a, b) => b.Total - a.Total)
+    .map(r => ({
+      label: `${r.Job_Number || r.Project_Name}${r.Customer ? ' · ' + r.Customer : ''}`,
+      value: `$${(r.Total / 1000).toFixed(1)}K`,
+      detail: `Current $${(r.Current / 1000).toFixed(1)}K · 1–30d $${(r.Days_1_30 / 1000).toFixed(1)}K · 31–60d $${(r.Days_31_60 / 1000).toFixed(1)}K · 61–90d $${(r.Days_61_90 / 1000).toFixed(1)}K · 91+d $${(r.Days_91_Plus / 1000).toFixed(1)}K`,
+      href: r.Job_Number && /^\d{2,3}-\d{3}/.test(r.Job_Number) ? `/jobs/${r.Job_Number}` : undefined,
+    }));
+
+  const _marginRows = qboActive
+    .sort((a, b) => b.Profit_Margin - a.Profit_Margin)
+    .map(q => ({
+      label: `${q.Job_Number}${q.Project_Name ? ' · ' + q.Project_Name : ''}`,
+      value: `${(q.Profit_Margin * 100).toFixed(1)}%`,
+      detail: `$${(q.Profit / 1000).toFixed(0)}K profit on $${(q.Act_Income / 1000).toFixed(0)}K revenue`,
+      href: q.Job_Number ? `/jobs/${q.Job_Number}` : undefined,
+    }));
+
+  const _reworkRows = reworkFytd
+    .sort((a, b) => (b.Cost || 0) - (a.Cost || 0))
+    .map(r => ({
+      label: `${r.Date} · ${r.Job_Number || '(no job)'}${r.Job_Name ? ' · ' + r.Job_Name : ''}`,
+      value: `$${(r.Cost / 1000).toFixed(1)}K`,
+      detail: `${r.Hours.toFixed(0)} hrs · ${r.Crew || 'unassigned'}${r.Note ? ' · ' + r.Note : ''}`,
+      href: r.Job_Number ? `/jobs/${r.Job_Number}` : undefined,
+    }));
+
+  const _coRows = (jobs as any[])
+    .map((j: any) => ({ job: j, co: (() => {
+      const raw = j.Change_Orders || j.CO_Added || j['CO Added'] || 0;
+      return typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/[$,\s]/g, '')) || 0;
+    })() }))
+    .filter(x => x.co > 0)
+    .sort((a, b) => b.co - a.co)
+    .map(x => ({
+      label: `${x.job.Job_Number}${x.job.Job_Name ? ' · ' + x.job.Job_Name : ''}`,
+      value: `+$${(x.co / 1000).toFixed(1)}K`,
+      detail: `PM ${x.job.Project_Manager || 'N/A'} · ${x.job.State || ''}`,
+      href: `/jobs/${x.job.Job_Number}`,
+    }));
+
+  const marginAtRiskEvidence = {
+    title: 'Margin at Risk',
+    headlineValue: `$${(marginAtRiskDollars / 1000).toFixed(0)}K`,
+    headlineCaption: `${lossJobs.length} active job${lossJobs.length === 1 ? '' : 's'} currently losing money (actual cost exceeds actual revenue).`,
+    source: 'QBO Est vs Actuals daily email',
+    sourceUpdatedAt: _qboUpdated,
+    explanation: 'Sum of the absolute loss from every job where actual profit is negative in QBO. A job counts as "losing money" when booked costs have already exceeded booked revenue. Admin/overhead jobs are included if billed as a project in QBO.',
+    formula: 'marginAtRisk = sum( abs(Profit) ) for each job where Profit < 0',
+    rows: _marginAtRiskRows,
+  };
+
+  const topLoserEvidence = {
+    title: 'Top Money Loser',
+    headlineValue: topLoser && topLoser.Profit < 0 ? `$${(topLoser.Profit / 1000).toFixed(0)}K` : 'None',
+    headlineCaption: topLoser && topLoser.Profit < 0
+      ? `Worst single job by dollar loss. ${topLoser.Job_Number} · ${topLoser.Project_Name}.`
+      : 'No active jobs currently profitable in QBO.',
+    source: 'QBO Est vs Actuals daily email',
+    sourceUpdatedAt: _qboUpdated,
+    explanation: 'The single active job with the most negative actual profit in QBO today. Click through to the job detail page for the full breakdown. The goal is always to have this tile read "None".',
+    formula: 'topLoser = min( Profit ) across active WIP jobs',
+    rows: _topLoserRows,
+  };
+
+  const coEvidence = {
+    title: 'Change Orders FYTD',
+    headlineValue: `+$${(fyCoTotal / 1000).toFixed(0)}K`,
+    headlineCaption: `Incremental revenue captured through approved change orders since Oct 1, ${_fyStart.getFullYear()}.`,
+    source: 'WIP sheet · Change_Orders column',
+    explanation: 'Sum of the Change_Orders column across the WIP sheet. Populate this column in your WIP as change orders get approved. Value flows in on the next ISR refresh.',
+    formula: 'FYTD CO = sum( Change_Orders ) across all active jobs',
+    rows: _coRows,
+  };
+
+  const arOutstandingEvidence = {
+    title: 'A/R Outstanding',
+    headlineValue: `$${(arAging.totals.total / 1000000).toFixed(2)}M`,
+    headlineCaption: 'Total outstanding receivables per QBO A/R Aging Summary.',
+    source: 'QBO A/R Aging daily email',
+    sourceUpdatedAt: _arUpdated,
+    explanation: 'Sum of every outstanding invoice across all customers, broken into aging buckets (Current / 1–30 / 31–60 / 61–90 / 91+ days). Click a row to go to that job\'s detail page if it\'s in the WIP.',
+    formula: 'A/R = sum( Current + 1-30 + 31-60 + 61-90 + 91+ ) across all customers',
+    rows: _arAllRows,
+  };
+
+  const arOverdueEvidence = {
+    title: 'A/R Overdue (91+ days)',
+    headlineValue: `$${(arAging.totals.d91Plus / 1000).toFixed(0)}K`,
+    headlineCaption: `${arAging.totals.total > 0 ? ((arAging.totals.d91Plus / arAging.totals.total) * 100).toFixed(0) : 0}% of total A/R is past 90 days — chase these.`,
+    source: 'QBO A/R Aging daily email',
+    sourceUpdatedAt: _arUpdated,
+    explanation: 'Invoices past 90 days without payment. Anything here is a collection-risk item — money on the books but not in the bank. Orange tone kicks in above 10%, red above 20% of total A/R.',
+    formula: 'Overdue = sum( Days_91_Plus ) across all customers',
+    rows: _arOverdueRows,
+  };
+
+  const avgMarginEvidence = {
+    title: 'Avg Job Margin',
+    headlineValue: `${(avgMargin * 100).toFixed(1)}%`,
+    headlineCaption: `Weighted average across ${qboActive.length} active jobs with revenue in QBO. Target 25%.`,
+    source: 'QBO Est vs Actuals daily email',
+    sourceUpdatedAt: _qboUpdated,
+    explanation: 'Weighted by revenue, not by job count — larger jobs move the number more. Green if ≥20%, amber 10–20%, red below 10%. Goal is to hit 25%+ on every active job.',
+    formula: 'Avg Margin = sum( Profit ) / sum( Act_Income ) across all active jobs',
+    rows: _marginRows,
+  };
+
+  const reworkEvidence = {
+    title: 'Rework FYTD',
+    headlineValue: `$${(reworkCost / 1000).toFixed(0)}K`,
+    headlineCaption: `${reworkHours.toFixed(0)} hours across ${reworkJobs} job${reworkJobs === 1 ? '' : 's'} since Oct 1.`,
+    source: 'REWORK_LOG sheet tab',
+    explanation: 'Labor and cost logged in the REWORK_LOG tab of the Scorecard Hub. Flag a field report as rework to track the cost separately from production labor. Stays $0 / green until something gets logged.',
+    formula: 'Rework FYTD = sum( Cost ) from REWORK_LOG where Date >= Oct 1',
+    rows: _reworkRows,
+  };
+
+
   const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs, samsara.vehicles || []);
 
 
@@ -982,7 +1132,7 @@ export default async function MasterDashboard() {
                       <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{lossJobs.length} job{lossJobs.length === 1 ? '' : 's'} losing money</p>
                     </div>
                     {/* Top Money Loser */}
-                    <div className="bg-[#E04343]/5 border border-[#E04343]/20 rounded-xl p-3">
+                    <ClickableKpiTile evidence={topLoserEvidence} className="bg-[#E04343]/5 border border-[#E04343]/20 rounded-xl p-3 block">
                       <p className="text-[10px] font-black uppercase tracking-widest text-[#E04343]/80 mb-1">Top Money Loser</p>
                       {topLoser && topLoser.Profit < 0 ? (
                         <>
@@ -997,7 +1147,7 @@ export default async function MasterDashboard() {
                           <p className="text-[10px] text-[#757A7F]/70 mt-0.5">All active jobs profitable</p>
                         </>
                       )}
-                    </div>
+                    </ClickableKpiTile>
                     {/* Change Orders FYTD */}
                     <div className="bg-[#20BC64]/5 border border-[#20BC64]/20 rounded-xl p-3">
                       <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64]/80 mb-1">Change Orders FYTD</p>
@@ -1015,11 +1165,11 @@ export default async function MasterDashboard() {
                       const overduePct = arAging.totals.total > 0 ? (arAging.totals.d91Plus / arAging.totals.total) * 100 : 0;
                       const tone = overduePct >= 20 ? '[#E04343]' : overduePct >= 10 ? '[#F5A623]' : '[#20BC64]';
                       return (
-                        <div className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3`}>
+                        <ClickableKpiTile evidence={arOverdueEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
                           <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>A/R Overdue (91+ d)</p>
                           <p className={`text-xl font-black text-${tone}`}>${(arAging.totals.d91Plus/1000).toFixed(0)}K</p>
                           <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{overduePct.toFixed(0)}% of total AR</p>
-                        </div>
+                        </ClickableKpiTile>
                       );
                     })()}
                     {/* Average Job Margin */}
@@ -1027,22 +1177,22 @@ export default async function MasterDashboard() {
                       const pct = avgMargin * 100;
                       const tone = pct >= 20 ? '[#20BC64]' : pct >= 10 ? '[#F5A623]' : '[#E04343]';
                       return (
-                        <div className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3`}>
+                        <ClickableKpiTile evidence={avgMarginEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
                           <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Avg Job Margin</p>
                           <p className={`text-xl font-black text-${tone}`}>{pct.toFixed(1)}%</p>
                           <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{qboActive.length} active jobs · target 25%</p>
-                        </div>
+                        </ClickableKpiTile>
                       );
                     })()}
                     {/* Rework Spend FYTD */}
                     {(() => {
                       const tone = reworkCost > 0 ? '[#E04343]' : '[#20BC64]';
                       return (
-                        <div className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3`}>
+                        <ClickableKpiTile evidence={reworkEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
                           <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Rework FYTD</p>
                           <p className={`text-xl font-black text-${tone}`}>${(reworkCost / 1000).toFixed(0)}K</p>
                           <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{reworkHours.toFixed(0)} hrs · {reworkJobs} jobs</p>
-                        </div>
+                        </ClickableKpiTile>
                       );
                     })()}
                   </div>
@@ -1100,6 +1250,40 @@ export default async function MasterDashboard() {
                 <span className="text-[#9CA3AF] font-bold">● Not Started</span>
               </div>
             </div>
+            {/* Watch / Risk summary */}
+            {(() => {
+              const watchRed = [...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()]
+                .filter(Boolean)
+                .map((job: any) => ({ job, health: getJobHealth(job, reportMap[job.Job_Number]) }))
+                .filter(x => x.health === 'amber' || x.health === 'red');
+              if (watchRed.length === 0) return null;
+              return (
+                <div className="px-4 pt-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-2">Needs Attention</p>
+                  <ul className="space-y-1.5">
+                    {watchRed.map(({ job, health }) => {
+                      const report = reportMap[job.Job_Number];
+                      const pct = Math.round(job.Pct_Complete || 0);
+                      const reason = health === 'red'
+                        ? (report ? `Material trending over estimate · ${pct}% billed` : `${pct}% billed · no field activity yet`)
+                        : (report ? `Approaching budget · ${pct}% billed` : `${pct}% billed · awaiting field data`);
+                      const toneColor = health === 'red' ? '#E04343' : '#F5A623';
+                      return (
+                        <li key={job.Job_Number}>
+                          <Link href={`/jobs/${job.Job_Number}`} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-[#F1F3F4]/60 transition-colors">
+                            <span className="text-xs font-black mt-0.5" style={{ color: toneColor }}>●</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-[#3C4043] truncate">{job.Job_Number} — {job.Job_Name}</p>
+                              <p className="text-[10px] text-[#757A7F]">{reason}</p>
+                            </div>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })()}
             <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
               {[...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()].filter(Boolean).map((job: any) => {
                 const health = getJobHealth(job, reportMap[job.Job_Number]);

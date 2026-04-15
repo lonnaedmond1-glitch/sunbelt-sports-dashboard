@@ -2,12 +2,13 @@ import React from 'react';
 export const revalidate = 86400; // Daily ISR
 import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
-import { fetchLiveJobs, fetchLiveRentals } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveRentals, fetchVisionLinkAssets } from '@/lib/sheets-data';
 
 export default async function EquipmentPage() {
   const csvRentals = getAllRentals();
   const jobs = await fetchLiveJobs();
   const liveRentals = await fetchLiveRentals();
+  const vlAssets = await fetchVisionLinkAssets();
 
   const isLive = liveRentals.length > 0;
   const rentals = isLive ? liveRentals.map(r => ({
@@ -193,6 +194,59 @@ export default async function EquipmentPage() {
             </tbody>
           </table>
         </div>
+      </div>
+      {/* ── VisionLink Equipment Health ────────────────────────── */}
+      <div className="mt-8 bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">VisionLink Equipment Health</h2>
+            <p className="text-xs text-[#757A7F] mt-0.5">Owned heavy equipment — engine hours, last telematics check-in. Service thresholds: yellow at 200h+, red at 500h+ since last report.</p>
+          </div>
+          <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{vlAssets.length > 0 ? `${vlAssets.length} assets` : 'Awaiting VisionLink integration'}</span>
+        </div>
+        {vlAssets.length === 0 ? (
+          <div className="p-5 bg-amber-500/5 border-t border-amber-500/20">
+            <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">No Equipment Data</p>
+            <p className="text-xs text-[#757A7F]">Drop <code className="font-mono text-[11px]">VisionLink_Assets.csv</code> into the <code className="font-mono text-[11px]">/data</code> folder (columns: Asset_ID, Make, Model, Serial, Hours, Last_Reported) or wire the VisionLink API to populate this table.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#F1F3F4]">
+                <tr>
+                  {['Asset ID', 'Make', 'Model', 'Serial', 'Hours', 'Last Reported', 'Status'].map(h => (
+                    <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {vlAssets.map((a, i) => {
+                  // Compute staleness from Last_Reported
+                  const lastReportedDate = a.Last_Reported ? new Date(a.Last_Reported) : null;
+                  const daysSince = lastReportedDate && !isNaN(lastReportedDate.getTime())
+                    ? Math.floor((Date.now() - lastReportedDate.getTime()) / (1000 * 60 * 60 * 24))
+                    : null;
+                  let status = { label: 'Unknown', color: '#9CA3AF' };
+                  if (daysSince == null) status = { label: 'No signal', color: '#9CA3AF' };
+                  else if (daysSince > 30) status = { label: `Stale ${daysSince}d`, color: '#E04343' };
+                  else if (daysSince > 7) status = { label: `Check (${daysSince}d)`, color: '#F5A623' };
+                  else status = { label: `Healthy (${daysSince}d)`, color: '#20BC64' };
+                  return (
+                    <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
+                      <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{a.Asset_ID}</td>
+                      <td className="px-3 py-2 text-xs text-[#757A7F]">{a.Make}</td>
+                      <td className="px-3 py-2 text-xs text-[#757A7F]">{a.Model}</td>
+                      <td className="px-3 py-2 text-xs font-mono text-[#757A7F]">{a.Serial || '—'}</td>
+                      <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{a.Hours ? a.Hours.toLocaleString() + ' h' : '—'}</td>
+                      <td className="px-3 py-2 text-xs text-[#757A7F]">{a.Last_Reported || '—'}</td>
+                      <td className="px-3 py-2 text-xs font-black" style={{ color: status.color }}>● {status.label}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

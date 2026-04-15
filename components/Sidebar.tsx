@@ -8,6 +8,7 @@ const navItems = [
   { href: '/portfolio', label: 'Portfolio', icon: '📋' },
   { href: '/schedule', label: 'Schedule', icon: '📅' },
   { href: '/equipment', label: 'Equipment', icon: '🚜' },
+  { href: '/fleet', label: 'Fleet', icon: '🚚' },
   { href: '/project-scorecard', label: 'Scorecard', icon: '🏆' },
   { href: '/sales', label: 'Sales', icon: '💰' },
   { href: '/marketing', label: 'Marketing', icon: '📣' },

@@ -1344,3 +1344,56 @@ export async function fetchMarketingLeads(): Promise<MarketingLead[]> {
   } catch { return []; }
 }
 
+// ──────────────────────────── PROJECT SCORECARD (Live sheet) ────────────────────────────
+// Reads est-vs-actual rows from the "Project_Scorecards_Live" tab of the Scorecard Hub.
+// Falls back to empty array if the tab doesn't exist yet.
+export interface LiveScorecardRow {
+  Job_Number: string;
+  Est_Man_Hours: number;
+  Act_Man_Hours: number;
+  Est_Stone_Tons: number;
+  Act_Stone_Tons: number;
+  Est_Binder_Tons: number;
+  Act_Binder_Tons: number;
+  Est_Topping_Tons: number;
+  Act_Topping_Tons: number;
+  Est_Days_On_Site: number;
+  Act_Days_On_Site: number;
+  Weather_Days: number;
+  Updated_At: string;
+}
+
+export async function fetchProjectScorecardsEstVsAct(): Promise<LiveScorecardRow[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Project_Scorecards_Live')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const idx = (name: string) => hdr.findIndex(h => norm(h) === norm(name));
+    const n = (v: string | undefined): number => {
+      if (!v) return 0;
+      const x = parseFloat(String(v).replace(/[$,\s"]/g, '').replace(/%$/, ''));
+      return isNaN(x) ? 0 : x;
+    };
+    return rows.slice(1).map(r => ({
+      Job_Number: (r[idx('Job_Number')] || '').trim(),
+      Est_Man_Hours: n(r[idx('Est_Man_Hours')]),
+      Act_Man_Hours: n(r[idx('Act_Man_Hours')]),
+      Est_Stone_Tons: n(r[idx('Est_Stone_Tons')]),
+      Act_Stone_Tons: n(r[idx('Act_Stone_Tons')]),
+      Est_Binder_Tons: n(r[idx('Est_Binder_Tons')]),
+      Act_Binder_Tons: n(r[idx('Act_Binder_Tons')]),
+      Est_Topping_Tons: n(r[idx('Est_Topping_Tons')]),
+      Act_Topping_Tons: n(r[idx('Act_Topping_Tons')]),
+      Est_Days_On_Site: n(r[idx('Est_Days_On_Site')]),
+      Act_Days_On_Site: n(r[idx('Act_Days_On_Site')]),
+      Weather_Days: n(r[idx('Weather_Days')]),
+      Updated_At: (r[idx('Updated_At')] || '').trim(),
+    })).filter(r => r.Job_Number);
+  } catch { return []; }
+}
+
