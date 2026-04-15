@@ -76,12 +76,12 @@ const JOB_LIST_GID = '623969002';
 
 // ──────────────────────────── LEVEL 10 MEETING ────────────────────────────
 export function fetchLevel10Meeting() {
-  return cached('level10Meeting', 15 * 60 * 1000, async () => {
+  return cached('level10Meeting', 24 * 60 * 60 * 1000, async () => {
     try {
       const L10_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
       const MEETING_GID = '683987594'; // Specifically the Level 10 meeting tabs sheet
       const url = `https://docs.google.com/spreadsheets/d/${L10_SHEET_ID}/export?format=csv&gid=${MEETING_GID}`;
-      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
       if (!response.ok) return { screaming: [], looseEnds: [] };
       const csvText = await response.text();
       const lines = csvText.split('\r\n');
@@ -132,10 +132,10 @@ export function fetchLevel10Meeting() {
 }
 
 export function fetchLiveJobs() {
-  return cached('liveJobs', 5 * 60 * 1000, async () => {
+  return cached('liveJobs', 24 * 60 * 60 * 1000, async () => {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${JOB_LIST_SHEET_ID}/export?format=csv&gid=${JOB_LIST_GID}`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (!response.ok) return [];
     const csvText = await response.text();
     const lines = csvText.split('\r\n').filter(l => l.trim());
@@ -214,14 +214,14 @@ const FLEET_ASSETS_GID = '852503706';   // Sports Fleet Assets tab
 const FLEET_VEHICLES_GID = '1839763446'; // Sports Vehicle Fleet tab
 
 export function fetchFleetAssets() {
-  return cached('fleetAssets', 5 * 60 * 1000, async () => {
+  return cached('fleetAssets', 24 * 60 * 60 * 1000, async () => {
     try {
       const [assetsRes, vehiclesRes] = await Promise.all([
         fetch(`https://docs.google.com/spreadsheets/d/${FLEET_SHEET_ID}/export?format=csv&gid=${FLEET_ASSETS_GID}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 },
+          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
         }),
         fetch(`https://docs.google.com/spreadsheets/d/${FLEET_SHEET_ID}/export?format=csv&gid=${FLEET_VEHICLES_GID}`, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 },
+          headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
         }),
       ]);
 
@@ -300,7 +300,7 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 300 },
+      next: { revalidate: 86400 },
     });
     if (!res.ok) return [];
     const text = await res.text();
@@ -309,7 +309,7 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
 }
 
 export function fetchLiveRentals() {
-  return cached('liveRentals', 5 * 60 * 1000, async () => {
+  return cached('liveRentals', 24 * 60 * 60 * 1000, async () => {
     try {
       const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
       const [sunbeltRows, unitedRows] = await Promise.all([
@@ -442,7 +442,7 @@ function safeNum(val: string): number { const n = parseFloat(val?.replace(/[^0-9
 async function fetchJotformReports(): Promise<Record<string, any>> {
   try {
     const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return {};
     const json = await res.json();
     const submissions: JotformSubmission[] = json.content || [];
@@ -477,7 +477,7 @@ async function fetchJotformReports(): Promise<Record<string, any>> {
 async function fetchJotformFeed(jobNumber: string): Promise<any[]> {
   try {
     const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { cache: 'no-store' });
+    const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const json = await res.json();
     const submissions: JotformSubmission[] = json.content || [];
@@ -513,13 +513,13 @@ const FIELD_REPORT_TAB = 'Form Responses 1';
 async function fetchFormResponseRows(): Promise<string[][]> {
   try {
     const gvizUrl = `https://docs.google.com/spreadsheets/d/${FIELD_REPORT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(FIELD_REPORT_TAB)}`;
-    const res = await fetch(gvizUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' });
+    const res = await fetch(gvizUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (res.ok) {
       const text = await res.text();
       if (text && !text.includes('<!DOCTYPE')) return parseCSV(text);
     }
     const exportUrl = `https://docs.google.com/spreadsheets/d/${FIELD_REPORT_SHEET_ID}/export?format=csv&gid=0`;
-    const res2 = await fetch(exportUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' });
+    const res2 = await fetch(exportUrl, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (res2.ok) {
       const text2 = await res2.text();
       if (text2 && !text2.includes('<!DOCTYPE')) return parseCSV(text2);
@@ -672,7 +672,7 @@ function mergeJobTotals(jotform: Record<string, any>, gforms: Record<string, any
 }
 
 export function fetchLiveFieldReports() {
-  return cached('liveFieldReports', 5 * 60 * 1000, async () => {
+  return cached('liveFieldReports', 24 * 60 * 60 * 1000, async () => {
     // Fetch BOTH sources in parallel — historical Jotform + new Google Forms
     const [jotformData, gformsData] = await Promise.all([
       fetchJotformReports(),
@@ -705,8 +705,8 @@ const BACKLOG_GID = '1136500140';
 export async function fetchEstimatingData() {
   try {
     const [bidLogRes, backlogRes] = await Promise.all([
-      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BID_LOG_GID}`, { next: { revalidate: 60 } }),
-      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BACKLOG_GID}`, { next: { revalidate: 60 } }),
+      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BID_LOG_GID}`, { next: { revalidate: 86400 } }),
+      fetch(`https://docs.google.com/spreadsheets/d/${EST_SHEET_ID}/export?format=csv&gid=${BACKLOG_GID}`, { next: { revalidate: 86400 } }),
     ]);
     const bidLogData = parseCSV(await bidLogRes.text());
     const backlogData = parseCSV(await backlogRes.text());
@@ -747,7 +747,7 @@ const CS_GID = '1255706057';
 async function fetchTab(sheetId: string, gid: string): Promise<string[]> {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const text = await res.text();
     return text.split('\n').map(l => l.replace(/\r$/, ''));
@@ -942,10 +942,10 @@ export async function fetchScheduleData() {
   try {
     const [schedRes, ganttRes] = await Promise.all([
       fetch(`https://docs.google.com/spreadsheets/d/${SCHEDULE_SHEET_ID}/export?format=csv&gid=${SCHEDULE_GID}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
       }),
       fetch(`https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=${GANTT_GID}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 120 },
+        headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
       }),
     ]);
 
@@ -1060,3 +1060,287 @@ export async function fetchScheduleData() {
     };
   } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
 }
+// ──────────────────────────── PROJECT SCORECARDS (Google Sheets Hub) ────────────────────────────
+const SCORECARD_HUB_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
+
+export async function fetchProjectScorecards(): Promise<Record<string, string>[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/export?format=csv&gid=0`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(function(l) { return l.trim(); });
+    if (rows.length < 2) return [];
+    const headers = parseCSVLine(rows[0]);
+    return rows.slice(1).map(function(line) {
+      const cols = parseCSVLine(line);
+      const row: Record<string, string> = {};
+      headers.forEach(function(h: string, i: number) { row[h] = cols[i] !== undefined ? cols[i] : ''; });
+      return row;
+    });
+  } catch {
+    return [];
+  }
+}
+
+
+// ──────────────────────────── QBO FINANCIALS (Google Sheets Hub) ────────────────────────────
+// Populated by scripts/gmail-qbo-sync.gs which auto-pulls daily QBO email reports.
+// Tabs: "QBO Est vs Actuals" (job-level profit/margin) and "QBO AR Aging" (receivables).
+
+export interface QboJobFinancials {
+  Job_Number: string;
+  Project_Name: string;
+  Est_Cost: number;
+  Act_Cost: number;
+  Est_Income: number;
+  Act_Income: number;
+  Profit: number;
+  Profit_Margin: number;
+  Updated_At: string;
+}
+
+export interface QboArJob {
+  Job_Number: string;
+  Project_Name: string;
+  Customer: string;
+  Current: number;
+  Days_1_30: number;
+  Days_31_60: number;
+  Days_61_90: number;
+  Days_91_Plus: number;
+  Total: number;
+  Updated_At: string;
+}
+
+export interface QboArSummary {
+  rows: QboArJob[];
+  totals: { current: number; d1_30: number; d31_60: number; d61_90: number; d91Plus: number; total: number };
+}
+
+async function fetchScorecardTabCsv(tabName: string): Promise<string[][]> {
+  const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
+  const res = await fetch(url, { next: { revalidate: 86400 } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = await res.text();
+  return text
+    .split(/\r\n|\n|\r/)
+    .filter(l => l.trim())
+    .map(l => parseCSVLine(l));
+}
+
+function n(v: string | undefined): number {
+  if (!v) return 0;
+  const s = String(v).replace(/[$,\s"]/g, '').replace(/%$/, '');
+  const x = parseFloat(s);
+  return isNaN(x) ? 0 : x;
+}
+
+export async function fetchQboFinancials(): Promise<QboJobFinancials[]> {
+  try {
+    const rows = await fetchScorecardTabCsv('QBO Est vs Actuals');
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (name: string) => hdr.indexOf(name);
+    const iJob   = idx('Job_Number');
+    const iName  = idx('Project_Name');
+    const iEstC  = idx('Est_Cost');
+    const iActC  = idx('Act_Cost');
+    const iEstI  = idx('Est_Income');
+    const iActI  = idx('Act_Income');
+    const iProf  = idx('Profit');
+    const iMarg  = idx('Profit_Margin');
+    const iUpd   = idx('Updated_At');
+    return rows.slice(1).map(r => ({
+      Job_Number: (r[iJob] || '').trim(),
+      Project_Name: (r[iName] || '').trim(),
+      Est_Cost: n(r[iEstC]),
+      Act_Cost: n(r[iActC]),
+      Est_Income: n(r[iEstI]),
+      Act_Income: n(r[iActI]),
+      Profit: n(r[iProf]),
+      Profit_Margin: n(r[iMarg]),
+      Updated_At: (r[iUpd] || '').trim(),
+    })).filter(r => r.Job_Number || r.Project_Name);
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchArAging(): Promise<QboArSummary> {
+  const empty: QboArSummary = { rows: [], totals: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 } };
+  try {
+    const rows = await fetchScorecardTabCsv('QBO AR Aging');
+    if (rows.length < 2) return empty;
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (name: string) => hdr.indexOf(name);
+    const iJob    = idx('Job_Number');
+    const iName   = idx('Project_Name');
+    const iCust   = idx('Customer');
+    const iCurr   = idx('Current');
+    const iD1     = idx('Days_1_30');
+    const iD31    = idx('Days_31_60');
+    const iD61    = idx('Days_61_90');
+    const iD91    = idx('Days_91_Plus');
+    const iTot    = idx('Total');
+    const iUpd    = idx('Updated_At');
+
+    const parsed: QboArJob[] = rows.slice(1).map(r => ({
+      Job_Number: (r[iJob] || '').trim(),
+      Project_Name: (r[iName] || '').trim(),
+      Customer: (r[iCust] || '').trim(),
+      Current: n(r[iCurr]),
+      Days_1_30: n(r[iD1]),
+      Days_31_60: n(r[iD31]),
+      Days_61_90: n(r[iD61]),
+      Days_91_Plus: n(r[iD91]),
+      Total: n(r[iTot]),
+      Updated_At: (r[iUpd] || '').trim(),
+    }));
+
+    const totalRow = parsed.find(r => r.Job_Number === '__TOTAL__');
+    const lines = parsed.filter(r => r.Job_Number !== '__TOTAL__');
+    if (totalRow) {
+      return {
+        rows: lines,
+        totals: {
+          current: totalRow.Current,
+          d1_30: totalRow.Days_1_30,
+          d31_60: totalRow.Days_31_60,
+          d61_90: totalRow.Days_61_90,
+          d91Plus: totalRow.Days_91_Plus,
+          total: totalRow.Total,
+        },
+      };
+    }
+    // No synthetic total row — recompute
+    const totals = lines.reduce(
+      (acc, r) => ({
+        current: acc.current + r.Current,
+        d1_30: acc.d1_30 + r.Days_1_30,
+        d31_60: acc.d31_60 + r.Days_31_60,
+        d61_90: acc.d61_90 + r.Days_61_90,
+        d91Plus: acc.d91Plus + r.Days_91_Plus,
+        total: acc.total + r.Total,
+      }),
+      { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 }
+    );
+    return { rows: lines, totals };
+  } catch {
+    return empty;
+  }
+}
+
+// ──────────────────────────── REWORK LOG (Google Sheets) ────────────────────────────
+// Populated manually or via a Rework flag on the field-report form.
+// Tab: "REWORK_LOG" columns: Date | Job_Number | Job_Name | Crew | Hours | Cost | Note
+
+export interface ReworkEntry {
+  Date: string;
+  Job_Number: string;
+  Job_Name: string;
+  Crew: string;
+  Hours: number;
+  Cost: number;
+  Note: string;
+}
+
+export async function fetchReworkLog(): Promise<ReworkEntry[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('REWORK_LOG')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (s: string) => hdr.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === s.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    const iDate = idx('Date');
+    const iJob  = idx('Job_Number');
+    const iName = idx('Job_Name');
+    const iCrew = idx('Crew');
+    const iHrs  = idx('Hours');
+    const iCost = idx('Cost');
+    const iNote = idx('Note');
+    return rows.slice(1)
+      .map(r => ({
+        Date: (r[iDate] || '').trim(),
+        Job_Number: (r[iJob] || '').trim(),
+        Job_Name: (r[iName] || '').trim(),
+        Crew: (r[iCrew] || '').trim(),
+        Hours: parseFloat(String(r[iHrs] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+        Cost: parseFloat(String(r[iCost] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+        Note: (r[iNote] || '').trim(),
+      }))
+      .filter(r => r.Date || r.Job_Number);
+  } catch { return []; }
+}
+
+// ──────────────────────────── SALES PIPELINE ────────────────────────────
+export interface PipelineDeal {
+  Job_Number: string;
+  Client: string;
+  Project_Name: string;
+  Stage: string;
+  Value: number;
+  State: string;
+  PM: string;
+  Bid_Date: string;
+  Days_In_Stage: number;
+}
+
+export async function fetchSalesPipeline(): Promise<PipelineDeal[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Sales_Pipeline')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (s: string) => hdr.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === s.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    return rows.slice(1).map(r => ({
+      Job_Number: (r[idx('Job_Number')] || '').trim(),
+      Client: (r[idx('Client')] || '').trim(),
+      Project_Name: (r[idx('Project_Name')] || '').trim(),
+      Stage: (r[idx('Stage')] || 'Proposal Sent').trim(),
+      Value: parseFloat(String(r[idx('Value')] || '0').replace(/[^0-9.\-]/g, '')) || 0,
+      State: (r[idx('State')] || '').trim(),
+      PM: (r[idx('PM')] || '').trim(),
+      Bid_Date: (r[idx('Bid_Date')] || '').trim(),
+      Days_In_Stage: parseInt(String(r[idx('Days_In_Stage')] || '0'), 10) || 0,
+    })).filter(r => r.Client || r.Project_Name);
+  } catch { return []; }
+}
+
+// ──────────────────────────── MARKETING LEADS ────────────────────────────
+export interface MarketingLead {
+  Date: string;
+  Source: string;
+  Contact: string;
+  Project: string;
+  Status: string;
+  Owner: string;
+}
+
+export async function fetchMarketingLeads(): Promise<MarketingLead[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Marketing_Leads')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return [];
+    const text = await res.text();
+    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (s: string) => hdr.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === s.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+    return rows.slice(1).map(r => ({
+      Date: (r[idx('Date')] || '').trim(),
+      Source: (r[idx('Source')] || '').trim(),
+      Contact: (r[idx('Contact')] || '').trim(),
+      Project: (r[idx('Project')] || '').trim(),
+      Status: (r[idx('Status')] || 'New').trim(),
+      Owner: (r[idx('Owner')] || '').trim(),
+    })).filter(r => r.Date || r.Contact);
+  } catch { return []; }
+}
+

@@ -2,27 +2,36 @@ import React from 'react';
 import Link from 'next/link';
 import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 86400; // Daily ISR
 
-function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' {
+// Per Jackie 4/9 review: unstarted jobs are Not Started (gray), not At Risk (red).
+function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' | 'gray' {
   const pct = job.Pct_Complete || 0;
   const hasReport = !!report;
-  if (pct === 0 && !hasReport) return 'red';
+  if (pct === 0 && !hasReport) return 'gray';
   if (pct > 0 && pct < 30 && !hasReport) return 'amber';
   return 'green';
 }
 
-const healthColor: Record<string, string> = { green: '#20BC64', amber: '#fb923c', red: '#ef4444' };
+const healthColor: Record<string, string> = { green: '#20BC64', amber: '#fb923c', red: '#ef4444', gray: '#9CA3AF' };
 
-export default async function PortfolioPage({ searchParams }: { searchParams: Promise<{ status?: string; state?: string }> }) {
+function isJobClosed(job: any): boolean {
+  const s = String(job?.Status || '').trim().toLowerCase();
+  return s === 'complete' || s === 'closed';
+}
+
+export default async function PortfolioPage({ searchParams }: { searchParams: Promise<{ status?: string; state?: string; showClosed?: string }> }) {
   const params = await searchParams;
   const filterStatus = params?.status || '';
   const filterState = params?.state || '';
+  const showClosed = params?.showClosed === '1';
 
-  const [jobs, fieldReports] = await Promise.all([
+  const [allJobs, fieldReports] = await Promise.all([
     fetchLiveJobs(),
     fetchLiveFieldReports(),
   ]);
+  // Per Jackie 4/9: default hide closed jobs; toggle with ?showClosed=1
+  const jobs = showClosed ? allJobs : allJobs.filter((j: any) => !isJobClosed(j));
 
   // Build report map
   const reportMap: Record<string, any> = {};
@@ -42,7 +51,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     stateCounts[j.State] = (stateCounts[j.State] || 0) + 1;
   });
 
-  const healthCounts = { green: 0, amber: 0, red: 0 };
+  const healthCounts = { green: 0, amber: 0, red: 0, gray: 0 };
   jobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
 
   return (
@@ -50,7 +59,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       <header className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Full Portfolio</h1>
-          <p className="text-[#757A7F] text-sm">{jobs.length} jobs across {Object.keys(stateCounts).length} states — ${totalValue.toLocaleString()} total contract value</p>
+          <p className="text-[#757A7F] text-sm">{jobs.length} active jobs across {Object.keys(stateCounts).length} states — ${totalValue.toLocaleString()} total contract value</p>
         </div>
         <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-white transition-colors">← Dashboard</Link>
       </header>
@@ -76,8 +85,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
           <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Health</p>
           <div className="flex gap-3 mt-1">
-            {(['green', 'amber', 'red'] as const).map(h => (
-              <span key={h} className="text-sm font-black" style={{ color: healthColor[h] }}>
+            {(['green', 'amber', 'red', 'gray'] as const).map(h => (
+              <span key={h} className="text-sm font-black" style={{ color: healthColor[h] }} title={h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : h === 'red' ? 'At Risk' : 'Not Started'}>
                 ● {healthCounts[h]}
               </span>
             ))}
@@ -115,8 +124,13 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
       {/* Main Table */}
       <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden shadow-md">
         <div className="px-6 py-4 border-b border-[#F1F3F4] bg-black/20 flex justify-between items-center">
-          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs — {jobs.length}</h2>
-          <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Data Feed</span>
+          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs — {jobs.length}{showClosed ? '' : ` (${allJobs.length - jobs.length} closed hidden)`}</h2>
+          <div className="flex items-center gap-3">
+            <a href={showClosed ? '/portfolio' : '/portfolio?showClosed=1'} className="text-xs font-bold text-[#20BC64] hover:underline">
+              {showClosed ? 'Hide closed jobs' : 'Show closed jobs'}
+            </a>
+            <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Data Feed</span>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -153,8 +167,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-xs font-black" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : '● Risk'}
+                      <span className="text-xs font-black" style={{ color: healthColor[health as keyof typeof healthColor] }}>
+                        {health === '—' ? '—' : health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : health === 'red' ? '● Risk' : '● N/S'}
                       </span>
                     </td>
                   </tr>

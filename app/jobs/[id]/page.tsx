@@ -4,7 +4,7 @@ import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, 
 import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed, fetchVisionLinkAssets, fetchFleetAssets, fetchLiveRentals, fetchScheduleData } from '@/lib/sheets-data';
 import JobTabs from '@/components/JobTabs';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 86400; // Daily ISR
 
 async function getLiveJobData(jobNumber: string) {
   try {
@@ -23,12 +23,12 @@ async function getLiveFieldReport(jobNumber: string) {
 async function getWeatherPeriods(lat: string, lng: string): Promise<any[]> {
   if (!lat || !lng) return [];
   try {
-    const pointRes = await fetch(`https://api.weather.gov/points/${lat},${lng}`, { next: { revalidate: 3600 } });
+    const pointRes = await fetch(`https://api.weather.gov/points/${lat},${lng}`, { next: { revalidate: 86400 } });
     if (!pointRes.ok) return [];
     const pointData = await pointRes.json();
     const forecastUrl = pointData?.properties?.forecast;
     if (!forecastUrl) return [];
-    const fcRes = await fetch(forecastUrl, { next: { revalidate: 3600 } });
+    const fcRes = await fetch(forecastUrl, { next: { revalidate: 86400 } });
     if (!fcRes.ok) return [];
     const fcData = await fcRes.json();
     const periods = fcData?.properties?.periods || [];
@@ -57,7 +57,7 @@ async function getNearbyVehicles(lat: string, lng: string): Promise<any[]> {
   try {
     const res = await fetch('https://api.samsara.com/fleet/vehicles/locations', {
       headers: { Authorization: `Bearer ${SAMSARA_API_KEY}` },
-      next: { revalidate: 60 },
+      next: { revalidate: 86400 },
     });
     if (!res.ok) return [];
     const data = await res.json();
@@ -125,15 +125,8 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
     fetchScheduleData(),
   ]);
 
-  const report = liveReport || (csvReport ? {
-    GAB_Tonnage: parseFloat(csvReport.Base_Actual), Binder_Tonnage: 0,
-    Topping_Tonnage: parseFloat(csvReport.Asphalt_Actual),
-    Concrete_CY: parseFloat(csvReport.Concrete_Actual),
-    Base_Actual: parseFloat(csvReport.Base_Actual),
-    Asphalt_Actual: parseFloat(csvReport.Asphalt_Actual),
-    Concrete_Actual: parseFloat(csvReport.Concrete_Actual),
-    Crew_Count: 0, Total_Man_Hours: 0, Days_Active: 0, Latest_Summary: '',
-  } : null);
+    // Only use live field reports -- CSV fallback removed to avoid showing placeholder zeros
+  const report = liveReport || null;
 
   const asphaltCredit = prep?.Asphalt_Credit_Status || 'Unknown';
   const baseCredit = prep?.Base_Credit_Status || 'Unknown';

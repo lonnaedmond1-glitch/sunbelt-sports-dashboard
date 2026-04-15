@@ -7,7 +7,7 @@ const SAMSARA_API_KEY = process.env.SAMSARA_API_KEY || '';
 export async function getGlobalSamsara() {
   // If no Samsara key is configured, return empty so the dashboard degrades gracefully
   if (!SAMSARA_API_KEY) {
-    return { vehicles: [], crews: [], configured: false };
+    return { vehicles: [], crews: [], hos: [], configured: false };
   }
 
   try {
@@ -60,10 +60,41 @@ export async function getGlobalSamsara() {
       }));
     }
 
-    return { vehicles, crews, configured: true, timestamp: new Date().toISOString() };
+    // Fetch Hours of Service (HOS) daily logs for DOT compliance
+    // Samsara endpoint returns per-driver running totals for the current duty day.
+    // Docs: https://developers.samsara.com/reference/gethoslogsummaries
+    let hos: any[] = [];
+    try {
+      const hosRes = await fetch('https://api.samsara.com/fleet/hos/daily-logs?limit=50', {
+        headers,
+        next: { revalidate: 300 }, // 5 minutes
+      });
+      if (hosRes.ok) {
+        const hData = await hosRes.json();
+        hos = (hData.data || []).map((d: any) => {
+          const latest = Array.isArray(d.dailyLogs) && d.dailyLogs.length > 0
+            ? d.dailyLogs[d.dailyLogs.length - 1]
+            : null;
+          return {
+            driverId: d.driver?.id || '',
+            driverName: d.driver?.name || '',
+            logDate: latest?.logDate || '',
+            // Remaining time values (in ms) from Samsara, converted to hours
+            driveRemainingHrs: latest?.driveRemaining != null ? latest.driveRemaining / 3600000 : null,
+            shiftRemainingHrs: latest?.shiftRemaining != null ? latest.shiftRemaining / 3600000 : null,
+            cycleRemainingHrs: latest?.cycleRemaining != null ? latest.cycleRemaining / 3600000 : null,
+            currentStatus: latest?.currentDutyStatus || '',
+          };
+        });
+      }
+    } catch (e) {
+      console.warn('[telematics/samsara] HOS fetch failed:', e);
+    }
+
+    return { vehicles, crews, hos, configured: true, timestamp: new Date().toISOString() };
   } catch (error) {
     console.error('[telematics/samsara] Error:', error);
-    return { vehicles: [], crews: [], configured: false, error: 'Samsara fetch failed' };
+    return { vehicles: [], crews: [], hos: [], configured: false, error: 'Samsara fetch failed' };
   }
 }
 
