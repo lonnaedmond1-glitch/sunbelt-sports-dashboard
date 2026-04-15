@@ -5,7 +5,7 @@ import { ClickableKpiTile } from '@/components/EvidenceDrawer';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchGanttSchedule } from '@/lib/sheets-data';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -482,7 +482,7 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging, reworkLog] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging, reworkLog, ganttRows] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
@@ -491,6 +491,7 @@ export default async function MasterDashboard() {
     fetchQboFinancials(),
     fetchArAging(),
     fetchReworkLog(),
+    fetchGanttSchedule(),
   ]);
 
   // Build report map first — needed by both crossCheck and weather
@@ -1336,126 +1337,116 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ────────────────────── */}
+        {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ──────────────────── */}
         {(() => {
-          // Compute velocity from scorecard data
-          const scorecards = liveActiveJobs;
+          // Count jobs scheduled over the next 14 days from the 2026 Gantt Schedule,
+          // bucketed by project type. Base crews must stay ≥ 1.20x paving load to avoid
+          // starving the asphalt crew.
+          const today = new Date();
+          const todayMs = today.getTime();
+          const horizonMs = todayMs + 14 * 24 * 60 * 60 * 1000;
 
-          const activeJobs = scorecards.filter(sc => sc.actDays > 0);
-          const totalStoneTons = activeJobs.reduce((s, sc) => s + sc.actStone, 0);
-          const totalAsphaltTons = activeJobs.reduce((s, sc) => s + sc.actBinder + sc.actTopping, 0);
-          const totalDays = activeJobs.reduce((s, sc) => s + sc.actDays, 0);
+          const parseDate = (s: string): number => {
+            if (!s) return 0;
+            const t = Date.parse(s);
+            return isNaN(t) ? 0 : t;
+          };
 
-          const stoneVelocity = totalDays > 0 ? Math.round(totalStoneTons / totalDays) : 0;
-          const asphaltVelocity = totalDays > 0 ? Math.round(totalAsphaltTons / totalDays) : 0;
-          const activeReporting = activeJobs.length;
-          const hasData = activeReporting > 0 && (stoneVelocity > 0 || asphaltVelocity > 0);
-          const isBehind = hasData && stoneVelocity > 0 && asphaltVelocity > 0 && stoneVelocity < asphaltVelocity * 1.2;
-          const maxVelocity = Math.max(stoneVelocity, asphaltVelocity, 1);
+          const baseTypes = ['TURN KEY', 'TRACK UPGRADES', 'MILL / CLIP / PAVE', 'MILL & CAP', 'SOIL STABILIZATION', 'BASE DAYS'];
+          const paveTypes = ['TRACK PAVING', 'PAVE ONLY', 'PAVING', 'ROAD PAVING', 'MILL / MISC. DAYS'];
+
+          const classify = (t: string): 'base' | 'pave' | 'other' => {
+            const u = (t || '').toUpperCase().trim();
+            if (baseTypes.some(x => u.includes(x))) return 'base';
+            if (paveTypes.some(x => u.includes(x))) return 'pave';
+            return 'other';
+          };
+
+          const activeInWindow = (r: any) => {
+            const start = parseDate(r.Start_Date);
+            const end = parseDate(r.End_Date);
+            if (!start || !end) return false;
+            return start <= horizonMs && end >= todayMs;
+          };
+
+          const windowJobs = (ganttRows || []).filter(activeInWindow);
+          const baseLoad = windowJobs.filter((r: any) => classify(r.Project_Type) === 'base').length;
+          const paveLoad = windowJobs.filter((r: any) => classify(r.Project_Type) === 'pave').length;
+          const otherLoad = windowJobs.filter((r: any) => classify(r.Project_Type) === 'other').length;
+          const totalLoad = windowJobs.length;
+          const ratio = paveLoad > 0 ? baseLoad / paveLoad : null;
+          const hasData = totalLoad > 0;
+          const isBehind = ratio != null && ratio < 1.2;
+          const maxLoad = Math.max(baseLoad, paveLoad, 1);
 
           return (
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">⚡ Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Velocity = total tons from field reports / calendar days. Ratio = base / asphalt velocity. Target: 1.20x+">(i)</span></h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Counts scheduled jobs in the next 14 days grouped by Base vs Paving. Base must stay ≥ 1.20x paving to keep crews fed. Source: 2026 Gantt Schedule.">(i)</span></h2>
                   {!hasData && (
-                    <span className="text-[10px] font-black text-[#9CA3AF] bg-[#9CA3AF]/10 border border-[#9CA3AF]/20 px-2 py-0.5 rounded-full">
-                      ○ NO JOBS REPORTING ACT_DAYS
-                    </span>
+                    <span className="text-[10px] font-black text-[#9CA3AF] bg-[#9CA3AF]/10 border border-[#9CA3AF]/20 px-2 py-0.5 rounded-full">NO JOBS IN 14-DAY WINDOW</span>
                   )}
                   {isBehind && (
-                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">
-                      ⚠️ BASE CREW BELOW PAVING THRESHOLD
-                    </span>
+                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">BASE CREW BELOW PAVING THRESHOLD</span>
                   )}
                 </div>
-                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live — Scorecard API</span>
+                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Source: 2026 Gantt Schedule</span>
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-2 gap-6">
-                  {/* Stone Base Velocity */}
                   <div>
-                    <div className="flex justify-between items-end mb-3">
+                    <div className="flex justify-between items-end mb-2">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Stone Base Velocity</p>
-                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foremen: Juan · Martin · Julio</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Base / Site Work Load</p>
+                        <p className="text-[10px] text-[#757A7F]/70">Turn-key, track upgrades, mill/clip/pave, soil</p>
                       </div>
-                      <p className="text-3xl font-black text-[#F5A623]">{stoneVelocity}<span className="text-sm text-[#F5A623]/50 ml-1">t/day</span></p>
+                      <p className="text-3xl font-black text-[#F5A623]">{baseLoad}<span className="text-sm text-[#F5A623]/50 ml-1">jobs</span></p>
                     </div>
-                    <div className="relative h-8 bg-[#F1F3F4] rounded-lg overflow-hidden">
-                      <div
-                        className="absolute left-0 top-0 h-full rounded-lg transition-all bg-gradient-to-r from-amber-500/80 to-amber-400/60"
-                        style={{ width: `${Math.min(100, (stoneVelocity / maxVelocity) * 100)}%` }}
-                      />
-                      <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">
-                        {totalStoneTons.toLocaleString()} tons / {totalDays} days
-                      </span>
+                    <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-[#F5A623] to-[#e19213] rounded-full" style={{ width: `${(baseLoad / maxLoad) * 100}%` }} />
                     </div>
+                    <p className="text-[9px] text-[#757A7F]/60 mt-1">{baseLoad} active / scheduled in next 14 days</p>
                   </div>
-
-                  {/* Asphalt Velocity */}
                   <div>
-                    <div className="flex justify-between items-end mb-3">
+                    <div className="flex justify-between items-end mb-2">
                       <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">Asphalt Paving Velocity</p>
-                        <p className="text-[9px] text-[#757A7F]/70 mt-0.5">Foreman: Rosendo Rubio</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">Paving Crew Load</p>
+                        <p className="text-[10px] text-[#757A7F]/70">Track paving, pave-only, road paving</p>
                       </div>
-                      <p className="text-3xl font-black text-blue-600">{asphaltVelocity}<span className="text-sm text-blue-600/50 ml-1">t/day</span></p>
+                      <p className="text-3xl font-black text-blue-600">{paveLoad}<span className="text-sm text-blue-600/50 ml-1">jobs</span></p>
                     </div>
-                    <div className="relative h-8 bg-[#F1F3F4] rounded-lg overflow-hidden">
-                      <div
-                        className="absolute left-0 top-0 h-full rounded-lg transition-all bg-gradient-to-r from-blue-500/80 to-blue-400/60"
-                        style={{ width: `${Math.min(100, (asphaltVelocity / maxVelocity) * 100)}%` }}
-                      />
-                      <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-white">
-                        {totalAsphaltTons.toLocaleString()} tons / {totalDays} days
-                      </span>
+                    <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700 rounded-full" style={{ width: `${(paveLoad / maxLoad) * 100}%` }} />
                     </div>
+                    <p className="text-[9px] text-[#757A7F]/60 mt-1">{paveLoad} active / scheduled in next 14 days</p>
                   </div>
                 </div>
-
-                {/* Alert Banner */}
-                {isBehind && (
-                  <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
-                    <span className="text-[#F5A623] text-lg shrink-0">⚠️</span>
-                    <div>
-                      <p className="text-amber-300 font-black text-xs">BASE CREW VELOCITY BELOW PAVING THRESHOLD</p>
-                      <p className="text-amber-200/50 text-[10px] mt-0.5">
-                        Stone crews are producing {stoneVelocity} t/day vs. {asphaltVelocity} t/day asphalt demand.
-                        Base must lead asphalt by ≥20% to prevent paving crew downtime. Contact Juan / Martin / Julio immediately.
-                      </p>
-                    </div>
+                <div className="mt-4 grid grid-cols-4 gap-4 pt-4 border-t border-[#F1F3F4]">
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Ratio</p>
+                    <p className={`text-xl font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-500'}`}>{ratio != null ? ratio.toFixed(2) + 'x' : '—'}</p>
                   </div>
-                )}
-
-                {/* Ratio indicator */}
-                <div className="mt-4 pt-3 border-t border-[#F1F3F4] flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="text-center">
-                      <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Ratio</p>
-                      <p className={`text-lg font-black ${isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {asphaltVelocity > 0 ? (stoneVelocity / asphaltVelocity).toFixed(2) : '—'}x
-                      </p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Required</p>
-                      <p className="text-lg font-black text-[#757A7F]">≥1.20x</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[9px] text-[#757A7F]/70 font-bold uppercase">Status</p>
-                      <p className={`text-xs font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>
-                        {!hasData ? '○ NO DATA' : isBehind ? '🔴 BEHIND' : '🟢 ON TRACK'}
-                      </p>
-                    </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Required</p>
+                    <p className="text-xl font-black text-[#757A7F]">≥1.20x</p>
                   </div>
-                  <span className="text-[9px] text-[#757A7F]/50 font-bold">{activeJobs.length} Active Jobs Reporting</span>
+                  <div>
+                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Status</p>
+                    <p className={`text-xs font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>{!hasData ? '○ NO DATA' : isBehind ? 'BEHIND' : 'ON TRACK'}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Window</p>
+                    <p className="text-xs font-bold text-[#3C4043]">{totalLoad} jobs in next 14 days</p>
+                    <p className="text-[9px] text-[#757A7F]">{otherLoad} other / tennis / misc</p>
+                  </div>
                 </div>
               </div>
             </div>
           );
         })()}
 
-        {/* ── ROW 4: JOB LIST + PORTFOLIO TABLE ─────────────────────────── */}
+                {/* ── ROW 4: JOB LIST + PORTFOLIO TABLE ─────────────────────────── */}
         <div className="grid grid-cols-12 gap-6">
 
           {/* LIVE MISSION PROGRESS */}
