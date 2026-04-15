@@ -81,7 +81,7 @@ export default async function SchedulePage() {
 
   // Per-job weather icon lookup — always shows weather when data available
   // Weather API returns loc.jobs as array of Job_Number strings (e.g. ["26-040", "25-300"])
-  const getJobWeatherIcon = (jobRef: string, dateStr?: string) => {
+  const getJobWeatherForecast = (jobRef: string, dateStr?: string) => {
     if (!jobRef) return null;
     const ref = jobRef.toLowerCase();
     for (const loc of (weather.locations || [])) {
@@ -103,12 +103,12 @@ export default async function SchedulePage() {
         const f = dateStr ? forecasts.find((fx: any) => fx.date === dateStr) : forecasts[0];
         if (f) {
           const prob = f.precipProb || 0;
-          let icon = '☀️';
-          if (f.severe) icon = '⛈️';
-          else if (prob >= 60) icon = '🌧️';
-          else if (prob >= 30) icon = '🌦️';
-          else if (prob >= 10) icon = '☁️';
-          return { icon: f.icon || icon, prob, severe: f.severe, temp: f.high || 0 };
+          return {
+            prob,
+            severe: !!f.severe,
+            high: Math.round(f.high || 0),
+            low: Math.round(f.low || 0),
+          };
         }
       }
     }
@@ -277,7 +277,14 @@ export default async function SchedulePage() {
                               <Link href={`/jobs/${encodeURIComponent(linkJobId.trim())}`} className="block rounded-lg px-2.5 py-2 text-[11px] border hover:opacity-80 transition-opacity cursor-pointer" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
                                 <div className="font-bold leading-tight flex items-center gap-1">
                                   {assignment.decoded?.jobRef || assignment.job}
-                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-[#E04343]' : ''}>{wx.icon}</span> : null; })()}
+                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherForecast(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? (
+                                    <span
+                                      className={`ml-1 text-[9px] font-mono font-bold whitespace-nowrap ${wx.severe || wx.prob >= 40 ? 'text-[#E04343]' : wx.prob >= 20 ? 'text-[#F5A623]' : 'text-[#20BC64]/80'}`}
+                                      title={`High ${wx.high}° / Low ${wx.low}° · ${wx.prob}% rain`}
+                                    >
+                                      {wx.high}°/{wx.low}° · {wx.prob}%
+                                    </span>
+                                  ) : null; })()}
                                 </div>
                                 {assignment.decoded?.activity && (
                                   <div className="text-sm opacity-70 mt-0.5 flex items-center gap-1">
@@ -299,7 +306,14 @@ export default async function SchedulePage() {
                               <div className="rounded-lg px-2.5 py-2 text-[11px] border" style={{ borderColor: `${color}30`, backgroundColor: `${color}08`, color: color }}>
                                 <div className="font-bold leading-tight flex items-center gap-1">
                                   {assignment.decoded?.jobRef || assignment.job}
-                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherIcon(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? <span title={`${wx.prob}% rain`} className={wx.severe ? 'text-[#E04343]' : ''}>{wx.icon}</span> : null; })()}
+                                  {(() => { const dayData = week.days.find((d: any) => d.dayOfWeek === day); const wx = getJobWeatherForecast(assignment.decoded?.jobRef || assignment.job, dayData?.date); return wx ? (
+                                    <span
+                                      className={`ml-1 text-[9px] font-mono font-bold whitespace-nowrap ${wx.severe || wx.prob >= 40 ? 'text-[#E04343]' : wx.prob >= 20 ? 'text-[#F5A623]' : 'text-[#20BC64]/80'}`}
+                                      title={`High ${wx.high}° / Low ${wx.low}° · ${wx.prob}% rain`}
+                                    >
+                                      {wx.high}°/{wx.low}° · {wx.prob}%
+                                    </span>
+                                  ) : null; })()}
                                 </div>
                                 {assignment.decoded?.activity && (
                                   <div className="text-sm opacity-70 mt-0.5 flex items-center gap-1">
