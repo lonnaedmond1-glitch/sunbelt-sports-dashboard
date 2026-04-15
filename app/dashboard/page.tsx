@@ -843,7 +843,7 @@ export default async function MasterDashboard() {
             ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('lowboy') || (v.name || '').toLowerCase().includes('hudson') || (v.name || '').toLowerCase().includes('david'))
             : null;
 
-          if (!lowboyVehicle && !samsara.configured) return null;
+          // Always render the card — show an 'awaiting Samsara' placeholder if not configured.
 
           return (
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
@@ -941,7 +941,11 @@ export default async function MasterDashboard() {
                 </div>
               ) : (
                 <div className="p-5 text-center">
-                  <p className="text-[#757A7F] text-sm">Awaiting Samsara GPS signal for David Hudson&apos;s lowboy unit.</p>
+                  <p className="text-[#757A7F] text-sm">
+                    {samsara.configured
+                      ? "Awaiting Samsara GPS signal for David Hudson's lowboy unit."
+                      : "Awaiting Samsara integration — set SAMSARA_API_KEY in your Vercel env vars to enable live GPS + DOT Hours of Service for David Hudson's lowboy."}
+                  </p>
                 </div>
               )}
             </div>
