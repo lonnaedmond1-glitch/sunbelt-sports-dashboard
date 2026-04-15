@@ -37,6 +37,8 @@ export default async function FleetPage() {
   const vehiclesMoving = vehicles.filter(v => (v.speed || 0) > 2);
   const vehiclesParked = vehicles.filter(v => (v.speed || 0) <= 2);
   const driversAtRisk = driverTable.filter(d => d.drive != null && d.drive <= 2).length;
+  // HOS KPI should not read "0 risk" when no driver has any HOS data at all — that's NO DATA, not healthy.
+  const hasAnyHosData = driverTable.some(d => d.drive != null || d.shift != null || d.cycle != null);
 
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
@@ -69,8 +71,17 @@ export default async function FleetPage() {
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
           <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">HOS Risk</p>
-          <p className={`text-3xl font-black ${driversAtRisk > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{driversAtRisk}</p>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">drivers with ≤2h drive left</p>
+          {hasAnyHosData ? (
+            <>
+              <p className={`text-3xl font-black ${driversAtRisk > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{driversAtRisk}</p>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">drivers with ≤2h drive left</p>
+            </>
+          ) : (
+            <>
+              <p className="text-3xl font-black text-[#9CA3AF]">—</p>
+              <p className="text-[10px] text-[#9CA3AF] mt-0.5 font-bold uppercase tracking-widest">No HOS data</p>
+            </>
+          )}
         </div>
       </div>
 
@@ -146,8 +157,8 @@ export default async function FleetPage() {
                     <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{v.name}</td>
                     <td className="px-3 py-2 text-xs text-[#757A7F]">{v.driver}</td>
                     <td className="px-3 py-2 text-xs text-[#757A7F] truncate max-w-[300px]">{v.address || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{v.speed || 0} mph</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F]">{v.heading || 0}°</td>
+                    <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{Math.round(v.speed || 0)} mph</td>
+                    <td className="px-3 py-2 text-xs text-[#757A7F]">{Math.round(v.heading || 0)}°</td>
                     <td className="px-3 py-2 text-xs font-black" style={{ color: moving ? '#20BC64' : '#F5A623' }}>● {moving ? 'EN ROUTE' : 'PARKED'}</td>
                   </tr>
                 );

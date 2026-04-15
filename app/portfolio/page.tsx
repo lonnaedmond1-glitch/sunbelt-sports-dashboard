@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
+import { formatDollars } from '@/lib/format';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -156,8 +157,8 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                     <td className="px-4 py-3 text-[#757A7F] text-xs">{job.Project_Manager}</td>
                     <td className="px-4 py-3"><span className="text-xs bg-[#F1F3F4] rounded px-2 py-0.5 text-[#757A7F]">{job.State}</span></td>
                     <td className="px-4 py-3"><span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: statusColor, backgroundColor: `${statusColor}15` }}>{job.Status}</span></td>
-                    <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">${(job.Contract_Amount || 0).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">${(job.Billed_To_Date || 0).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">{formatDollars(job.Contract_Amount)}</td>
+                    <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">{formatDollars(job.Billed_To_Date)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-16 bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">

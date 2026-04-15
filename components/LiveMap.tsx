@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { formatDollars } from '@/lib/format';
 
 interface JobPin {
   Job_Number: string;
@@ -179,7 +180,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
             <p style="font-size:10px;color:#20BC64;font-weight:900;text-transform:uppercase;margin:0 0 3px 0;letter-spacing:1px;">${job.Job_Number}</p>
             <p style="font-size:13px;font-weight:800;margin:0 0 4px 0;line-height:1.2;">${job.Job_Name}</p>
             <p style="font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 2px 0;">${job.General_Contractor || ''}</p>
-            <p style="font-size:11px;color:rgba(255,255,255,0.45);margin:0;">${pct}% complete · $${(job.Contract_Amount || 0).toLocaleString()}</p>
+            <p style="font-size:11px;color:rgba(255,255,255,0.45);margin:0;">${pct}% complete · ${formatDollars(job.Contract_Amount)}</p>
             ${proximityHtml}
             <a href="/jobs/${job.Job_Number}" style="display:inline-block;margin-top:10px;font-size:11px;color:#20BC64;font-weight:800;text-decoration:none;">View Snapshot →</a>
           </div>`, { className: 'dark-popup' });

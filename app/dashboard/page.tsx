@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchGanttSchedule, fetchCrewDaysSold } from '@/lib/sheets-data';
+import { formatDollars } from '@/lib/format';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -1001,10 +1002,10 @@ export default async function MasterDashboard() {
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">ð Lowboy Command — David Hudson</h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">🚛 Lowboy Command — David Hudson</h2>
                   {lowboyVehicle && (
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
-                      {lowboyVehicle.speed > 2 ? `ð¢ EN ROUTE · ${lowboyVehicle.speed} mph` : 'ð¡ PARKED'}
+                      {lowboyVehicle.speed > 2 ? `🟢 EN ROUTE · ${Math.round(lowboyVehicle.speed)} mph` : '🟡 PARKED'}
                     </span>
                   )}
                 </div>
@@ -1019,11 +1020,11 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Speed</p>
-                      <p className="text-2xl font-black text-white">{lowboyVehicle.speed}<span className="text-sm text-[#757A7F] ml-1">mph</span></p>
+                      <p className="text-2xl font-black text-white">{Math.round(lowboyVehicle.speed)}<span className="text-sm text-[#757A7F] ml-1">mph</span></p>
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Heading</p>
-                      <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}Â°</p>
+                      <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}°</p>
                     </div>
                     <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
@@ -1086,8 +1087,8 @@ export default async function MasterDashboard() {
 
                   {lowboyVehicle.speed > 2 && (
                     <div className="mt-3 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
-                      <span className="text-emerald-400">ð</span>
-                      <p className="text-xs text-emerald-300/70 font-bold">Lowboy is currently in transit at {lowboyVehicle.speed} mph. ETA to next staging site updating live via Samsara.</p>
+                      <span className="text-emerald-400">🚛</span>
+                      <p className="text-xs text-emerald-300/70 font-bold">Lowboy is currently in transit at {Math.round(lowboyVehicle.speed)} mph. ETA to next staging site updating live via Samsara.</p>
                     </div>
                   )}
                 </div>
@@ -1348,7 +1349,7 @@ export default async function MasterDashboard() {
           const baseCapacity = t.stoneBaseDays + t.millMiscDays + t.curbDays;
           const paveCapacity = t.pavingDays;
           const ratio = paveCapacity > 0 ? baseCapacity / paveCapacity : null;
-          const hasData = crewDays.jobs.length > 0;
+          const hasData = crewDays.jobs.length > 0 && (baseCapacity > 0 || paveCapacity > 0);
           const isBehind = ratio != null && ratio < 1.2;
           const maxCap = Math.max(baseCapacity, paveCapacity, 1);
 
@@ -1519,7 +1520,7 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="flex justify-between mt-2">
                       <span className="text-[10px] text-[#757A7F]/70">{job.Job_Number}</span>
-                      <span className="text-[10px] text-[#757A7F]/70">${(job.Contract_Amount || 0).toLocaleString()}</span>
+                      <span className="text-[10px] text-[#757A7F]/70">{formatDollars(job.Contract_Amount)}</span>
                     </div>
                   </Link>
                 );
@@ -1534,7 +1535,7 @@ export default async function MasterDashboard() {
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
-                  <p className="text-xs text-[#757A7F] mt-1">${jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0).toLocaleString()} total contract value</p>
+                  <p className="text-xs text-[#757A7F] mt-1">{formatDollars(jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0))} total contract value</p>
                 <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Pct_Complete||j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
                 <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
               </div>

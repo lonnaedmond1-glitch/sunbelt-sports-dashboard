@@ -11,37 +11,67 @@ export default async function EquipmentPage() {
   const vlAssets = await fetchVisionLinkAssets();
 
   const isLive = liveRentals.length > 0;
-  const rentals = isLive ? liveRentals.map(r => ({
-    Job_Number: r.jobName || 'Unknown',
-    Equipment_Type: r.equipmentType,
-    Vendor: r.vendor,
-    Days_On_Site: r.daysOnRent.toString(),
-    Target_Off_Rent: r.pickupDate || '',
-    Daily_Rate: r.dayRate.toString(),
-    Contract_Number: r.contractNumber,
-    isLive: true
-  })) : csvRentals.map(r => ({ ...r, isLive: false }));
 
-  // Create lookup for Job Names
-  const jobMap = new Map();
-  jobs.forEach(j => {
+  // Build lookups: Job_Number -> Job_Name AND lowercase Job_Name -> Job_Number
+  const jobNumToName = new Map<string, string>();
+  const jobNameToNum = new Map<string, string>();
+  jobs.forEach((j: any) => {
     if (j && j.Job_Number) {
-      jobMap.set(j.Job_Number.trim(), j.Job_Name);
+      const num = j.Job_Number.trim();
+      jobNumToName.set(num, j.Job_Name);
+      if (j.Job_Name) jobNameToNum.set(j.Job_Name.trim().toLowerCase(), num);
     }
   });
 
-  // Calculate top-level stats
-  const totalActive = rentals.length;
+  // Live rental rows arrive with jobName only (no job number). Resolve the number
+  // by name so the "Job Assigned" cell links and no longer falls back to "Unknown Job".
+  const rentals = isLive ? liveRentals.map((r: any) => {
+    const rawName = (r.jobName || '').trim();
+    const matchedNum = rawName ? jobNameToNum.get(rawName.toLowerCase()) || '' : '';
+    return {
+      Job_Number: matchedNum,           // may be '' if we can't match — handled in render
+      Job_Name_Raw: rawName,            // preserve the raw name the vendor emailed us
+      Equipment_Type: r.equipmentType,
+      Vendor: r.vendor,
+      Days_On_Site: r.daysOnRent.toString(),
+      Target_Off_Rent: r.pickupDate || '',
+      Daily_Rate: r.dayRate.toString(),
+      Contract_Number: r.contractNumber,
+      isLive: true,
+    };
+  }) : csvRentals.map(r => ({ ...r, Job_Name_Raw: '', isLive: false }));
+
+  // Dedup — same job + equipment + vendor + contract should only appear once.
+  const seen = new Set<string>();
+  const dedupedRentals = rentals.filter((r: any) => {
+    const key = [
+      (r.Job_Number || r.Job_Name_Raw || '').toString().trim().toLowerCase(),
+      (r.Equipment_Type || '').trim().toLowerCase(),
+      (r.Vendor || '').trim().toLowerCase(),
+      (r.Contract_Number || '').trim().toLowerCase(),
+    ].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const totalActive = dedupedRentals.length;
   let totalDailyBurn = 0;
   let overdueCount = 0;
 
-  const enrichedRentals = rentals.map(r => {
+  const enrichedRentals = dedupedRentals.map((r: any) => {
     const days = parseInt(r.Days_On_Site) || 0;
     const rate = parseFloat(r.Daily_Rate) || 0;
-    const isOverdue = days > 30; // flagging anything over 30 days as overdue
-    
+    const isOverdue = days > 30;
+
     totalDailyBurn += rate;
     if (isOverdue) overdueCount++;
+
+    // Prefer live job name (from vendor email) when we have it; otherwise look up by number.
+    const displayName =
+      (r.Job_Name_Raw && r.Job_Name_Raw.length > 0)
+        ? r.Job_Name_Raw
+        : jobNumToName.get((r.Job_Number || '').toString().trim()) || '';
 
     return {
       ...r,
@@ -49,12 +79,12 @@ export default async function EquipmentPage() {
       rate,
       totalBurn: days * rate,
       isOverdue,
-      jobName: jobMap.get(r.Job_Number.trim()) || 'Unknown Job',
+      jobName: displayName || 'Unassigned',
+      hasJobLink: !!(r.Job_Number && r.Job_Number.toString().trim()),
     };
   });
 
-  // Sort by highest current burn cost
-  const sortedRentals = enrichedRentals.sort((a, b) => b.totalBurn - a.totalBurn);
+  const sortedRentals = enrichedRentals.sort((a: any, b: any) => b.totalBurn - a.totalBurn);
 
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
@@ -107,7 +137,7 @@ export default async function EquipmentPage() {
             Active Rentals {isLive && <span className="ml-1 text-[8px] px-1 bg-[#20BC64]/20 rounded tracking-normal">LIVE</span>}
           </p>
           <p className="text-4xl font-black">{totalActive}</p>
-          <div className="absolute right-[-20px] bottom-[-20px] text-[#20BC64]/10 text-8xl font-black">ð</div>
+          <div className="absolute right-[-20px] bottom-[-20px] text-[#20BC64]/10 text-8xl font-black">🚜</div>
         </div>
 
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4] shadow-lg relative overflow-hidden">
@@ -148,14 +178,16 @@ export default async function EquipmentPage() {
                     <p className="text-xs text-[#757A7F] mt-1">{r.Vendor}</p>
                   </td>
                   <td className="px-6 py-4">
-                    {r.isLive ? (
-                      <p className="font-bold text-white truncate max-w-[150px]">{r.Job_Number}</p>
-                    ) : (
-                      <Link href={`/jobs/${encodeURIComponent(r.Job_Number.trim())}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
+                    {r.hasJobLink ? (
+                      <Link href={`/jobs/${encodeURIComponent(r.Job_Number.toString().trim())}`} className="font-bold text-[#60a5fa] hover:underline cursor-pointer">
                         {r.Job_Number}
                       </Link>
+                    ) : (
+                      <p className="font-bold text-[#757A7F] truncate max-w-[150px]">{r.jobName && r.jobName !== 'Unassigned' ? r.jobName : '— Unassigned —'}</p>
                     )}
-                    <p className="text-xs text-[#3C4043]/70 mt-1 truncate max-w-[150px]">{r.jobName}</p>
+                    {r.hasJobLink && (
+                      <p className="text-xs text-[#3C4043]/70 mt-1 truncate max-w-[150px]">{r.jobName}</p>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className={`inline-block px-3 py-1 rounded border font-black text-xs ${r.isOverdue ? 'bg-[#E04343]/20 text-[#E04343] border-red-500/30' : 'bg-black/20 text-[#3C4043]/70 border-[#3C4043]/15'}`}>
@@ -176,8 +208,9 @@ export default async function EquipmentPage() {
                   <td className="px-6 py-4 text-center">
                     {r.isOverdue ? (
                       <span className="text-[10px] font-black tracking-widest uppercase text-[#E04343] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#E04343]"></span> Overdue</span>
-                    ) : r.days > 14 && r.rate === 0 ? (
-                      <span className="text-[10px] font-black tracking-widest uppercase text-[#F5A623] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A623]"></span> INACTIVE</span>
+                    ) : r.rate === 0 ? (
+                      // $0/day + Active is misleading — either cost data is missing or the unit is not actually burning money.
+                      <span className="text-[10px] font-black tracking-widest uppercase text-[#F5A623] flex items-center justify-center gap-1" title="Daily rate is $0 — verify cost or mark off-rent"><span className="w-1.5 h-1.5 rounded-full bg-[#F5A623]"></span> No Rate</span>
                     ) : (
                       <span className="text-[10px] font-black tracking-widest uppercase text-[#20BC64] flex items-center justify-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-[#20BC64]"></span> Active</span>
                     )}

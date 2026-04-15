@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDollars } from '@/lib/format';
 
 interface JobTabsProps {
   jobNumber: string;
@@ -174,9 +175,9 @@ export default function JobTabs({
           <div className="w-px h-8 bg-white/10 shrink-0"/>
 
           {[
-            { label: 'Contract', value: `$${(originalContract).toLocaleString()}`, color: '#20BC64' },
-            { label: 'Billed', value: `$${(job.Billed_To_Date || 0).toLocaleString()}`, color: '#60a5fa' },
-            ...(approvedCOs > 0 ? [{ label: 'CO Added', value: `+$${approvedCOs.toLocaleString()}`, color: '#a78bfa' }] : []),
+            { label: 'Contract', value: formatDollars(originalContract), color: '#20BC64' },
+            { label: 'Billed', value: formatDollars(job.Billed_To_Date), color: '#60a5fa' },
+            ...(approvedCOs > 0 ? [{ label: 'CO Added', value: '+' + formatDollars(approvedCOs), color: '#a78bfa' }] : []),
           ].map(kpi => (
             <div key={kpi.label} className="shrink-0">
               <p className="text-[9px] font-bold uppercase tracking-widest text-white/30">{kpi.label}</p>
@@ -416,11 +417,11 @@ export default function JobTabs({
                         <div className="flex gap-3 mb-4">
                           <div className="flex-1 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
                             <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/60">Daily Burn Rate</p>
-                            <p className="text-xl font-black text-amber-400">${totalDailyBurn.toLocaleString()}<span className="text-sm">/day</span></p>
+                            <p className="text-xl font-black text-amber-400">{formatDollars(totalDailyBurn)}<span className="text-sm">/day</span></p>
                           </div>
                           <div className="flex-1 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
                             <p className="text-[9px] font-black uppercase tracking-widest text-red-400/60">Total Burn</p>
-                            <p className="text-xl font-black text-red-400">${totalBurnToDate.toLocaleString()}</p>
+                            <p className="text-xl font-black text-red-400">{formatDollars(totalBurnToDate)}</p>
                           </div>
                         </div>
                       )}
@@ -438,8 +439,8 @@ export default function JobTabs({
                                 </div>
                               </div>
                               <div className="text-right ml-3 shrink-0">
-                                {r.dayRate > 0 && <p className="text-lg font-black text-amber-400">${r.dayRate.toLocaleString()}<span className="text-xs text-amber-400/50">/day</span></p>}
-                                {r.weekRate > 0 && <p className="text-xs text-white/30">${r.weekRate.toLocaleString()}/wk</p>}
+                                {r.dayRate > 0 && <p className="text-lg font-black text-amber-400">{formatDollars(r.dayRate)}<span className="text-xs text-amber-400/50">/day</span></p>}
+                                {r.weekRate > 0 && <p className="text-xs text-white/30">{formatDollars(r.weekRate)}/wk</p>}
                                 <p className={`text-xs font-bold ${isOverdue ? 'text-red-400' : 'text-white/30'}`}>
                                   {r.daysOnRent > 0 ? `${r.daysOnRent}d on rent` : ''}
                                   {r.dateRented ? ` · since ${r.dateRented}` : ''}
@@ -639,15 +640,15 @@ export default function JobTabs({
               <div className="grid grid-cols-3 gap-4">
                 <div className="bg-black/20 rounded-xl p-4 border border-white/5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Original Contract</p>
-                  <p className="text-xl font-black text-[#20BC64]">${originalContract.toLocaleString()}</p>
+                  <p className="text-xl font-black text-[#20BC64]">{formatDollars(originalContract)}</p>
                 </div>
                 <div className="bg-black/20 rounded-xl p-4 border border-white/5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Approved COs</p>
-                  <p className="text-xl font-black text-[#a78bfa]">+${approvedCOs.toLocaleString()}</p>
+                  <p className="text-xl font-black text-[#a78bfa]">+{formatDollars(approvedCOs)}</p>
                 </div>
                 <div className="rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5">
                   <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64]/60">Revised Contract</p>
-                  <p className="text-xl font-black text-[#20BC64]">${revisedContract.toLocaleString()}</p>
+                  <p className="text-xl font-black text-[#20BC64]">{formatDollars(revisedContract)}</p>
                 </div>
               </div>
               {pendingCOs.length > 0 && (

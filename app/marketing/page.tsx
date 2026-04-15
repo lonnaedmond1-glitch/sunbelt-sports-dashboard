@@ -28,25 +28,31 @@ export default async function MarketingPage() {
         <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">← Dashboard</Link>
       </header>
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">New Leads (MTD)</p>
-          <p className="text-3xl font-black text-[#20BC64]">{mtd.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Total Leads</p>
-          <p className="text-3xl font-black">{leads.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Qualified</p>
-          <p className="text-3xl font-black text-[#60a5fa]">{qualified.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Conversion Rate</p>
-          <p className="text-3xl font-black text-[#F5A623]">{leads.length > 0 ? ((qualified.length / leads.length) * 100).toFixed(0) : 0}%</p>
-        </div>
-      </div>
+      {/* KPI row — render em-dashes until the Marketing_Leads tab has rows, so 0/0/0/0 doesn't read as a healthy quarter. */}
+      {(() => {
+        const noData = leads.length === 0;
+        const mutedClass = 'text-3xl font-black text-[#9CA3AF]';
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">New Leads (MTD)</p>
+              <p className={noData ? mutedClass : 'text-3xl font-black text-[#20BC64]'}>{noData ? '—' : mtd.length}</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Total Leads</p>
+              <p className={noData ? mutedClass : 'text-3xl font-black'}>{noData ? '—' : leads.length}</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Qualified</p>
+              <p className={noData ? mutedClass : 'text-3xl font-black text-[#60a5fa]'}>{noData ? '—' : qualified.length}</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Conversion Rate</p>
+              <p className={noData ? mutedClass : 'text-3xl font-black text-[#F5A623]'}>{noData ? '—' : ((qualified.length / leads.length) * 100).toFixed(0) + '%'}</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {leads.length === 0 ? (
         <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-5 py-4">

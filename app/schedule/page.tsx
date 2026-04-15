@@ -264,7 +264,16 @@ export default async function SchedulePage() {
                     </td>
                     {dayNames.map(day => {
                       const dayData = week.days.find((d: any) => d.dayOfWeek === day);
-                      const assignment = dayData?.assignments?.find((a: any) => a.crew === crewName);
+                      let assignment = dayData?.assignments?.find((a: any) => a.crew === crewName);
+                      // Defensive: a PM/crew first-name leaking into a crew column (e.g. "David" appearing in Cesar's row
+                      // because an adjacent PM column bled over in the sheet) must not render as a job. If the decoded
+                      // jobRef is a lone first-name-like token with no activity/state/supplier, treat as noise.
+                      if (assignment?.decoded && !assignment.decoded.isOff) {
+                        const jr = (assignment.decoded.jobRef || '').trim();
+                        const isLoneName = /^[A-Z][a-z]+$/.test(jr) && jr.length <= 10;
+                        const hasDetail = !!(assignment.decoded.activity || assignment.decoded.state || assignment.decoded.supplier);
+                        if (isLoneName && !hasDetail) assignment = undefined;
+                      }
                       const decoded = assignment?.decoded;
                       return (
                         <td key={day} className={`px-2 py-1.5 border-r border-[#F1F3F4] align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
@@ -340,12 +349,7 @@ export default async function SchedulePage() {
                 );
               })}
 
-              {/* Support separator */}
-              <tr className="border-b-2 border-[#3C4043]/15">
-                <td colSpan={8} className="px-4 py-1.5 bg-[#F1F3F4]/50">
-                  <span className="text-sm font-bold uppercase tracking-widest text-[#757A7F]/60">Support & Logistics</span>
-                </td>
-              </tr>
+              {/* Support & Logistics separator removed — schedule was trimmed to primary crews only (commit ee1f5bd) */}
 
             </tbody>
           </table>
@@ -382,7 +386,7 @@ export default async function SchedulePage() {
         {/* CUSTOMERS SCREAMING BANNER */}
         {level10.screaming?.length > 0 && (
           <div className="bg-[#E04343]/10 border border-red-500/30 rounded-md p-4 flex items-start gap-4 shadow-sm">
-            <div className="text-3xl">ð±</div>
+            <div className="text-3xl">😱</div>
             <div>
               <h2 className="text-[#E04343] font-black uppercase tracking-widest text-xs mb-2">What Customers Are Screaming</h2>
               <ul className="list-disc pl-4 space-y-1">
@@ -516,7 +520,7 @@ export default async function SchedulePage() {
           <div className="lg:col-span-1 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col h-full">
             <div className="px-5 py-4 border-b border-[#F1F3F4] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-sm">ð</span>
+                <span className="text-sm">🔗</span>
                 <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Tie Up Loose Ends</h2>
               </div>
             </div>
@@ -541,7 +545,7 @@ export default async function SchedulePage() {
           <div className="lg:col-span-3 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <span className="text-sm">ð</span>
+                <span className="text-sm">📍</span>
                 <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Equipment Locations</h2>
               </div>
               <div className="flex items-center gap-3 text-sm">
