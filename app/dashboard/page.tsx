@@ -5,7 +5,7 @@ import { ClickableKpiTile } from '@/components/EvidenceDrawer';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchGanttSchedule } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchGanttSchedule, fetchCrewDaysSold } from '@/lib/sheets-data';
 
 export const revalidate = 86400; // Daily ISR
 
@@ -482,7 +482,7 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging, reworkLog, ganttRows] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging, reworkLog, ganttRows, crewDays] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
@@ -492,6 +492,7 @@ export default async function MasterDashboard() {
     fetchArAging(),
     fetchReworkLog(),
     fetchGanttSchedule(),
+    fetchCrewDaysSold(),
   ]);
 
   // Build report map first — needed by both crossCheck and weather
@@ -1337,108 +1338,144 @@ export default async function MasterDashboard() {
           </div>
         </div>
 
-        {/* ── ROW 3.5: THROUGHPUT BOTTLENECK TRACKER ──────────────────── */}
+        {/* ROW 3.5: THROUGHPUT BOTTLENECK TRACKER */}
         {(() => {
-          // Count jobs scheduled over the next 14 days from the 2026 Gantt Schedule,
-          // bucketed by project type. Base crews must stay ≥ 1.20x paving load to avoid
-          // starving the asphalt crew.
-          const today = new Date();
-          const todayMs = today.getTime();
-          const horizonMs = todayMs + 14 * 24 * 60 * 60 * 1000;
-
-          const parseDate = (s: string): number => {
-            if (!s) return 0;
-            const t = Date.parse(s);
-            return isNaN(t) ? 0 : t;
-          };
-
-          const baseTypes = ['TURN KEY', 'TRACK UPGRADES', 'MILL / CLIP / PAVE', 'MILL & CAP', 'SOIL STABILIZATION', 'BASE DAYS'];
-          const paveTypes = ['TRACK PAVING', 'PAVE ONLY', 'PAVING', 'ROAD PAVING', 'MILL / MISC. DAYS'];
-
-          const classify = (t: string): 'base' | 'pave' | 'other' => {
-            const u = (t || '').toUpperCase().trim();
-            if (baseTypes.some(x => u.includes(x))) return 'base';
-            if (paveTypes.some(x => u.includes(x))) return 'pave';
-            return 'other';
-          };
-
-          const activeInWindow = (r: any) => {
-            const start = parseDate(r.Start_Date);
-            const end = parseDate(r.End_Date);
-            if (!start || !end) return false;
-            return start <= horizonMs && end >= todayMs;
-          };
-
-          const windowJobs = (ganttRows || []).filter(activeInWindow);
-          const baseLoad = windowJobs.filter((r: any) => classify(r.Project_Type) === 'base').length;
-          const paveLoad = windowJobs.filter((r: any) => classify(r.Project_Type) === 'pave').length;
-          const otherLoad = windowJobs.filter((r: any) => classify(r.Project_Type) === 'other').length;
-          const totalLoad = windowJobs.length;
-          const ratio = paveLoad > 0 ? baseLoad / paveLoad : null;
-          const hasData = totalLoad > 0;
+          // Uses booked crew days from the "25-26 Crew Days Sold" tab of the Gantt workbook.
+          // Base capacity = Stone Base Days + Mill/Misc Days + Curb Days.
+          // Paving capacity = Asphalt Paving Days.
+          // Target base-to-paving ratio: >= 1.2x so base crews stay ahead of paving.
+          const t = crewDays.totals;
+          const baseCapacity = t.stoneBaseDays + t.millMiscDays + t.curbDays;
+          const paveCapacity = t.pavingDays;
+          const ratio = paveCapacity > 0 ? baseCapacity / paveCapacity : null;
+          const hasData = crewDays.jobs.length > 0;
           const isBehind = ratio != null && ratio < 1.2;
-          const maxLoad = Math.max(baseLoad, paveLoad, 1);
+          const maxCap = Math.max(baseCapacity, paveCapacity, 1);
+
+          // Evidence rows for the drawer
+          const topBaseJobs = [...crewDays.jobs]
+            .sort((a, b) => (b.Stone_Base_Days + b.Mill_Misc_Days + b.Curb_Days) - (a.Stone_Base_Days + a.Mill_Misc_Days + a.Curb_Days))
+            .slice(0, 10)
+            .map(j => ({
+              label: `${j.Job_Number} · ${j.Job_Name}`,
+              value: `${j.Stone_Base_Days + j.Mill_Misc_Days + j.Curb_Days} days`,
+              detail: `Stone ${j.Stone_Base_Days} · Mill/Misc ${j.Mill_Misc_Days} · Curb ${j.Curb_Days}`,
+              href: `/jobs/${j.Job_Number}`,
+            }));
+          const topPaveJobs = [...crewDays.jobs]
+            .sort((a, b) => b.Asphalt_Paving_Days - a.Asphalt_Paving_Days)
+            .slice(0, 10)
+            .map(j => ({
+              label: `${j.Job_Number} · ${j.Job_Name}`,
+              value: `${j.Asphalt_Paving_Days} days`,
+              detail: `${j.Project_Type}`,
+              href: `/jobs/${j.Job_Number}`,
+            }));
+
+          const baseEvidence = {
+            title: 'Base / Site Work Capacity Sold',
+            headlineValue: `${baseCapacity} days`,
+            headlineCaption: `Booked across ${crewDays.jobs.length} active jobs. Includes stone base (${t.stoneBaseDays}d), mill/misc (${t.millMiscDays}d), and curb install (${t.curbDays}d).`,
+            source: '25-26 Crew Days Sold',
+            explanation: 'Total days of base/site work sold across active jobs. This represents capacity you already have revenue for.',
+            formula: 'Base capacity = Stone Base + Mill/Misc + Curb Install days (summed across active jobs)',
+            rows: topBaseJobs,
+          };
+
+          const paveEvidence = {
+            title: 'Paving Capacity Sold',
+            headlineValue: `${paveCapacity} days`,
+            headlineCaption: `Asphalt paving booked across ${crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length} jobs.`,
+            source: '25-26 Crew Days Sold',
+            explanation: 'Total days of asphalt paving work sold across active jobs. Each day requires base prep to be complete first.',
+            formula: 'Paving capacity = Asphalt Paving Days (summed across active jobs)',
+            rows: topPaveJobs,
+          };
+
+          const ratioEvidence = {
+            title: 'Base-to-Paving Ratio',
+            headlineValue: ratio != null ? `${ratio.toFixed(2)}x` : '—',
+            headlineCaption: `Target ≥ 1.20x. Below that, base crews can\'t keep up and paving crew sits idle.`,
+            source: 'Computed from 25-26 Crew Days Sold',
+            explanation: 'Ratio of base days to paving days. Base work must be done before asphalt can be laid; if base capacity falls below 1.2x the paving capacity, the paving crew will have nothing to pave.',
+            formula: 'Ratio = (Stone Base + Mill/Misc + Curb) / Asphalt Paving days',
+            rows: [
+              { label: 'Stone Base Days', value: `${t.stoneBaseDays}` },
+              { label: 'Mill / Misc Days', value: `${t.millMiscDays}` },
+              { label: 'Curb Install Days', value: `${t.curbDays}` },
+              { label: 'Base subtotal', value: `${baseCapacity}` },
+              { label: 'Paving Days', value: `${paveCapacity}` },
+              { label: 'Field Events Days', value: `${t.fieldEventsDays}`, detail: 'Not counted in ratio' },
+              { label: 'Total Weeks Booked', value: `${t.totalWeeks}`, detail: `$${(t.totalContract/1000000).toFixed(1)}M contract value` },
+            ],
+          };
 
           return (
             <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
               <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Counts scheduled jobs in the next 14 days grouped by Base vs Paving. Base must stay ≥ 1.20x paving to keep crews fed. Source: 2026 Gantt Schedule.">(i)</span></h2>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Uses booked crew days from the 25-26 Crew Days Sold tab. Base must stay >= 1.20x paving capacity.">(i)</span></h2>
                   {!hasData && (
-                    <span className="text-[10px] font-black text-[#9CA3AF] bg-[#9CA3AF]/10 border border-[#9CA3AF]/20 px-2 py-0.5 rounded-full">NO JOBS IN 14-DAY WINDOW</span>
+                    <span className="text-[10px] font-black text-[#9CA3AF] bg-[#9CA3AF]/10 border border-[#9CA3AF]/20 px-2 py-0.5 rounded-full">AWAITING CREW DAYS SOLD DATA</span>
                   )}
                   {isBehind && (
-                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">BASE CREW BELOW PAVING THRESHOLD</span>
+                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">BASE CAPACITY BELOW PAVING THRESHOLD</span>
                   )}
                 </div>
-                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Source: 2026 Gantt Schedule</span>
+                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Source: 25-26 Crew Days Sold</span>
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <div className="flex justify-between items-end mb-2">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Base / Site Work Load</p>
-                        <p className="text-[10px] text-[#757A7F]/70">Turn-key, track upgrades, mill/clip/pave, soil</p>
+                  <ClickableKpiTile evidence={baseEvidence} className="block rounded-xl p-0 bg-transparent border-0">
+                    <div>
+                      <div className="flex justify-between items-end mb-2">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Base / Site Work Capacity</p>
+                          <p className="text-[10px] text-[#757A7F]/70">Stone base + mill/misc + curb install</p>
+                        </div>
+                        <p className="text-3xl font-black text-[#F5A623]">{baseCapacity}<span className="text-sm text-[#F5A623]/50 ml-1">days</span></p>
                       </div>
-                      <p className="text-3xl font-black text-[#F5A623]">{baseLoad}<span className="text-sm text-[#F5A623]/50 ml-1">jobs</span></p>
-                    </div>
-                    <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-[#F5A623] to-[#e19213] rounded-full" style={{ width: `${(baseLoad / maxLoad) * 100}%` }} />
-                    </div>
-                    <p className="text-[9px] text-[#757A7F]/60 mt-1">{baseLoad} active / scheduled in next 14 days</p>
-                  </div>
-                  <div>
-                    <div className="flex justify-between items-end mb-2">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">Paving Crew Load</p>
-                        <p className="text-[10px] text-[#757A7F]/70">Track paving, pave-only, road paving</p>
+                      <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-[#F5A623] to-[#e19213] rounded-full" style={{ width: `${(baseCapacity / maxCap) * 100}%` }} />
                       </div>
-                      <p className="text-3xl font-black text-blue-600">{paveLoad}<span className="text-sm text-blue-600/50 ml-1">jobs</span></p>
+                      <p className="text-[9px] text-[#757A7F]/60 mt-1">Stone {t.stoneBaseDays} · Mill/Misc {t.millMiscDays} · Curb {t.curbDays}</p>
                     </div>
-                    <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700 rounded-full" style={{ width: `${(paveLoad / maxLoad) * 100}%` }} />
+                  </ClickableKpiTile>
+                  <ClickableKpiTile evidence={paveEvidence} className="block rounded-xl p-0 bg-transparent border-0">
+                    <div>
+                      <div className="flex justify-between items-end mb-2">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">Paving Capacity</p>
+                          <p className="text-[10px] text-[#757A7F]/70">Asphalt paving days</p>
+                        </div>
+                        <p className="text-3xl font-black text-blue-600">{paveCapacity}<span className="text-sm text-blue-600/50 ml-1">days</span></p>
+                      </div>
+                      <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700 rounded-full" style={{ width: `${(paveCapacity / maxCap) * 100}%` }} />
+                      </div>
+                      <p className="text-[9px] text-[#757A7F]/60 mt-1">{crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length} jobs with paving days booked</p>
                     </div>
-                    <p className="text-[9px] text-[#757A7F]/60 mt-1">{paveLoad} active / scheduled in next 14 days</p>
-                  </div>
+                  </ClickableKpiTile>
                 </div>
                 <div className="mt-4 grid grid-cols-4 gap-4 pt-4 border-t border-[#F1F3F4]">
-                  <div>
-                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Ratio</p>
-                    <p className={`text-xl font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-500'}`}>{ratio != null ? ratio.toFixed(2) + 'x' : '—'}</p>
-                  </div>
+                  <ClickableKpiTile evidence={ratioEvidence} className="block text-left p-0 bg-transparent border-0">
+                    <div>
+                      <p className="text-[9px] font-black uppercase text-[#757A7F]">Ratio</p>
+                      <p className={`text-xl font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-500'}`}>{ratio != null ? ratio.toFixed(2) + 'x' : '—'}</p>
+                    </div>
+                  </ClickableKpiTile>
                   <div>
                     <p className="text-[9px] font-black uppercase text-[#757A7F]">Required</p>
                     <p className="text-xl font-black text-[#757A7F]">≥1.20x</p>
                   </div>
                   <div>
                     <p className="text-[9px] font-black uppercase text-[#757A7F]">Status</p>
-                    <p className={`text-xs font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>{!hasData ? '○ NO DATA' : isBehind ? 'BEHIND' : 'ON TRACK'}</p>
+                    <p className={`text-xs font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>{!hasData ? 'NO DATA' : isBehind ? 'BEHIND' : 'ON TRACK'}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Window</p>
-                    <p className="text-xs font-bold text-[#3C4043]">{totalLoad} jobs in next 14 days</p>
-                    <p className="text-[9px] text-[#757A7F]">{otherLoad} other / tennis / misc</p>
+                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Contract Value</p>
+                    <p className="text-xs font-bold text-[#3C4043]">${(t.totalContract / 1000000).toFixed(2)}M sold</p>
+                    <p className="text-[9px] text-[#757A7F]">${(t.totalLeftToBill / 1000000).toFixed(2)}M left to bill</p>
                   </div>
                 </div>
               </div>

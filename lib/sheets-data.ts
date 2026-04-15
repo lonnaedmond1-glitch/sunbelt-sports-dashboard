@@ -1520,3 +1520,133 @@ export async function fetchBidLog(): Promise<BidLogRow[]> {
   } catch { return []; }
 }
 
+// ──────────────────────────── CREW DAYS SOLD (2026 Gantt workbook) ────────────────────────────
+// Tab "25-26 Crew Days Sold" of the Gantt sheet has booked crew days per job broken
+// into Mill/Misc, Curb, Stone Base, Paving, Field Events. We use this to compute
+// real throughput balance (base vs paving capacity).
+
+export interface CrewDaysJob {
+  Job_Number: string;
+  Job_Name: string;
+  State: string;
+  Project_Type: string;
+  Contract_Amount: number;
+  Actual_To_Date: number;
+  Left_To_Bill: number;
+  Mill_Misc_Days: number;
+  Curb_Days: number;
+  Stone_Base_Days: number;
+  Asphalt_Paving_Days: number;
+  Field_Events_Days: number;
+  Total_Weeks: number;
+}
+
+export interface CrewDaysSummary {
+  jobs: CrewDaysJob[];
+  totals: {
+    millMiscDays: number;
+    curbDays: number;
+    stoneBaseDays: number;
+    pavingDays: number;
+    fieldEventsDays: number;
+    totalWeeks: number;
+    totalContract: number;
+    totalBilled: number;
+    totalLeftToBill: number;
+  };
+}
+
+export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
+  const empty: CrewDaysSummary = {
+    jobs: [],
+    totals: {
+      millMiscDays: 0, curbDays: 0, stoneBaseDays: 0, pavingDays: 0, fieldEventsDays: 0,
+      totalWeeks: 0, totalContract: 0, totalBilled: 0, totalLeftToBill: 0,
+    },
+  };
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return empty;
+    const text = await res.text();
+    const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+    if (lines.length < 3) return empty;
+
+    const n = (v: string | undefined): number => {
+      if (!v) return 0;
+      const s = String(v).replace(/[$,"\s]/g, '').replace(/%$/, '');
+      const x = parseFloat(s);
+      return isNaN(x) ? 0 : x;
+    };
+
+    // Find header row (starts with "Job #")
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
+      const cells = parseCSVLine(lines[i]);
+      if ((cells[0] || '').trim().toLowerCase().startsWith('job #')) { headerIdx = i; break; }
+    }
+    if (headerIdx < 0) return empty;
+
+    const hdr = parseCSVLine(lines[headerIdx]).map(c => c.trim());
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const findCol = (...names: string[]) => {
+      for (const name of names) {
+        const k = norm(name);
+        const i = hdr.findIndex(h => norm(h) === k);
+        if (i >= 0) return i;
+      }
+      return -1;
+    };
+
+    const iJob = findCol('Job #');
+    const iName = findCol('JOB NAME and MAP', 'Job Name');
+    const iState = findCol('State');
+    const iType = findCol('Project type');
+    const iContract = findCol('CONTRACT AMOUNT', 'Contract Amount');
+    const iActual = findCol('Actual To Date');
+    const iLeft = findCol('LEFT TO BILL', 'Left To Bill');
+    const iMill = findCol('Mill / Misc. Days', 'Mill Misc Days');
+    const iCurb = findCol('Curb Installation Days', 'Curb Days');
+    const iStone = findCol('Stone Base Days');
+    const iPave = findCol('Asphalt Paving Days');
+    const iFE = findCol('Field Events Days');
+    const iWeeks = findCol('TOTAL Weeks (rounded up)', 'TOTAL Weeks');
+
+    const jobs: CrewDaysJob[] = [];
+    for (let i = headerIdx + 1; i < lines.length; i++) {
+      const cells = parseCSVLine(lines[i]);
+      const jobNum = (cells[iJob] || '').trim();
+      if (!/^\d{2,3}-\d{3}/.test(jobNum)) continue;
+      jobs.push({
+        Job_Number: jobNum,
+        Job_Name: (cells[iName] || '').trim(),
+        State: (cells[iState] || '').trim(),
+        Project_Type: (cells[iType] || '').trim(),
+        Contract_Amount: n(cells[iContract]),
+        Actual_To_Date: n(cells[iActual]),
+        Left_To_Bill: n(cells[iLeft]),
+        Mill_Misc_Days: n(cells[iMill]),
+        Curb_Days: n(cells[iCurb]),
+        Stone_Base_Days: n(cells[iStone]),
+        Asphalt_Paving_Days: n(cells[iPave]),
+        Field_Events_Days: n(cells[iFE]),
+        Total_Weeks: n(cells[iWeeks]),
+      });
+    }
+
+    const totals = {
+      millMiscDays: jobs.reduce((s, j) => s + j.Mill_Misc_Days, 0),
+      curbDays: jobs.reduce((s, j) => s + j.Curb_Days, 0),
+      stoneBaseDays: jobs.reduce((s, j) => s + j.Stone_Base_Days, 0),
+      pavingDays: jobs.reduce((s, j) => s + j.Asphalt_Paving_Days, 0),
+      fieldEventsDays: jobs.reduce((s, j) => s + j.Field_Events_Days, 0),
+      totalWeeks: jobs.reduce((s, j) => s + j.Total_Weeks, 0),
+      totalContract: jobs.reduce((s, j) => s + j.Contract_Amount, 0),
+      totalBilled: jobs.reduce((s, j) => s + j.Actual_To_Date, 0),
+      totalLeftToBill: jobs.reduce((s, j) => s + j.Left_To_Bill, 0),
+    };
+
+    return { jobs, totals };
+  } catch { return empty; }
+}
+
