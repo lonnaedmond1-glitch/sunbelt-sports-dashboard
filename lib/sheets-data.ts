@@ -1678,23 +1678,27 @@ export interface CrewDaysSummary {
 export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
   const empty: CrewDaysSummary = {
     jobs: [],
-    totals: {
-      millMiscDays: 0, curbDays: 0, stoneBaseDays: 0, pavingDays: 0, fieldEventsDays: 0,
-      totalWeeks: 0, totalContract: 0, totalBilled: 0, totalLeftToBill: 0,
-    },
+    totals: { millMiscDays: 0, curbDays: 0, stoneBaseDays: 0, pavingDays: 0, fieldEventsDays: 0, totalWeeks: 0, totalContract: 0, totalBilled: 0, totalLeftToBill: 0 },
   };
   try {
+    // Read local CSV FIRST (guaranteed to work on Vercel), then try sheet as override
+    const fs5 = await import('fs'); const path5 = await import('path');
     let text = '';
-    const sheetUrl = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
-    const res = await fetch(sheetUrl, { next: { revalidate: 86400 } }).catch(() => null);
-    if (res && res.ok) text = await res.text();
-    if (!text || text.includes('<!DOCTYPE') || text.includes('<HTML')) {
-      const fs3 = await import('fs'); const path3 = await import('path');
-      const p = path3.join(process.cwd(), 'data', 'crew_days_sold.csv');
-      if (fs3.existsSync(p)) text = fs3.readFileSync(p, 'utf-8');
+    const csvPath = path5.join(process.cwd(), 'data', 'crew_days_sold.csv');
+    if (fs5.existsSync(csvPath)) {
+      text = fs5.readFileSync(csvPath, 'utf-8');
     }
-    if (!text) return empty;
-    const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
+    // If no local CSV, try sheet
+    if (!text) {
+      const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
+      const res = await fetch(url, { next: { revalidate: 86400 } }).catch(() => null);
+      if (res && res.ok) text = await res.text();
+    }
+    if (!text || text.includes('<!DOCTYPE')) return empty;
+
+    const lines = text.split(/
+|
+|/).filter(l => l.trim());
     if (lines.length < 3) return empty;
 
     const n = (v: string | undefined): number => {
@@ -1703,17 +1707,16 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
       const x = parseFloat(s);
       return isNaN(x) ? 0 : x;
     };
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
 
-    // Find header row (starts with "Job #")
     let headerIdx = -1;
     for (let i = 0; i < Math.min(lines.length, 10); i++) {
       const cells = parseCSVLine(lines[i]);
-      if ((cells[0] || '').trim().toLowerCase().startsWith('job #')) { headerIdx = i; break; }
+      if ((cells[0] || '').trim().toLowerCase().startsWith('job')) { headerIdx = i; break; }
     }
     if (headerIdx < 0) return empty;
 
     const hdr = parseCSVLine(lines[headerIdx]).map(c => c.trim());
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
     const findCol = (...names: string[]) => {
       for (const name of names) {
         const k = norm(name);
@@ -1735,7 +1738,6 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
     const iStone = findCol('Stone Base Days');
     const iPave = findCol('Asphalt Paving Days');
     const iFE = findCol('Field Events Days');
-    const iWeeks = findCol('TOTAL Weeks (rounded up)', 'TOTAL Weeks');
 
     const jobs: CrewDaysJob[] = [];
     for (let i = headerIdx + 1; i < lines.length; i++) {
@@ -1755,7 +1757,7 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
         Stone_Base_Days: n(cells[iStone]),
         Asphalt_Paving_Days: n(cells[iPave]),
         Field_Events_Days: n(cells[iFE]),
-        Total_Weeks: n(cells[iWeeks]),
+        Total_Weeks: 0,
       });
     }
 
@@ -1765,43 +1767,11 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
       stoneBaseDays: jobs.reduce((s, j) => s + j.Stone_Base_Days, 0),
       pavingDays: jobs.reduce((s, j) => s + j.Asphalt_Paving_Days, 0),
       fieldEventsDays: jobs.reduce((s, j) => s + j.Field_Events_Days, 0),
-      totalWeeks: jobs.reduce((s, j) => s + j.Total_Weeks, 0),
+      totalWeeks: 0,
       totalContract: jobs.reduce((s, j) => s + j.Contract_Amount, 0),
       totalBilled: jobs.reduce((s, j) => s + j.Actual_To_Date, 0),
       totalLeftToBill: jobs.reduce((s, j) => s + j.Left_To_Bill, 0),
     };
-
-    // If sheet yielded 0 jobs, force local CSV
-    if (jobs.length === 0) {
-      const fs4 = await import('fs'); const path4 = await import('path');
-      const csvP = path4.join(process.cwd(), 'data', 'crew_days_sold.csv');
-      if (fs4.existsSync(csvP)) {
-        const ct = fs4.readFileSync(csvP, 'utf-8');
-        const cl = ct.split(/\r\n|\n|\r/).filter(l => l.trim());
-        let hi = -1;
-        for (let x = 0; x < Math.min(cl.length, 10); x++) {
-          if ((parseCSVLine(cl[x])[0] || '').trim().toLowerCase().startsWith('job')) { hi = x; break; }
-        }
-        if (hi >= 0) {
-          const h2 = parseCSVLine(cl[hi]).map(c => c.trim());
-          const fc = (...ns: string[]) => { for (const nm of ns) { const k = norm(nm); const ix = h2.findIndex(h => norm(h) === k); if (ix >= 0) return ix; } return -1; };
-          for (let x = hi + 1; x < cl.length; x++) {
-            const c = parseCSVLine(cl[x]);
-            const jn = (c[fc('Job #')] || '').trim();
-            if (!/^\d{2,3}-\d{3}/.test(jn)) continue;
-            jobs.push({ Job_Number: jn, Job_Name: (c[fc('JOB NAME and MAP','Job Name')] || '').trim(), State: (c[fc('State')] || '').trim(), Project_Type: (c[fc('Project type')] || '').trim(), Contract_Amount: n(c[fc('CONTRACT AMOUNT')]), Actual_To_Date: n(c[fc('Actual To Date')]), Left_To_Bill: n(c[fc('LEFT TO BILL')]), Mill_Misc_Days: n(c[fc('Mill / Misc. Days')]), Curb_Days: n(c[fc('Curb Installation Days')]), Stone_Base_Days: n(c[fc('Stone Base Days')]), Asphalt_Paving_Days: n(c[fc('Asphalt Paving Days')]), Field_Events_Days: n(c[fc('Field Events Days')]), Total_Weeks: 0 });
-          }
-          totals.millMiscDays = jobs.reduce((s, j) => s + j.Mill_Misc_Days, 0);
-          totals.curbDays = jobs.reduce((s, j) => s + j.Curb_Days, 0);
-          totals.stoneBaseDays = jobs.reduce((s, j) => s + j.Stone_Base_Days, 0);
-          totals.pavingDays = jobs.reduce((s, j) => s + j.Asphalt_Paving_Days, 0);
-          totals.fieldEventsDays = jobs.reduce((s, j) => s + j.Field_Events_Days, 0);
-          totals.totalContract = jobs.reduce((s, j) => s + j.Contract_Amount, 0);
-          totals.totalBilled = jobs.reduce((s, j) => s + j.Actual_To_Date, 0);
-          totals.totalLeftToBill = jobs.reduce((s, j) => s + j.Left_To_Bill, 0);
-        }
-      }
-    }
 
     return { jobs, totals };
   } catch { return empty; }
