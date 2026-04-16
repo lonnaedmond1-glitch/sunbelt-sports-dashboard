@@ -102,14 +102,14 @@ export default async function FleetPage() {
           <table className="w-full text-sm">
             <thead className="bg-[#F1F3F4]">
               <tr>
-                {['Driver', 'ELD Status', 'Duty Status', 'Drive Remaining', 'Shift Remaining', 'Cycle Remaining', 'Phone'].map(h => (
+                {['Driver', 'ELD Status', 'Duty Status', 'Drive Remaining', 'Shift Remaining', 'Cycle Remaining'].map(h => (
                   <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {driverTable.length === 0 ? (
-                <tr><td colSpan={7} className="px-3 py-6 text-center text-sm text-[#757A7F]">No active drivers reporting.</td></tr>
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-[#757A7F]">No active drivers reporting.</td></tr>
               ) : driverTable.map((d, i) => {
                 const dr = toneFor(d.drive, 0.5, 2);
                 const sh = toneFor(d.shift, 1, 3);
@@ -123,7 +123,7 @@ export default async function FleetPage() {
                     <td className="px-3 py-2 text-xs font-black" style={{ color: dr.color }}>{fmt(d.drive)}</td>
                     <td className="px-3 py-2 text-xs font-black" style={{ color: sh.color }}>{fmt(d.shift)}</td>
                     <td className="px-3 py-2 text-xs font-black" style={{ color: cy.color }}>{fmt(d.cycle)}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F]">{d.phone || '—'}</td>
+                    {/* phone column removed */}
                   </tr>
                 );
               })}
