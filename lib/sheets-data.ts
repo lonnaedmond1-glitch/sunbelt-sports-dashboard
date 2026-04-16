@@ -320,9 +320,6 @@ export function fetchLiveRentals() {
       const rentals: any[] = [];
 
       // Parse Sunbelt tab (standardized columns from our Apps Script):
-      // Vendor, Contract_Number, Branch, Job_Name, Job_Location, Job_City, State,
-      // Ordered_By, Equipment_Type, Class_Name, Day_Rate, Week_Rate, FourWeek_Rate,
-      // Date_Rented, Days_On_Rent, Pickup_Date, Email_Date, Synced_At
       if (sunbeltRows.length > 1) {
         const headers = sunbeltRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
         for (let i = 1; i < sunbeltRows.length; i++) {
@@ -381,6 +378,88 @@ export function fetchLiveRentals() {
             pickupDate: '',
             emailDate: getCol('email_date') || '',
           });
+        }
+      }
+
+      // ── CSV FALLBACK: if Google Sheet returned nothing, read local CSVs ──
+      if (rentals.length === 0) {
+        const fs = require('fs');
+        const path = require('path');
+        const dataDir = path.join(process.cwd(), 'data');
+
+        // Equipment_On_Rent_Latest.csv — Sunbelt Rentals detailed export
+        // Cols: OrderedBy,EquipmentModel,EquipmentClass,JobCity,JobState,JobName,TimeOut,Quantity,PurchaseOrderNumber,PickupDate,ContractNumber,TotalAmountBilled,MonthlyRate,WeeklyRate,DailyRate,DateOut,Days on Rent,AccruedAmount
+        try {
+          const latestPath = path.join(dataDir, 'Equipment_On_Rent_Latest.csv');
+          if (fs.existsSync(latestPath)) {
+            const text = fs.readFileSync(latestPath, 'utf-8');
+            const rows = parseCSV(text);
+            if (rows.length > 1) {
+              const hdr = rows[0].map((h: string) => h.trim().toLowerCase().replace(/\s+/g, '_'));
+              const col = (name: string) => hdr.findIndex((h: string) => h.includes(name));
+              for (let i = 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || r.length < 5) continue;
+                const g = (idx: number) => (idx >= 0 && idx < r.length) ? (r[idx] || '').trim() : '';
+                const equipModel = g(col('equipmentmodel')) || g(col('model'));
+                const equipClass = g(col('equipmentclass')) || g(col('class'));
+                if (!equipModel && !equipClass) continue;
+                rentals.push({
+                  vendor: 'Sunbelt Rentals',
+                  contractNumber: g(col('contractnumber')) || g(col('contract')),
+                  jobName: g(col('jobname')) || g(col('job_name')),
+                  jobLocation: `${g(col('jobcity'))}, ${g(col('jobstate'))}`.replace(/^, |, $/g, ''),
+                  jobCity: g(col('jobcity')),
+                  equipmentType: equipModel || equipClass,
+                  className: equipClass,
+                  dayRate: parseMoney(g(col('dailyrate')) || g(col('daily'))),
+                  weekRate: parseMoney(g(col('weeklyrate')) || g(col('weekly'))),
+                  fourWeekRate: parseMoney(g(col('monthlyrate')) || g(col('monthly'))),
+                  dateRented: g(col('dateout')) || g(col('date_out')),
+                  daysOnRent: parseInt(g(col('days_on_rent')) || g(col('days'))) || 0,
+                  pickupDate: g(col('pickupdate')) || g(col('pickup')),
+                  emailDate: '',
+                });
+              }
+            }
+          }
+        } catch (e) { console.error('Rental CSV fallback error:', e); }
+
+        // Equipment_On_Rent.csv — simple fallback (both vendors)
+        // Cols: Job_Number,Equipment_Type,Vendor,Days_On_Site,Target_Off_Rent,Daily_Rate
+        if (rentals.length === 0) {
+          try {
+            const simplePath = path.join(dataDir, 'Equipment_On_Rent.csv');
+            if (fs.existsSync(simplePath)) {
+              const text = fs.readFileSync(simplePath, 'utf-8');
+              const rows = parseCSV(text);
+              if (rows.length > 1) {
+                for (let i = 1; i < rows.length; i++) {
+                  const r = rows[i];
+                  if (!r || r.length < 3) continue;
+                  const equipType = (r[1] || '').trim();
+                  if (!equipType) continue;
+                  const vendor = (r[2] || '').trim() || 'Sunbelt Rentals';
+                  rentals.push({
+                    vendor,
+                    contractNumber: '',
+                    jobName: '',
+                    jobLocation: '',
+                    jobCity: '',
+                    equipmentType: equipType,
+                    className: '',
+                    dayRate: parseMoney(r[5] || ''),
+                    weekRate: 0,
+                    fourWeekRate: 0,
+                    dateRented: '',
+                    daysOnRent: parseInt(r[3] || '') || 0,
+                    pickupDate: (r[4] || '').trim(),
+                    emailDate: '',
+                  });
+                }
+              }
+            }
+          } catch (e) { console.error('Simple rental CSV fallback error:', e); }
         }
       }
 
@@ -1696,9 +1775,7 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
     }
     if (!text || text.includes('<!DOCTYPE')) return empty;
 
-    const lines = text.split(/
-|
-|/).filter(l => l.trim());
+    const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
     if (lines.length < 3) return empty;
 
     const n = (v: string | undefined): number => {
