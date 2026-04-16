@@ -945,24 +945,36 @@ const SCHEDULE_GID = '416948597';
 const GANTT_SHEET_ID = '178t9iioyveWqP6o8x2lQwMagexDP0W9FA4I2jfutJmw';
 const GANTT_GID = '1949703319';
 
+// Schedule column layout — verified live against Schedule tab header row.
+// Header row 0:
+//   0 Job Name | 1 Scope | 2 Location | 3 Vendor | 4 Field Display
+//   5 David - Lowboy | 6 Loose Ends | 7 Deliveries
+//   8 Rosendo / P1 | 9 PM | 10 Trucks
+//   11 Sergio Sifuentes | 12 Trucks Needed
+//   13 Shawn | 14 Trucks Needed
+//   15 Giovany (NC) | 16 PM | 17 Trucks/Equipment
+//   18 Marcos (NC) | 19 PM | 20 Trucks Needed
+//   21 Julio / B1 | 22 PM | 23 Trucks Needed
+//   24 Martin / B2 | 25 PM
+//   26 Juan / B3 | 27 Jason | 28 PM
+//   29 Cesar - Misc | 30 Pedro
+//   38-43 Concrete Subs | 49 Jeff | 51 Bud
 const CREW_COLUMNS: { name: string; col: number; pmCol?: number; type: string }[] = [
-  { name: 'Rosendo / P1', col: 9, pmCol: 10, type: 'primary' },
-  { name: 'Julio / B1', col: 22, pmCol: 23, type: 'primary' },
-  { name: 'Martin / B2', col: 25, pmCol: 26, type: 'primary' },
-  { name: 'Juan / B3', col: 27, pmCol: 28, type: 'primary' },
+  { name: 'Rosendo / P1', col: 8, pmCol: 9, type: 'primary' },
+  { name: 'Julio / B1', col: 21, pmCol: 22, type: 'primary' },
+  { name: 'Martin / B2', col: 24, pmCol: 25, type: 'primary' },
+  { name: 'Juan / B3', col: 26, pmCol: 28, type: 'primary' },
   { name: 'Cesar', col: 29, type: 'primary' },
   { name: 'Pedro', col: 30, type: 'primary' },
-  { name: 'Jeff', col: 2, type: 'support' },
-  { name: 'David', col: 5, type: 'support' },
-  { name: 'Lowboy 1', col: 3, type: 'logistics' },
-  { name: 'Lowboy 2', col: 4, type: 'logistics' },
   { name: 'Sergio', col: 11, type: 'support' },
   { name: 'Shawn', col: 13, type: 'support' },
   { name: 'Giovany (NC)', col: 15, pmCol: 16, type: 'primary' },
   { name: 'Marcos (NC)', col: 18, pmCol: 19, type: 'primary' },
+  { name: 'David - Lowboy', col: 5, type: 'logistics' },
+  { name: 'Jeff', col: 49, type: 'support' },
+  { name: 'Bud', col: 51, type: 'support' },
   { name: 'Concrete Sub 1', col: 38, type: 'sub' },
   { name: 'Concrete Sub 2', col: 39, type: 'sub' },
-  { name: 'Bud', col: 52, type: 'support' },
 ];
 const DELIVERY_COL = 7;
 
