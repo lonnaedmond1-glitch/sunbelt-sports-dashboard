@@ -1771,6 +1771,38 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
       totalLeftToBill: jobs.reduce((s, j) => s + j.Left_To_Bill, 0),
     };
 
+    // If sheet yielded 0 jobs, force local CSV
+    if (jobs.length === 0) {
+      const fs4 = await import('fs'); const path4 = await import('path');
+      const csvP = path4.join(process.cwd(), 'data', 'crew_days_sold.csv');
+      if (fs4.existsSync(csvP)) {
+        const ct = fs4.readFileSync(csvP, 'utf-8');
+        const cl = ct.split(/\r\n|\n|\r/).filter(l => l.trim());
+        let hi = -1;
+        for (let x = 0; x < Math.min(cl.length, 10); x++) {
+          if ((parseCSVLine(cl[x])[0] || '').trim().toLowerCase().startsWith('job')) { hi = x; break; }
+        }
+        if (hi >= 0) {
+          const h2 = parseCSVLine(cl[hi]).map(c => c.trim());
+          const fc = (...ns: string[]) => { for (const nm of ns) { const k = norm(nm); const ix = h2.findIndex(h => norm(h) === k); if (ix >= 0) return ix; } return -1; };
+          for (let x = hi + 1; x < cl.length; x++) {
+            const c = parseCSVLine(cl[x]);
+            const jn = (c[fc('Job #')] || '').trim();
+            if (!/^\d{2,3}-\d{3}/.test(jn)) continue;
+            jobs.push({ Job_Number: jn, Job_Name: (c[fc('JOB NAME and MAP','Job Name')] || '').trim(), State: (c[fc('State')] || '').trim(), Project_Type: (c[fc('Project type')] || '').trim(), Contract_Amount: n(c[fc('CONTRACT AMOUNT')]), Actual_To_Date: n(c[fc('Actual To Date')]), Left_To_Bill: n(c[fc('LEFT TO BILL')]), Mill_Misc_Days: n(c[fc('Mill / Misc. Days')]), Curb_Days: n(c[fc('Curb Installation Days')]), Stone_Base_Days: n(c[fc('Stone Base Days')]), Asphalt_Paving_Days: n(c[fc('Asphalt Paving Days')]), Field_Events_Days: n(c[fc('Field Events Days')]), Total_Weeks: 0 });
+          }
+          totals.millMiscDays = jobs.reduce((s, j) => s + j.Mill_Misc_Days, 0);
+          totals.curbDays = jobs.reduce((s, j) => s + j.Curb_Days, 0);
+          totals.stoneBaseDays = jobs.reduce((s, j) => s + j.Stone_Base_Days, 0);
+          totals.pavingDays = jobs.reduce((s, j) => s + j.Asphalt_Paving_Days, 0);
+          totals.fieldEventsDays = jobs.reduce((s, j) => s + j.Field_Events_Days, 0);
+          totals.totalContract = jobs.reduce((s, j) => s + j.Contract_Amount, 0);
+          totals.totalBilled = jobs.reduce((s, j) => s + j.Actual_To_Date, 0);
+          totals.totalLeftToBill = jobs.reduce((s, j) => s + j.Left_To_Bill, 0);
+        }
+      }
+    }
+
     return { jobs, totals };
   } catch { return empty; }
 }
