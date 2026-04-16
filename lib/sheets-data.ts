@@ -995,6 +995,7 @@ const CREW_COLUMNS: { name: string; col: number; pmCol?: number; type: string }[
   { name: 'Concrete Sub 2', col: 39, type: 'sub' },
 ];
 const DELIVERY_COL = 7;
+const LOOSE_ENDS_COLS = [6, 35];
 
 const SUPPLIER_MAP: Record<string, string> = {
   'CWM': 'CW Matthews', 'APAC': 'APAC-Atlantic', 'VMC': 'Vulcan Materials',
@@ -1088,6 +1089,7 @@ export async function fetchScheduleData() {
     const currentWeekDays: any[] = [];
     const nextWeekDays: any[] = [];
     const deliveries: any[] = [];
+    const looseEndsRaw: { date: string; text: string }[] = [];
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCSVLine(lines[i]);
@@ -1095,6 +1097,14 @@ export async function fetchScheduleData() {
       const date = parseScheduleDate(dateStr);
       if (!date || date < thisMonday || date >= endOfNextWeek) continue;
       const isCurrentWeek = date < nextMonday;
+
+      // Collect loose ends from cols 6 + 35
+      for (const lec of LOOSE_ENDS_COLS) {
+        const txt = (cols[lec] || '').trim();
+        if (txt && txt !== '-' && txt !== '\u2014') {
+          looseEndsRaw.push({ date: date.toISOString().split('T')[0], text: txt });
+        }
+      }
 
       const assignments: any[] = [];
       for (const crew of CREW_COLUMNS) {
@@ -1135,14 +1145,23 @@ export async function fetchScheduleData() {
     const scheduledJobs = new Set<string>();
     [...currentWeekDays, ...nextWeekDays].forEach(d => d.assignments.forEach((a: any) => { if (!a.decoded.isOff) scheduledJobs.add(a.decoded.jobRef); }));
 
+    // Dedup loose ends
+    const seenLE = new Set<string>();
+    const looseEnds = looseEndsRaw.filter(le => {
+      const k = le.text.toLowerCase();
+      if (seenLE.has(k)) return false;
+      seenLE.add(k);
+      return true;
+    });
+
     return {
       currentWeek: { weekOf: thisMonday.toISOString().split('T')[0], label: `Week of ${thisMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: currentWeekDays },
       nextWeek: { weekOf: nextMonday.toISOString().split('T')[0], label: `Week of ${nextMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: nextWeekDays },
-      deliveries, activeGanttJobs, jobFirstOccurrences,
+      deliveries, activeGanttJobs, jobFirstOccurrences, looseEnds,
       scheduledJobCount: scheduledJobs.size, ganttJobCount: ganttJobs.length,
       timestamp: new Date().toISOString(),
     };
-  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
+  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], looseEnds: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
 }
 // ──────────────────────────── PROJECT SCORECARDS (Google Sheets Hub) ────────────────────────────
 const SCORECARD_HUB_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';

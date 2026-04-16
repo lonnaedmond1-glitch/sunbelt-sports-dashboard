@@ -444,7 +444,7 @@ export default async function SchedulePage() {
 
           for (const day of days) {
             for (const a of (day.assignments || [])) {
-              if (a.crew !== 'Lowboy 1' && a.crew !== 'Lowboy 2') continue;
+              if (!(a.crew === 'Lowboy 1' || a.crew === 'Lowboy 2' || a.crew === 'David - Lowboy' || (a.crewType === 'logistics'))) continue;
               if (a.decoded?.isOff) continue;
               const key = (day.dayOfWeek || '').slice(0, 3).toUpperCase();
               if (!byDay[key]) continue;
@@ -483,7 +483,7 @@ export default async function SchedulePage() {
                       ) : (
                         <div className="space-y-1.5">
                           {moves.map((m, idx) => {
-                            const unitColor = m.crew === 'Lowboy 1' ? '#ef4444' : '#f87171';
+                            const unitColor = '#ef4444'; // single lowboy driver
                             const body = (
                               <div className="rounded px-2 py-1.5 border" style={{ borderColor: `${unitColor}30`, backgroundColor: `${unitColor}08` }}>
                                 <div className="text-[9px] font-black uppercase" style={{ color: unitColor }}>{m.crew}</div>
@@ -513,36 +513,31 @@ export default async function SchedulePage() {
         {/* NEXT WEEK CREW GRID */}
         {renderWeekGrid(schedule.nextWeek, 'Next Week', false)}
 
-        {/* TIE UP LOOSE ENDS — final tile on the page */}
+        {/* TIE UP LOOSE ENDS — from Schedule tab cols 6+35 */}
         <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Tie Up Loose Ends</h2>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">Open follow-ups from the Level 10 meeting.</p>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">Live from the Schedule tab.</p>
             </div>
             <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">
-              {level10.looseEnds?.length || 0} open
+              {(schedule as any).looseEnds?.length || 0} open
             </span>
           </div>
           <div className="p-5">
-            {level10.looseEnds?.length > 0 ? (
+            {(schedule as any).looseEnds?.length > 0 ? (
               <ul className="space-y-2.5">
-                {level10.looseEnds.map((end, i) => (
+                {(schedule as any).looseEnds.map((le: any, i: number) => (
                   <li key={i} className="flex gap-3 items-start text-sm leading-relaxed">
                     <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full bg-[#F5A623]" aria-hidden />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[#3C4043]">{end.details}</p>
-                      {end.who && (
-                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623] mt-0.5">
-                          Owner: {end.who}
-                        </p>
-                      )}
+                      <p className="text-[#3C4043]">{le.text}</p>
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-[#757A7F] italic">No loose ends from the latest L10 meeting.</p>
+              <p className="text-sm text-[#757A7F] italic">No loose ends this week.</p>
             )}
           </div>
         </div>
