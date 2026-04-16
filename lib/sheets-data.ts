@@ -1530,10 +1530,21 @@ function _parseDollar(v: string | undefined): number {
 
 export async function fetchBidLog(): Promise<BidLogRow[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${BID_LOG_SHEET_ID}/export?format=csv&gid=0`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return [];
-    const text = await res.text();
+    // Try live Google Sheet first; fall back to local CSV in /data
+    let text = '';
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${BID_LOG_SHEET_ID}/export?format=csv&gid=0`;
+    const res = await fetch(sheetUrl, { next: { revalidate: 86400 } }).catch(() => null);
+    if (res && res.ok) {
+      text = await res.text();
+    }
+    // Fallback: local CSV (updated manually or by upload)
+    if (!text || text.includes('<!DOCTYPE') || text.includes('<HTML')) {
+      const fs = await import('fs');
+      const path = await import('path');
+      const csvPath = path.join(process.cwd(), 'data', '2026_Bid_Log.csv');
+      if (fs.existsSync(csvPath)) text = fs.readFileSync(csvPath, 'utf-8');
+    }
+    if (!text) return [];
     const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
     // Find the header row that starts with "Job #" (bid rows follow).
     let headerIdx = -1;
