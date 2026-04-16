@@ -1,4 +1,7 @@
-"Contract #","Branch #","Job Name","Job_Location","Job City","Job State","Ordered By","Equipment Type","Class Name","Day Rate","Week Rate","4 Week Rate","Date Rented","Number of Days on Rent","Pickup Date","Pickup Ordered By"
-"182313352","0027","BUTLER HIGH","1810 MATTHEWS-MINT HILL RD, MATTHEWS","MATTHEWS","NC","BLAYLOCK, DAVID","070-0021 5 HP MID/FRONT TINE TILLER","5 HP MID/FRONT TINE TILLER","$71.00","$226.00","$495.00","4/9/2026","1","4/10/2026","Sports Inc, Sunbelt"
-"182375965","0086","VETERAN SS","340 PINEY GROVE RD, KATHLEEN","KATHLEEN","GA","EDMOND, LONNA","035-0140 7,500LB MINI EXCAVATOR","7,500LB MINI EXCAVATOR","$415.00","$925.00","$1,850.00","4/10/2026","5","4/15/2026","Sports Inc, Sunbelt"
-"182375965","0086","VETERAN SS","340 PINEY GROVE RD, KATHLEEN","KATHLEEN","GA","EDMOND, LONNA","150-0662 24"" COMPACT EXCAVATOR BUCKET","24"" COMPACT EXCAVATOR BUCKET","$0.00","$0.00","$0.00","4/10/2026","5","4/15/2026","Sports Inc, Sunbelt"
+Job_Number,Equipment_Type,Vendor,Days_On_Site,Target_Off_Rent,Daily_Rate
+,070-0021 5 HP MID/FRONT TINE TILLER,Sunbelt Rentals,1,4/10/2026,71.00
+,"035-0140 7,500LB MINI EXCAVATOR",Sunbelt Rentals,5,4/15/2026,415.00
+,"150-0662 24"" COMPACT EXCAVATOR BUCKET",Sunbelt Rentals,5,4/15/2026,0.00
+,TL8R2-CR,Sunbelt Rentals,1,2026-04-17,474.00
+,5066,Sunbelt Rentals,1,2026-04-17,0.00
+,TL6CR,Sunbelt Rentals,7,,401.00
