@@ -391,26 +391,80 @@ export function fetchLiveRentals() {
   });
 }
 
-// ──────────────────────────── VISIONLINK ASSETS (CSV) ────────────────────────────
+// ──────────────────────────── VISIONLINK ASSETS (Live Sheet) ────────────────────────────
+// Backed by Apps Scripts visionlink_aemp_sync.gs (CAT Digital API) and
+// visionlink_email_bridge.gs (CAT scheduled email fallback). Both write to the
+// `VisionLink_Live` tab of the Scorecard Hub sheet with this canonical schema:
+//   synced_at | asset_id | asset_name | make | model | serial | hours |
+//   last_reported | latitude | longitude | location_source | visionlink_geofence |
+//   matched_job_id | matched_job_name | state | status | notes
+//
+// Dashboard reads the sheet (no API credentials needed in Vercel, no static CSV).
 
-export async function fetchVisionLinkAssets() {
+export interface VisionLinkAsset {
+  Asset_ID: string;
+  Asset_Name: string;
+  Make: string;
+  Model: string;
+  Serial: string;
+  Hours: number;
+  Last_Reported: string;
+  Latitude: number | null;
+  Longitude: number | null;
+  Location_Source: string;
+  Geofence: string;
+  Matched_Job_Id: string;
+  Matched_Job_Name: string;
+  State: string;
+  Status: string;
+  Notes: string;
+  Synced_At: string;
+}
+
+export async function fetchVisionLinkAssets(): Promise<VisionLinkAsset[]> {
   try {
-    const fs = await import('fs');
-    const path = await import('path');
-    const csvPath = path.join(process.cwd(), 'data', 'VisionLink_Assets.csv');
-    if (!fs.existsSync(csvPath)) return [];
-    const csvText = fs.readFileSync(csvPath, 'utf-8');
-    const lines = csvText.split('\n').filter(l => l.trim());
-    if (lines.length < 2) return [];
-    return lines.slice(1).map(line => {
-      const cols = parseCSVLine(line);
+    const rows = await fetchScorecardTabCsv('VisionLink_Live');
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim().toLowerCase());
+    const idx = (name: string) => hdr.indexOf(name);
+    const iSync = idx('synced_at');
+    const iId = idx('asset_id');
+    const iName = idx('asset_name');
+    const iMake = idx('make');
+    const iModel = idx('model');
+    const iSerial = idx('serial');
+    const iHours = idx('hours');
+    const iReported = idx('last_reported');
+    const iLat = idx('latitude');
+    const iLng = idx('longitude');
+    const iLocSrc = idx('location_source');
+    const iGeo = idx('visionlink_geofence');
+    const iJobId = idx('matched_job_id');
+    const iJobName = idx('matched_job_name');
+    const iState = idx('state');
+    const iStatus = idx('status');
+    const iNotes = idx('notes');
+    return rows.slice(1).map(r => {
+      const lat = parseFloat((r[iLat] || '').trim());
+      const lng = parseFloat((r[iLng] || '').trim());
       return {
-        Asset_ID: cols[0]?.trim() || '',
-        Make: cols[1]?.trim() || '',
-        Model: cols[2]?.trim() || '',
-        Serial: cols[3]?.trim() || '',
-        Hours: parseFloat(cols[4]?.trim() || '0') || 0,
-        Last_Reported: cols[5]?.trim() || '',
+        Asset_ID: (r[iId] || '').trim(),
+        Asset_Name: (r[iName] || '').trim(),
+        Make: (r[iMake] || '').trim(),
+        Model: (r[iModel] || '').trim(),
+        Serial: (r[iSerial] || '').trim(),
+        Hours: parseFloat((r[iHours] || '0').trim()) || 0,
+        Last_Reported: (r[iReported] || '').trim(),
+        Latitude: isNaN(lat) ? null : lat,
+        Longitude: isNaN(lng) ? null : lng,
+        Location_Source: (r[iLocSrc] || '').trim(),
+        Geofence: (r[iGeo] || '').trim(),
+        Matched_Job_Id: (r[iJobId] || '').trim(),
+        Matched_Job_Name: (r[iJobName] || '').trim(),
+        State: (r[iState] || '').trim(),
+        Status: (r[iStatus] || '').trim(),
+        Notes: (r[iNotes] || '').trim(),
+        Synced_At: (r[iSync] || '').trim(),
       };
     }).filter(a => a.Asset_ID || a.Serial);
   } catch { return []; }

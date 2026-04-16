@@ -513,65 +513,40 @@ export default async function SchedulePage() {
         {/* NEXT WEEK CREW GRID */}
         {renderWeekGrid(schedule.nextWeek, 'Next Week', false)}
 
-        {/* 2-COLUMN BOTTOM: LEVEL 10 LOOSE ENDS & EQUIPMENT */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          
-          {/* LOOSE ENDS (Level 10) */}
-          <div className="lg:col-span-1 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col h-full">
-            <div className="px-5 py-4 border-b border-[#F1F3F4] flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">🔗</span>
-                <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Tie Up Loose Ends</h2>
-              </div>
+        {/* TIE UP LOOSE ENDS — final tile on the page */}
+        <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Tie Up Loose Ends</h2>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">Open follow-ups from the Level 10 meeting.</p>
             </div>
-            <div className="p-4 space-y-3 flex-1 overflow-y-auto">
-              {level10.looseEnds?.length > 0 ? (
-                level10.looseEnds.map((end, i) => (
-                  <div key={i} className="rounded-xl p-3 border border-[#F1F3F4] bg-[#F1F3F4]/50">
-                    <p className="text-xs font-bold text-[#3C4043] mb-1 leading-tight">{end.details}</p>
-                    {end.who && <p className="text-sm text-[#F5A623] font-bold uppercase">Who: {end.who}</p>}
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-8 opacity-40">
-                  <span className="text-2xl block mb-2">✅</span>
-                  <p className="text-xs font-bold uppercase tracking-widest">No loose ends</p>
-                </div>
-              )}
-            </div>
+            <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">
+              {level10.looseEnds?.length || 0} open
+            </span>
           </div>
-
-          {/* EQUIPMENT MAP — GPS pins only, no lists */}
-          <div className="lg:col-span-3 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">📍</span>
-                <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Equipment Locations</h2>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#20BC64] inline-block"></span> Rentals ({rentalEquipment.length})</span>
-                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span> Assets ({vlAssets.length})</span>
-              </div>
-            </div>
-            <div className="h-[500px]">
-              <MapWrapper
-                jobs={scheduledJobLocations.map((j: any) => ({
-                  Job_Number: j.jobNumber, Job_Name: j.name, Lat: j.lat, Lng: j.lng, Pct_Complete: 0,
-                  Status: 'Active', General_Contractor: '', Contract_Amount: 0
-                }))}
-                vehicles={[
-                  ...equipmentMapPins.map((eq, i) => ({
-                    id: `rental-${i}`, name: eq.name, lat: eq.lat, lng: eq.lng, address: eq.address,
-                    speed: 0, driver: '', status: 'rental'
-                  })),
-                  // VisionLink GPS pins removed -- assets had no real coordinates;
-                  // distributing them across job sites would misrepresent equipment location.
-                ]}
-              />
-            </div>
+          <div className="p-5">
+            {level10.looseEnds?.length > 0 ? (
+              <ul className="space-y-2.5">
+                {level10.looseEnds.map((end, i) => (
+                  <li key={i} className="flex gap-3 items-start text-sm leading-relaxed">
+                    <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full bg-[#F5A623]" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[#3C4043]">{end.details}</p>
+                      {end.who && (
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623] mt-0.5">
+                          Owner: {end.who}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-[#757A7F] italic">No loose ends from the latest L10 meeting.</p>
+            )}
           </div>
+        </div>
       </div>
-    </div>
     </div>
   );
 }
