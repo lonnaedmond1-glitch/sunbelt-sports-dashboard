@@ -66,11 +66,14 @@ async function getSamsaraData() {
     ];
 
 
-    // HOS daily-logs requires startTime + endTime. Use last 24h window so we always
-    // get the current/most-recent log row for each active driver.
-    const hosEnd = new Date();
-    const hosStart = new Date(hosEnd.getTime() - 24 * 60 * 60 * 1000);
-    const hosUrl = `https://api.samsara.com/fleet/hos/daily-logs?startTime=${encodeURIComponent(hosStart.toISOString())}&endTime=${encodeURIComponent(hosEnd.toISOString())}&limit=512`;
+    // HOS daily-logs requires startDate + endDate (YYYY-MM-DD).
+    // endDate must be on or before YESTERDAY (today's day-in-progress is not
+    // returnable). Use a 7-day window ending yesterday so we have enough rows
+    // to compute a 7-day cycle total per driver.
+    const toYMD = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    const hosEndDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const hosStartDate = new Date(hosEndDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const hosUrl = `https://api.samsara.com/fleet/hos/daily-logs?startDate=${toYMD(hosStartDate)}&endDate=${toYMD(hosEndDate)}&limit=512`;
 
     const [vehicleRes, driverRes, hosRes] = await Promise.all([
       fetch('https://api.samsara.com/fleet/vehicles/locations', { headers, next: { revalidate: 86400 } }),
@@ -101,50 +104,80 @@ async function getSamsaraData() {
         }))
       : [];
 
-    // DOT Hours of Service — remaining legal hours per driver.
-    // Samsara API: response has data[] of daily-log rows. Each row may either be:
-    //   (A) flat: { driver, logDate, driveRemainingDurationMs, shiftRemainingDurationMs,
-    //               cycleRemainingDurationMs, currentDutyStatus }
-    //   (B) grouped: { driver, dailyLogs: [ ...rows in shape (A)... ] }
-    // Be robust to both. Pick the row with the most recent logDate per driver.
-    // All *RemainingDurationMs fields are milliseconds — divide by 3_600_000 for hours.
+    // DOT Hours of Service — compute remaining legal hours per driver.
+    // Samsara /fleet/hos/daily-logs response shape (verified live):
+    //   data: [{
+    //     driver: { id, name, eldSettings: { rulesets: [{ cycle, shift, ... }] } },
+    //     startTime, endTime,
+    //     dutyStatusDurations: { driveDurationMs, onDutyDurationMs, ... }
+    //   }, ...one row per driver per day...]
+    //
+    // Samsara does NOT return *Remaining fields on daily-logs. We compute remaining
+    // ourselves from caps minus used:
+    //   - Drive Time:  11h cap  − today's driveDurationMs
+    //   - On-Duty:     14h cap  − today's onDutyDurationMs (on-duty + drive)
+    //   - Cycle:       60h or 70h cap (per ruleset) − sum of last 7d on-duty+drive
     const MS_PER_HR = 3_600_000;
+    const DRIVE_CAP_HRS = 11;
+    const SHIFT_CAP_HRS = 14;
+    const cycleCapForDriver = (d: any): number => {
+      // ELD cycle defaults to 60h/7d (passenger) unless ruleset names "70 hour".
+      const rulesets = d?.eldSettings?.rulesets || [];
+      for (const r of rulesets) {
+        const cyc = (r?.cycle || '').toLowerCase();
+        if (cyc.includes('70')) return 70;
+      }
+      return 60;
+    };
     let hosParsed: any[] = [];
     if (hosRes.ok) {
       const rawJson = await hosRes.json();
       const rawRows: any[] = rawJson?.data || [];
-      const byDriver: Record<string, any> = {};
-      const ingestRow = (row: any, driverFallback: any) => {
-        const driver = row?.driver || driverFallback || {};
-        const driverId = driver?.id || '';
-        const driverName = driver?.name || '';
-        if (!driverId && !driverName) return;
-        const key = driverId || driverName;
-        const logDate = row?.logDate || row?.startTime || '';
-        const drive = row?.driveRemainingDurationMs ?? row?.driveRemaining ?? null;
-        const shift = row?.shiftRemainingDurationMs ?? row?.shiftRemaining ?? null;
-        const cycle = row?.cycleRemainingDurationMs ?? row?.cycleRemaining ?? null;
-        const status = row?.currentDutyStatus || row?.activeDutyStatus || '';
-        const candidate = {
-          driverId, driverName, logDate,
-          driveRemainingHrs: drive != null ? drive / MS_PER_HR : null,
-          shiftRemainingHrs: shift != null ? shift / MS_PER_HR : null,
-          cycleRemainingHrs: cycle != null ? cycle / MS_PER_HR : null,
-          currentStatus: status,
-        };
-        const existing = byDriver[key];
-        if (!existing || (logDate && logDate > (existing.logDate || ''))) {
-          byDriver[key] = candidate;
-        }
-      };
-      for (const r of rawRows) {
-        if (Array.isArray(r?.dailyLogs)) {
-          for (const dl of r.dailyLogs) ingestRow(dl, r.driver);
-        } else {
-          ingestRow(r, null);
-        }
+
+      // Group rows by driverId so we can sum last-7d for cycle and pick latest day for shift/drive
+      const byDriverRows: Record<string, any[]> = {};
+      const driverMeta: Record<string, any> = {};
+      for (const row of rawRows) {
+        const drv = row?.driver;
+        const id = drv?.id;
+        if (!id) continue;
+        if (!byDriverRows[id]) { byDriverRows[id] = []; driverMeta[id] = drv; }
+        byDriverRows[id].push(row);
       }
-      hosParsed = Object.values(byDriver);
+
+      for (const [driverId, rows] of Object.entries(byDriverRows)) {
+        // Sort ascending by startTime; latest = most recent day
+        rows.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+        const latest = rows[rows.length - 1];
+        const drv = driverMeta[driverId];
+
+        const driveUsedMs = latest?.dutyStatusDurations?.driveDurationMs ?? 0;
+        const onDutyUsedMs = (latest?.dutyStatusDurations?.onDutyDurationMs ?? 0)
+                           + (latest?.dutyStatusDurations?.driveDurationMs ?? 0);
+
+        // Cycle = sum of (onDuty + drive) across the window (last 7 or 8 days)
+        const cycleCapHrs = cycleCapForDriver(drv);
+        const cycleWindowDays = cycleCapHrs === 70 ? 8 : 7;
+        const recentRows = rows.slice(-cycleWindowDays);
+        const cycleUsedMs = recentRows.reduce((sum, r) =>
+          sum + (r?.dutyStatusDurations?.driveDurationMs ?? 0)
+              + (r?.dutyStatusDurations?.onDutyDurationMs ?? 0), 0);
+
+        const driveRemainingHrs = Math.max(0, DRIVE_CAP_HRS - driveUsedMs / MS_PER_HR);
+        const shiftRemainingHrs = Math.max(0, SHIFT_CAP_HRS - onDutyUsedMs / MS_PER_HR);
+        const cycleRemainingHrs = Math.max(0, cycleCapHrs - cycleUsedMs / MS_PER_HR);
+
+        hosParsed.push({
+          driverId,
+          driverName: drv?.name || '',
+          logDate: (latest?.startTime || '').slice(0, 10),
+          driveRemainingHrs,
+          shiftRemainingHrs,
+          cycleRemainingHrs,
+          cycleCapHrs,
+          currentStatus: '', // not provided on daily-logs endpoint
+        });
+      }
     }
     const hos = hosParsed;
 
@@ -1110,13 +1143,13 @@ export default async function MasterDashboard() {
                             <p className="text-[9px] font-bold" style={{ color: s.color }}>{s.label}</p>
                           </div>
                           <div className="rounded-xl p-3 border" style={{ background: c.bg, borderColor: `${c.color}33` }}>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Weekly Cycle (60h / 7d)</p>
+                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Weekly Cycle ({lowboyHos.cycleCapHrs || 60}h / {lowboyHos.cycleCapHrs === 70 ? 8 : 7}d)</p>
                             <p className="text-2xl font-black" style={{ color: c.color }}>{hrs(lowboyHos.cycleRemainingHrs)}</p>
                             <p className="text-[9px] font-bold" style={{ color: c.color }}>{c.label}</p>
                           </div>
                         </div>
-                        {lowboyHos.currentStatus && (
-                          <p className="text-[10px] text-[#757A7F]/70 mt-2">Current status: <span className="font-bold text-[#3C4043]">{lowboyHos.currentStatus}</span></p>
+                        {lowboyHos.logDate && (
+                          <p className="text-[10px] text-[#757A7F]/70 mt-2">Latest day logged: <span className="font-bold text-[#3C4043]">{lowboyHos.logDate}</span></p>
                         )}
                       </div>
                     );
