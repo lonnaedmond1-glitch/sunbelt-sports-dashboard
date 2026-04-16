@@ -1514,10 +1514,15 @@ export interface GanttRow {
 
 export async function fetchGanttSchedule(): Promise<GanttRow[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=0`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return [];
-    const text = await res.text();
+    let text = '';
+    const res = await fetch(`https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=0`, { next: { revalidate: 86400 } }).catch(() => null);
+    if (res && res.ok) text = await res.text();
+    if (!text || text.includes('<!DOCTYPE') || text.includes('<HTML')) {
+      const fs2 = await import('fs'); const path2 = await import('path');
+      const p = path2.join(process.cwd(), 'data', '2026_Gantt.csv');
+      if (fs2.existsSync(p)) text = fs2.readFileSync(p, 'utf-8');
+    }
+    if (!text) return [];
     const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
     if (lines.length < 3) return [];
     // Row 0 is header ("Job #, Job Name, Project Type, Start, End, ...weeks").
@@ -1679,10 +1684,16 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
     },
   };
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return empty;
-    const text = await res.text();
+    let text = '';
+    const sheetUrl = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
+    const res = await fetch(sheetUrl, { next: { revalidate: 86400 } }).catch(() => null);
+    if (res && res.ok) text = await res.text();
+    if (!text || text.includes('<!DOCTYPE') || text.includes('<HTML')) {
+      const fs3 = await import('fs'); const path3 = await import('path');
+      const p = path3.join(process.cwd(), 'data', 'crew_days_sold.csv');
+      if (fs3.existsSync(p)) text = fs3.readFileSync(p, 'utf-8');
+    }
+    if (!text) return empty;
     const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
     if (lines.length < 3) return empty;
 
