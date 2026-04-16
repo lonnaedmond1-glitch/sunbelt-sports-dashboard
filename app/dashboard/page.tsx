@@ -704,10 +704,60 @@ export default async function MasterDashboard() {
     return s + n;
   }, 0);
 
-  // Worst offenders list (top 5 by dollar loss)
-  const worstOffenders = [...qboWip]
-    .filter(q => q.Profit < 0)
-    .sort((a, b) => a.Profit - b.Profit)
+  // ── Worst Offenders — combined (real losses + budget-burn risk) ─────────────
+  // QBO sheet doesn't carry estimates yet, so we cross-join WIP Contract_Amount
+  // (the proposal/contract dollar value) to surface jobs that are burning through
+  // contract value faster than they're billing.
+  //
+  // A job is flagged if EITHER:
+  //   (1) Profit < 0  — actually losing money right now (real loss)
+  //   (2) Act_Cost > 75% of Contract_Amount AND Pct_Complete < 90%  — burning
+  //       through contract too fast, will likely overrun before close-out
+  //
+  // Each row gets a reason label so user knows WHY it's on the list.
+  const wipByJob = new Map<string, any>(
+    (jobs as any[]).map((j: any) => [j.Job_Number, j])
+  );
+  const COST_BURN_THRESHOLD = 0.75; // 75% of contract value spent
+  const COMPLETE_THRESHOLD = 90;    // and not yet 90% billed/done
+
+  const worstOffenderCandidates = qboWip.map(q => {
+    const wip = wipByJob.get(q.Job_Number) || null;
+    const contract = wip?.Contract_Amount || 0;
+    const pctComplete = wip?.Pct_Complete || 0;
+    const burnRatio = contract > 0 ? q.Act_Cost / contract : 0;
+
+    const isRealLoss = q.Profit < 0;
+    const isBudgetBurn = contract > 0
+      && burnRatio > COST_BURN_THRESHOLD
+      && pctComplete < COMPLETE_THRESHOLD
+      && !isRealLoss;
+
+    if (!isRealLoss && !isBudgetBurn) return null;
+
+    // Severity score: real losses ranked first by dollar amount;
+    // budget-burn jobs ranked by how far past 75% they are
+    const severity = isRealLoss
+      ? -q.Profit + 1_000_000           // floor real losses above all burn jobs
+      : (burnRatio - COST_BURN_THRESHOLD) * (contract || 1);
+
+    return {
+      ...q,
+      _wip: wip,
+      _contract: contract,
+      _pctComplete: pctComplete,
+      _burnRatio: burnRatio,
+      _isRealLoss: isRealLoss,
+      _isBudgetBurn: isBudgetBurn,
+      _severity: severity,
+      _reason: isRealLoss
+        ? `Losing money: $${Math.abs(q.Profit / 1000).toFixed(0)}K loss`
+        : `Cost is ${(burnRatio * 100).toFixed(0)}% of $${(contract / 1000).toFixed(0)}K contract · ${pctComplete}% billed`,
+    };
+  }).filter((x): x is NonNullable<typeof x> => x !== null);
+
+  const worstOffenders = worstOffenderCandidates
+    .sort((a, b) => b._severity - a._severity)
     .slice(0, 5);
 
   // Rework aggregates (FYTD from Oct 1)
@@ -1270,27 +1320,44 @@ export default async function MasterDashboard() {
                     })()}
                   </div>
 
-                  {/* Worst Offenders list */}
+                  {/* Worst Offenders list — real losses + budget-burn risk */}
                   {worstOffenders.length > 0 && (
                     <div className="pt-3 border-t border-[#F1F3F4]">
-                      <p className="text-xs font-black uppercase tracking-widest text-[#757A7F] mb-2">Worst Offenders — Active Jobs Losing Money</p>
+                      <div className="flex justify-between items-baseline mb-2">
+                        <p className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Worst Offenders — Active Jobs at Financial Risk</p>
+                        <span className="text-[9px] text-[#757A7F]/60 font-bold uppercase">Loss + Cost ≥ 75% Contract</span>
+                      </div>
                       <div className="space-y-1.5">
-                        {worstOffenders.map(q => (
-                          <Link key={q.Job_Number} href={`/jobs/${q.Job_Number}`} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#E04343]/5 border border-[#E04343]/15 hover:bg-[#E04343]/10 transition-colors">
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-[#3C4043] truncate">
-                                {q.Job_Number}{q.Project_Name ? ` · ${q.Project_Name}` : ''}
-                              </p>
-                              <p className="text-[10px] text-[#757A7F]/70">
-                                ${(q.Act_Income/1000).toFixed(0)}K revenue · ${(q.Act_Cost/1000).toFixed(0)}K cost
-                              </p>
-                            </div>
-                            <div className="text-right ml-3 flex-shrink-0">
-                              <p className="text-sm font-black text-[#E04343]">-${Math.abs(q.Profit/1000).toFixed(0)}K</p>
-                              <p className="text-[10px] text-[#E04343]/70">{(q.Profit_Margin * 100).toFixed(0)}% margin</p>
-                            </div>
-                          </Link>
-                        ))}
+                        {worstOffenders.map(q => {
+                          const tone = q._isRealLoss ? '#E04343' : '#F5A623'; // red = loss, amber = burn
+                          const tag = q._isRealLoss ? 'LOSS' : 'BUDGET BURN';
+                          return (
+                            <Link key={q.Job_Number} href={`/jobs/${q.Job_Number}`} className="flex items-center justify-between px-3 py-2 rounded-lg border hover:opacity-90 transition" style={{ background: `${tone}08`, borderColor: `${tone}25` }}>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded" style={{ background: `${tone}20`, color: tone }}>{tag}</span>
+                                  <p className="text-xs font-bold text-[#3C4043] truncate">
+                                    {q.Job_Number}{q.Project_Name ? ` · ${q.Project_Name}` : ''}
+                                  </p>
+                                </div>
+                                <p className="text-[10px] text-[#757A7F]/80 truncate">{q._reason}</p>
+                              </div>
+                              <div className="text-right ml-3 flex-shrink-0">
+                                {q._isRealLoss ? (
+                                  <>
+                                    <p className="text-sm font-black" style={{ color: tone }}>-${Math.abs(q.Profit/1000).toFixed(0)}K</p>
+                                    <p className="text-[10px]" style={{ color: `${tone}b3` }}>{(q.Profit_Margin * 100).toFixed(0)}% margin</p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="text-sm font-black" style={{ color: tone }}>{(q._burnRatio * 100).toFixed(0)}%</p>
+                                    <p className="text-[10px]" style={{ color: `${tone}b3` }}>cost / contract</p>
+                                  </>
+                                )}
+                              </div>
+                            </Link>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
