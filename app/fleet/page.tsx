@@ -1,17 +1,81 @@
 import React from 'react';
 import Link from 'next/link';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
+import { fetchVisionLinkAssets } from '@/lib/sheets-data';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export const revalidate = 86400;
 
+// ── Driver compliance CSV reader ──────────────────────────────────────────
+interface ComplianceRow {
+  name: string;
+  licenseNumber: string;
+  cdlExpiration: string;
+  cdlDaysLeft: number | null;
+  medExpiration: string;
+  medDaysLeft: number | null;
+  randomStatus: string;
+  randomDeadline: string;
+}
+
+function loadDriverCompliance(): ComplianceRow[] {
+  try {
+    const csvPath = path.join(process.cwd(), 'data', 'driver_compliance.csv');
+    if (!fs.existsSync(csvPath)) return [];
+    const text = fs.readFileSync(csvPath, 'utf-8');
+    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const daysUntil = (dateStr: string): number | null => {
+      if (!dateStr) return null;
+      const d = new Date(dateStr.trim());
+      if (isNaN(d.getTime())) return null;
+      return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    };
+    return lines.slice(1).map(line => {
+      // Handle quoted fields with newlines (David Hudson's name has a newline in the CSV)
+      const cols = line.split(',').map(c => c.replace(/"/g, '').trim());
+      const name = cols[0] || '';
+      if (!name) return null;
+      return {
+        name,
+        licenseNumber: cols[1] || '',
+        cdlExpiration: cols[2] || '',
+        cdlDaysLeft: daysUntil(cols[2] || ''),
+        medExpiration: cols[3] || '',
+        medDaysLeft: daysUntil(cols[3] || ''),
+        randomStatus: cols[4] || '',
+        randomDeadline: cols[5] || '',
+      };
+    }).filter((r): r is ComplianceRow => r !== null && r.name.length > 0);
+  } catch { return []; }
+}
+
 export default async function FleetPage() {
-  const samsara = await getGlobalSamsara();
+  const [samsara, vlAssets] = await Promise.all([getGlobalSamsara(), fetchVisionLinkAssets()]);
   const configured = samsara.configured;
   const vehicles: any[] = samsara.vehicles || [];
   const crews: any[] = samsara.crews || [];
   const hos: any[] = (samsara as any).hos || [];
+  const compliance = loadDriverCompliance();
 
-  // HOS status per driver
+  // Fleet health summary from VisionLink
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const vlHealthy = vlAssets.filter((a: any) => {
+    const lr = a.Last_Reported ? new Date(a.Last_Reported) : null;
+    if (!lr || isNaN(lr.getTime())) return false;
+    return (today.getTime() - lr.getTime()) / (1000 * 60 * 60 * 24) <= 7;
+  }).length;
+  const vlStale = vlAssets.filter((a: any) => {
+    const lr = a.Last_Reported ? new Date(a.Last_Reported) : null;
+    if (!lr || isNaN(lr.getTime())) return true;
+    return (today.getTime() - lr.getTime()) / (1000 * 60 * 60 * 24) > 30;
+  }).length;
+  const vlCheck = vlAssets.length - vlHealthy - vlStale;
+  const fleetScore = vlAssets.length > 0 ? Math.round((vlHealthy / vlAssets.length) * 100) : null;
+
+  // HOS tone helper
   const toneFor = (hrs: number | null, critical: number, warn: number) => {
     if (hrs == null) return { color: '#9CA3AF', label: 'N/A' };
     if (hrs <= critical) return { color: '#E04343', label: 'STOP' };
@@ -19,51 +83,56 @@ export default async function FleetPage() {
     return { color: '#20BC64', label: 'OK' };
   };
 
-  // Merge crews with HOS by name match
-  const driverTable = crews.map(c => {
-    const h = hos.find((x: any) => (x.driverName || '').toLowerCase() === (c.name || '').toLowerCase());
-    return {
-      name: c.name,
-      phone: c.phone,
-      eldStatus: c.status,
-      logDate: h?.logDate || '',
-      drive: h?.driveRemainingHrs ?? null,
-      shift: h?.shiftRemainingHrs ?? null,
-      cycle: h?.cycleRemainingHrs ?? null,
-      currentStatus: h?.currentStatus || '',
-    };
-  });
+  // Filter EXEMPT drivers out of HOS table — they don't report HOS
+  const driverTable = crews
+    .filter(c => c.status !== 'exempt')
+    .map(c => {
+      const h = hos.find((x: any) => (x.driverName || '').toLowerCase() === (c.name || '').toLowerCase());
+      return {
+        name: c.name,
+        eldStatus: c.status,
+        logDate: h?.logDate || '',
+        drive: h?.driveRemainingHrs ?? null,
+        shift: h?.shiftRemainingHrs ?? null,
+        cycle: h?.cycleRemainingHrs ?? null,
+        currentStatus: h?.currentStatus || '',
+      };
+    });
 
   const vehiclesMoving = vehicles.filter(v => (v.speed || 0) > 2);
   const vehiclesParked = vehicles.filter(v => (v.speed || 0) <= 2);
   const driversAtRisk = driverTable.filter(d => d.drive != null && d.drive <= 2).length;
-  // HOS KPI should not read "0 risk" when no driver has any HOS data at all — that's NO DATA, not healthy.
   const hasAnyHosData = driverTable.some(d => d.drive != null || d.shift != null || d.cycle != null);
+
+  // Compliance countdown tone
+  const cdlTone = (days: number | null) => {
+    if (days == null) return { color: '#9CA3AF', label: 'N/A' };
+    if (days <= 30) return { color: '#E04343', label: `${days}d` };
+    if (days <= 90) return { color: '#F5A623', label: `${days}d` };
+    return { color: '#20BC64', label: `${days}d` };
+  };
+
+  const urgentCompliance = compliance.filter(c =>
+    (c.cdlDaysLeft != null && c.cdlDaysLeft <= 90) ||
+    (c.medDaysLeft != null && c.medDaysLeft <= 90)
+  ).length;
 
   return (
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
       <header className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Fleet &amp; Driver Compliance</h1>
-          <p className="text-[#757A7F] text-sm">Samsara vehicle positions, driver Hours of Service, and ELD compliance status.</p>
-          <div className="mt-3 rounded-lg bg-[#60a5fa]/5 border border-[#60a5fa]/20 px-4 py-3 max-w-3xl">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa]/80 mb-1">What this page is for</p>
-            <p className="text-xs text-[#3C4043] leading-relaxed">Single view of every active driver\u2019s remaining legal drive-time and shift hours. Use it at dispatch to decide who can take the next Low Boy move, who needs a reset, and which vehicles are in motion right now. If this card shows <strong>Awaiting Samsara integration</strong>, set <code className="font-mono text-[10px]">SAMSARA_API_KEY</code> in Vercel \u2192 Settings \u2192 Environment Variables.</p>
-          </div>
+          <p className="text-[#757A7F] text-sm">Samsara vehicle positions, driver HOS, DOT license &amp; medical compliance.</p>
         </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">← Dashboard</Link>
+        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">&larr; Dashboard</Link>
       </header>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Vehicles Tracked</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Vehicles</p>
           <p className="text-3xl font-black text-[#20BC64]">{vehicles.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Currently Moving</p>
-          <p className="text-3xl font-black text-[#60a5fa]">{vehiclesMoving.length}</p>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">{vehiclesParked.length} parked</p>
+          <p className="text-[10px] text-[#757A7F] mt-0.5">{vehiclesMoving.length} moving · {vehiclesParked.length} parked</p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
           <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Active Drivers</p>
@@ -74,61 +143,161 @@ export default async function FleetPage() {
           {hasAnyHosData ? (
             <>
               <p className={`text-3xl font-black ${driversAtRisk > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{driversAtRisk}</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">drivers with ≤2h drive left</p>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">&le;2h drive left</p>
             </>
           ) : (
             <>
-              <p className="text-3xl font-black text-[#9CA3AF]">—</p>
-              <p className="text-[10px] text-[#9CA3AF] mt-0.5 font-bold uppercase tracking-widest">No HOS data</p>
+              <p className="text-3xl font-black text-[#9CA3AF]">&mdash;</p>
+              <p className="text-[10px] text-[#9CA3AF] mt-0.5 font-bold uppercase">No HOS data</p>
             </>
           )}
+        </div>
+        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
+          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">DOT Compliance</p>
+          <p className="text-3xl font-black text-[#3C4043]">{compliance.length}</p>
+          <p className="text-[10px] text-[#757A7F] mt-0.5">drivers on file</p>
+        </div>
+        <div className={`bg-white rounded-xl p-5 border ${urgentCompliance > 0 ? 'border-[#E04343]/30' : 'border-[#F1F3F4]'}`}>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Expiring &le;90d</p>
+          <p className={`text-3xl font-black ${urgentCompliance > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{urgentCompliance}</p>
+          <p className="text-[10px] text-[#757A7F] mt-0.5">license or medical card</p>
         </div>
       </div>
 
       {!configured && (
         <div className="mb-8 rounded-xl bg-amber-500/10 border border-amber-500/30 px-5 py-4">
           <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">Awaiting Samsara integration</p>
-          <p className="text-xs text-[#757A7F]">Set <code className="font-mono text-[11px]">SAMSARA_API_KEY</code> in Vercel env vars to populate this page.</p>
+          <p className="text-xs text-[#757A7F]">Set <code className="font-mono text-[11px]">SAMSARA_API_KEY</code> in Vercel env vars to populate HOS data.</p>
         </div>
       )}
 
-      {/* Driver HOS compliance table */}
+      {/* Fleet Health Summary */}
       <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden mb-8">
-        <div className="px-5 py-4 border-b border-[#F1F3F4]">
-          <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Driver HOS Compliance</h2>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">Remaining legal hours per DOT rules: 11h driving, 14h shift, 60h / 7-day cycle.</p>
+        <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+          <div>
+            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Fleet Health</h2>
+            <p className="text-[10px] text-[#757A7F] mt-0.5">Owned equipment (VisionLink) + Samsara vehicle operational status.</p>
+          </div>
+          {fleetScore != null && (
+            <div className="text-right">
+              <p className={`text-2xl font-black ${fleetScore >= 80 ? 'text-[#20BC64]' : fleetScore >= 50 ? 'text-[#F5A623]' : 'text-[#E04343]'}`}>{fleetScore}%</p>
+              <p className="text-[10px] text-[#757A7F]/70 font-bold uppercase">healthy</p>
+            </div>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F1F3F4]">
-              <tr>
-                {['Driver', 'ELD Status', 'Duty Status', 'Drive Remaining', 'Shift Remaining', 'Cycle Remaining'].map(h => (
-                  <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {driverTable.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-[#757A7F]">No active drivers reporting.</td></tr>
-              ) : driverTable.map((d, i) => {
-                const dr = toneFor(d.drive, 0.5, 2);
-                const sh = toneFor(d.shift, 1, 3);
-                const cy = toneFor(d.cycle, 5, 15);
-                const fmt = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}h`;
-                return (
-                  <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
-                    <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F] uppercase">{d.eldStatus}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F]">{d.currentStatus || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-black" style={{ color: dr.color }}>{fmt(d.drive)}</td>
-                    <td className="px-3 py-2 text-xs font-black" style={{ color: sh.color }}>{fmt(d.shift)}</td>
-                    <td className="px-3 py-2 text-xs font-black" style={{ color: cy.color }}>{fmt(d.cycle)}</td>
-                    {/* phone column removed */}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5 text-center">
+            <p className="text-2xl font-black text-[#20BC64]">{vehiclesMoving.length + vlHealthy}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Active / Healthy</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">{vehiclesMoving.length} vehicles moving · {vlHealthy} equipment reporting</p>
+          </div>
+          <div className="rounded-xl p-4 border border-[#F5A623]/20 bg-[#F5A623]/5 text-center">
+            <p className="text-2xl font-black text-[#F5A623]">{vlCheck}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Needs Check</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">7-30 days since last report</p>
+          </div>
+          <div className="rounded-xl p-4 border border-[#E04343]/20 bg-[#E04343]/5 text-center">
+            <p className="text-2xl font-black text-[#E04343]">{vlStale}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Stale / Offline</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">30+ days no signal</p>
+          </div>
+          <div className="rounded-xl p-4 border border-[#F1F3F4] text-center">
+            <p className="text-2xl font-black text-[#3C4043]">{vehicles.length + vlAssets.length}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Total Fleet</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">{vehicles.length} Samsara · {vlAssets.length} VisionLink</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 2-col: HOS Compliance (left) + DOT License/Medical (right) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+        {/* ═══ HOS Compliance — exempt drivers filtered out ═══ */}
+        <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#F1F3F4]">
+            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Driver HOS Compliance</h2>
+            <p className="text-[10px] text-[#757A7F] mt-0.5">Non-exempt drivers only. 11h drive / 14h shift / 60h cycle caps.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#F1F3F4]">
+                <tr>
+                  {['Driver', 'Duty Status', 'Drive', 'Shift', 'Cycle'].map(h => (
+                    <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {driverTable.length === 0 ? (
+                  <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-[#757A7F]">No non-exempt drivers reporting.</td></tr>
+                ) : driverTable.map((d, i) => {
+                  const dr = toneFor(d.drive, 0.5, 2);
+                  const sh = toneFor(d.shift, 1, 3);
+                  const cy = toneFor(d.cycle, 5, 15);
+                  const fmt = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}h`;
+                  return (
+                    <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
+                      <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
+                      <td className="px-3 py-2 text-xs text-[#757A7F]">{d.currentStatus || '—'}</td>
+                      <td className="px-3 py-2 text-xs font-black" style={{ color: dr.color }}>{fmt(d.drive)}</td>
+                      <td className="px-3 py-2 text-xs font-black" style={{ color: sh.color }}>{fmt(d.shift)}</td>
+                      <td className="px-3 py-2 text-xs font-black" style={{ color: cy.color }}>{fmt(d.cycle)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ═══ DOT Compliance — License, Medical Card, Random Drug Test ═══ */}
+        <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#F1F3F4]">
+            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">DOT License &amp; Medical Compliance</h2>
+            <p className="text-[10px] text-[#757A7F] mt-0.5">CDL expiration, medical certificate countdown, random selection status.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-[#F1F3F4]">
+                <tr>
+                  {['Driver', 'CDL Expires', 'Days Left', 'Medical Expires', 'Days Left', 'Random Status'].map(h => (
+                    <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {compliance.length === 0 ? (
+                  <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-[#757A7F]">No compliance data. Add <code className="font-mono text-[11px]">driver_compliance.csv</code> to /data.</td></tr>
+                ) : compliance
+                  .sort((a, b) => {
+                    // Sort: soonest expiration first (either CDL or medical)
+                    const aMin = Math.min(a.cdlDaysLeft ?? 9999, a.medDaysLeft ?? 9999);
+                    const bMin = Math.min(b.cdlDaysLeft ?? 9999, b.medDaysLeft ?? 9999);
+                    return aMin - bMin;
+                  })
+                  .map((c, i) => {
+                    const cdl = cdlTone(c.cdlDaysLeft);
+                    const med = cdlTone(c.medDaysLeft);
+                    return (
+                      <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${(c.cdlDaysLeft != null && c.cdlDaysLeft <= 30) || (c.medDaysLeft != null && c.medDaysLeft <= 30) ? 'bg-[#E04343]/5' : ''}`}>
+                        <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{c.name}</td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">{c.cdlExpiration || '—'}</td>
+                        <td className="px-3 py-2 text-xs font-black" style={{ color: cdl.color }}>{cdl.label}</td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">{c.medExpiration || '—'}</td>
+                        <td className="px-3 py-2 text-xs font-black" style={{ color: med.color }}>{med.label}</td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">
+                          {c.randomStatus ? (
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${c.randomStatus.toLowerCase().includes('pending') ? 'bg-[#F5A623]/15 text-[#F5A623]' : c.randomStatus.toLowerCase().includes('complete') ? 'bg-[#20BC64]/15 text-[#20BC64]' : 'bg-[#F1F3F4] text-[#757A7F]'}`}>
+                              {c.randomStatus}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -136,30 +305,33 @@ export default async function FleetPage() {
       <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
         <div className="px-5 py-4 border-b border-[#F1F3F4]">
           <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Vehicle Locations</h2>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">Live GPS from Samsara. Updated every minute.</p>
+          <p className="text-[10px] text-[#757A7F] mt-0.5">Live GPS from Samsara.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[#F1F3F4]">
               <tr>
-                {['Vehicle', 'Assigned Driver', 'Address', 'Speed', 'Heading', 'Status'].map(h => (
+                {['Vehicle', 'Driver', 'Location', 'Speed', 'Status'].map(h => (
                   <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {vehicles.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-[#757A7F]">No vehicles reporting.</td></tr>
+                <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-[#757A7F]">No vehicles reporting.</td></tr>
               ) : vehicles.map((v, i) => {
-                const moving = (v.speed || 0) > 2;
+                const isMoving = (v.speed || 0) > 2;
                 return (
                   <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
                     <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{v.name}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F]">{v.driver}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F] truncate max-w-[300px]">{v.address || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{Math.round(v.speed || 0)} mph</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F]">{Math.round(v.heading || 0)}°</td>
-                    <td className="px-3 py-2 text-xs font-black" style={{ color: moving ? '#20BC64' : '#F5A623' }}>● {moving ? 'EN ROUTE' : 'PARKED'}</td>
+                    <td className="px-3 py-2 text-xs text-[#757A7F]">{v.driver || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-[#757A7F] truncate max-w-[200px]" title={v.address}>{v.address || '—'}</td>
+                    <td className="px-3 py-2 text-xs font-bold" style={{ color: isMoving ? '#20BC64' : '#757A7F' }}>{Math.round(v.speed || 0)} mph</td>
+                    <td className="px-3 py-2">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${isMoving ? 'text-[#20BC64]' : 'text-[#757A7F]'}`}>
+                        {isMoving ? 'Moving' : 'Parked'}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
