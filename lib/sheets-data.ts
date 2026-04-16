@@ -423,7 +423,25 @@ export interface VisionLinkAsset {
 
 export async function fetchVisionLinkAssets(): Promise<VisionLinkAsset[]> {
   try {
-    const rows = await fetchScorecardTabCsv('VisionLink_Live');
+    // Try sheet first; fall back to local CSV (data/VisionLink_Live.csv)
+    let rows: string[][] = [];
+    try { rows = await fetchScorecardTabCsv('VisionLink_Live'); } catch {}
+    // Validate: sheet tab might contain wrong data (e.g. scorecard rows instead of assets).
+    // Real VisionLink_Live has 'asset_id' in header; if missing, discard and use local CSV.
+    const sheetHdr = (rows[0] || []).map(c => c.trim().toLowerCase());
+    if (!sheetHdr.includes('asset_id') && !sheetHdr.includes('asset_name')) {
+      rows = []; // wrong data in sheet tab
+    }
+    if (rows.length < 2) {
+      const fs = await import('fs');
+      const pathMod = await import('path');
+      const csvPath = pathMod.join(process.cwd(), 'data', 'VisionLink_Live.csv');
+      if (fs.existsSync(csvPath)) {
+        const text = fs.readFileSync(csvPath, 'utf-8');
+        rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+      }
+    }
+    if (rows.length < 2) return [];
     if (rows.length < 2) return [];
     const hdr = rows[0].map(c => c.trim().toLowerCase());
     const idx = (name: string) => hdr.indexOf(name);
