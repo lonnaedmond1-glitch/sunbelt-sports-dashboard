@@ -676,24 +676,46 @@ export default async function MasterDashboard() {
     .map(jn => jobs.find((j: any) => j.Job_Number === jn))
     .filter(Boolean);
 
-    // ── Portfolio Financials (QBO daily sync) ───────────────────────
-  // Partition jobs between those in WIP vs overhead/admin (not in WIP)
+    // ── Portfolio Financials (QBO daily sync + WIP Contract Amounts) ───────────
+  // QBO "Est vs Actuals" sheet has Est_Cost=0 and Est_Income=0 because estimates
+  // don't come from QuickBooks — they come from the WIP (Contract_Amount).
+  // We enrich each QBO row with the WIP contract value so Profit and Margin
+  // reflect reality: Profit = Contract_Amount − Act_Cost.
   const wipJobNums = new Set((jobs as any[]).map((j: any) => j.Job_Number));
-  const qboWip = qboFinancials.filter(q => q.Job_Number && wipJobNums.has(q.Job_Number));
+  const wipLookup = new Map<string, any>((jobs as any[]).map((j: any) => [j.Job_Number, j]));
+
+  const qboWip = qboFinancials
+    .filter(q => q.Job_Number && wipJobNums.has(q.Job_Number))
+    .map(q => {
+      const wip = wipLookup.get(q.Job_Number);
+      const contract = wip?.Contract_Amount || 0;
+      // Use Contract_Amount as Est_Income if QBO didn't provide one
+      const estIncome = q.Est_Income > 0 ? q.Est_Income : contract;
+      // Recompute profit: what we're contracted for minus what we've spent
+      const profit = estIncome > 0 ? estIncome - q.Act_Cost : q.Profit;
+      const margin = estIncome > 0 ? profit / estIncome : q.Profit_Margin;
+      return {
+        ...q,
+        Est_Income: estIncome,
+        Profit: profit,
+        Profit_Margin: margin,
+        _contract: contract,
+      };
+    });
   const qboOverhead = qboFinancials.filter(q => !q.Job_Number || !wipJobNums.has(q.Job_Number));
 
   // Margin at Risk: sum of negative profits + jobs under 15% margin
   const UNDER_MARGIN = 0.15;
   const lossJobs = qboWip.filter(q => q.Profit < 0);
-  const underMarginJobs = qboWip.filter(q => q.Act_Income > 0 && q.Profit_Margin < UNDER_MARGIN);
+  const underMarginJobs = qboWip.filter(q => q.Est_Income > 0 && q.Profit_Margin < UNDER_MARGIN);
   const marginAtRiskDollars = lossJobs.reduce((s, q) => s + Math.abs(q.Profit), 0);
 
   // Top money loser (worst single job by dollar loss)
   const topLoser = [...qboWip].sort((a, b) => a.Profit - b.Profit)[0] || null;
 
-  // Average portfolio margin across active jobs with income > 0
-  const qboActive = qboWip.filter(q => q.Act_Income > 0);
-  const totalAct = qboActive.reduce((s, q) => s + q.Act_Income, 0);
+  // Average portfolio margin across active jobs with contract or income > 0
+  const qboActive = qboWip.filter(q => q.Est_Income > 0);
+  const totalAct = qboActive.reduce((s, q) => s + q.Est_Income, 0);
   const totalProf = qboActive.reduce((s, q) => s + q.Profit, 0);
   const avgMargin = totalAct > 0 ? totalProf / totalAct : 0;
 
