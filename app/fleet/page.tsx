@@ -52,6 +52,55 @@ function loadDriverCompliance(): ComplianceRow[] {
   } catch { return []; }
 }
 
+// ── Driver safety CSV reader ──────────────────────────────────────────
+interface SafetyRow {
+  rank: number; name: string; score: number; driveTime: string;
+  totalMiles: number; maxSpeed: number; events: number;
+  lightSpeeding: number; moderateSpeeding: number; heavySpeeding: number;
+}
+function loadDriverSafety(): SafetyRow[] {
+  try {
+    const csvPath = path.join(process.cwd(), 'data', 'samsara_driver_safety.csv');
+    if (!fs.existsSync(csvPath)) return [];
+    const text = fs.readFileSync(csvPath, 'utf-8');
+    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    return lines.slice(1).map(line => {
+      const c = line.split(',');
+      const rank = parseInt(c[0]) || 0;
+      if (rank === 0) return null; // skip "All Drivers" summary row
+      return {
+        rank,
+        name: (c[1] || '').trim(),
+        score: parseInt(c[6]) || 0,
+        driveTime: (c[7] || '').trim(),
+        totalMiles: parseFloat(c[8]) || 0,
+        maxSpeed: parseFloat(c[22]) || 0,
+        events: parseInt(c[9]) || 0,
+        lightSpeeding: parseFloat(c[17]) || 0,
+        moderateSpeeding: parseFloat(c[18]) || 0,
+        heavySpeeding: parseFloat(c[19]) || 0,
+      };
+    }).filter((r): r is SafetyRow => r !== null);
+  } catch { return []; }
+}
+
+// ── ELD Diagnostics reader ──────────────────────────────────────────
+interface EldDiag { date: string; event: string; asset: string; }
+function loadEldDiagnostics(): EldDiag[] {
+  try {
+    const csvPath = path.join(process.cwd(), 'data', 'eld_diagnostics.csv');
+    if (!fs.existsSync(csvPath)) return [];
+    const text = fs.readFileSync(csvPath, 'utf-8');
+    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
+    if (lines.length < 2) return [];
+    return lines.slice(1).map(line => {
+      const c = line.split(',').map(s => s.replace(/"/g, '').trim());
+      return { date: c[0] || '', event: c[1] || '', asset: c[3] || '' };
+    }).filter(r => r.event);
+  } catch { return []; }
+}
+
 export default async function FleetPage() {
   const [samsara, vlAssets] = await Promise.all([getGlobalSamsara(), fetchVisionLinkAssets()]);
   const configured = samsara.configured;
@@ -59,6 +108,8 @@ export default async function FleetPage() {
   const crews: any[] = samsara.crews || [];
   const hos: any[] = (samsara as any).hos || [];
   const compliance = loadDriverCompliance();
+  const safety = loadDriverSafety();
+  const eldDiags = loadEldDiagnostics();
 
   // Fleet health summary from VisionLink
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -298,6 +349,85 @@ export default async function FleetPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      {/* ═══ Driver Safety Scores + ELD Diagnostics ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Driver Safety Scores — 2/3 width */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Driver Safety Scores</h2>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">Samsara 30-day rolling scores. 100 = perfect, &lt;70 = needs coaching.</p>
+            </div>
+            <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">
+              {safety.length > 0 ? `Avg: ${Math.round(safety.reduce((s, d) => s + d.score, 0) / safety.length)}` : 'No data'}
+            </span>
+          </div>
+          {safety.length === 0 ? (
+            <div className="p-6"><p className="text-sm text-[#757A7F] italic">No safety data. Add <code className="font-mono text-[11px]">samsara_driver_safety.csv</code> to /data.</p></div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F1F3F4]">
+                  <tr>
+                    {['#', 'Driver', 'Score', 'Drive Time', 'Miles', 'Max Speed', 'Events'].map(h => (
+                      <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {safety.map((d, i) => {
+                    const scoreColor = d.score >= 80 ? '#20BC64' : d.score >= 60 ? '#F5A623' : '#E04343';
+                    return (
+                      <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${d.score < 60 ? 'bg-[#E04343]/5' : ''}`}>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">{d.rank}</td>
+                        <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
+                        <td className="px-3 py-2">
+                          <span className="text-sm font-black" style={{ color: scoreColor }}>{d.score}</span>
+                        </td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F] font-mono">{d.driveTime}</td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">{d.totalMiles.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-xs font-bold" style={{ color: d.maxSpeed > 80 ? '#E04343' : '#3C4043' }}>{Math.round(d.maxSpeed)} mph</td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">{d.events}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ELD Diagnostics — 1/3 width */}
+        <div className="lg:col-span-1 bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#F1F3F4]">
+            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">ELD Diagnostics</h2>
+            <p className="text-[10px] text-[#757A7F] mt-0.5">Active malfunctions that need attention.</p>
+          </div>
+          {eldDiags.length === 0 ? (
+            <div className="p-6"><p className="text-sm text-[#20BC64] font-bold">All clear — no active diagnostics.</p></div>
+          ) : (
+            <div className="p-4 space-y-2">
+              {(() => {
+                const grouped: Record<string, string[]> = {};
+                for (const d of eldDiags) {
+                  const key = d.asset || 'Unknown';
+                  if (!grouped[key]) grouped[key] = [];
+                  if (!grouped[key].includes(d.event)) grouped[key].push(d.event);
+                }
+                return Object.entries(grouped).map(([asset, events], i) => (
+                  <div key={i} className="rounded-lg p-3 border border-[#F5A623]/20 bg-[#F5A623]/5">
+                    <p className="text-xs font-bold text-[#3C4043]">{asset}</p>
+                    {events.map((e, j) => (
+                      <p key={j} className="text-[10px] text-[#F5A623] font-bold mt-0.5">{e}</p>
+                    ))}
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
         </div>
       </div>
 
