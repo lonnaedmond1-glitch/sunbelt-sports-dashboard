@@ -977,6 +977,10 @@ const CREW_COLUMNS: { name: string; col: number; pmCol?: number; type: string }[
   { name: 'Concrete Sub 2', col: 39, type: 'sub' },
 ];
 const DELIVERY_COL = 7;
+// Loose Ends columns on the Schedule tab. The sheet has two:
+// col 6 (next to "David - Lowboy") and col 35 (after the crew block).
+// We collect both and dedup.
+const LOOSE_ENDS_COLS = [6, 35];
 
 const SUPPLIER_MAP: Record<string, string> = {
   'CWM': 'CW Matthews', 'APAC': 'APAC-Atlantic', 'VMC': 'Vulcan Materials',
@@ -1070,6 +1074,9 @@ export async function fetchScheduleData() {
     const currentWeekDays: any[] = [];
     const nextWeekDays: any[] = [];
     const deliveries: any[] = [];
+    // Loose ends are pulled from columns 6 + 35 of every row in the current/next-week window.
+    // Each non-empty cell becomes one bullet. Dedup by trimmed text.
+    const looseEndsRaw: { date: string; dateDisplay: string; dayOfWeek: string; text: string }[] = [];
 
     for (let i = 1; i < lines.length; i++) {
       const cols = parseCSVLine(lines[i]);
@@ -1077,6 +1084,19 @@ export async function fetchScheduleData() {
       const date = parseScheduleDate(dateStr);
       if (!date || date < thisMonday || date >= endOfNextWeek) continue;
       const isCurrentWeek = date < nextMonday;
+
+      // Loose ends — scan both columns, keep non-empty unique entries.
+      for (const lec of LOOSE_ENDS_COLS) {
+        const txt = (cols[lec] || '').trim();
+        if (txt && txt !== '-' && txt !== '—') {
+          looseEndsRaw.push({
+            date: date.toISOString().split('T')[0],
+            dateDisplay: dateStr,
+            dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }),
+            text: txt,
+          });
+        }
+      }
 
       const assignments: any[] = [];
       for (const crew of CREW_COLUMNS) {
@@ -1117,14 +1137,25 @@ export async function fetchScheduleData() {
     const scheduledJobs = new Set<string>();
     [...currentWeekDays, ...nextWeekDays].forEach(d => d.assignments.forEach((a: any) => { if (!a.decoded.isOff) scheduledJobs.add(a.decoded.jobRef); }));
 
+    // Dedup loose ends by trimmed lowercase text — keep earliest date for each.
+    const seenLooseText = new Set<string>();
+    const looseEnds = looseEndsRaw
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .filter(le => {
+        const k = le.text.toLowerCase();
+        if (seenLooseText.has(k)) return false;
+        seenLooseText.add(k);
+        return true;
+      });
+
     return {
       currentWeek: { weekOf: thisMonday.toISOString().split('T')[0], label: `Week of ${thisMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: currentWeekDays },
       nextWeek: { weekOf: nextMonday.toISOString().split('T')[0], label: `Week of ${nextMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: nextWeekDays },
-      deliveries, activeGanttJobs, jobFirstOccurrences,
+      deliveries, activeGanttJobs, jobFirstOccurrences, looseEnds,
       scheduledJobCount: scheduledJobs.size, ganttJobCount: ganttJobs.length,
       timestamp: new Date().toISOString(),
     };
-  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
+  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: 0, looseEnds: [] }; }
 }
 // ──────────────────────────── PROJECT SCORECARDS (Google Sheets Hub) ────────────────────────────
 const SCORECARD_HUB_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';

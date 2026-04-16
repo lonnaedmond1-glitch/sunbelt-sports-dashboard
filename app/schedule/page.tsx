@@ -513,36 +513,34 @@ export default async function SchedulePage() {
         {/* NEXT WEEK CREW GRID */}
         {renderWeekGrid(schedule.nextWeek, 'Next Week', false)}
 
-        {/* TIE UP LOOSE ENDS — final tile on the page */}
+        {/* TIE UP LOOSE ENDS — pulled from Schedule tab Loose Ends columns */}
         <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Tie Up Loose Ends</h2>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">Open follow-ups from the Level 10 meeting.</p>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">Live from the Schedule tab — every Loose End for the next two weeks.</p>
             </div>
             <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">
-              {level10.looseEnds?.length || 0} open
+              {schedule.looseEnds?.length || 0} open
             </span>
           </div>
           <div className="p-5">
-            {level10.looseEnds?.length > 0 ? (
+            {schedule.looseEnds?.length > 0 ? (
               <ul className="space-y-2.5">
-                {level10.looseEnds.map((end, i) => (
+                {schedule.looseEnds.map((le: any, i: number) => (
                   <li key={i} className="flex gap-3 items-start text-sm leading-relaxed">
                     <span className="flex-shrink-0 mt-1.5 w-1.5 h-1.5 rounded-full bg-[#F5A623]" aria-hidden />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[#3C4043]">{end.details}</p>
-                      {end.who && (
-                        <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623] mt-0.5">
-                          Owner: {end.who}
-                        </p>
-                      )}
+                      <p className="text-[#3C4043]">{le.text}</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]/70 mt-0.5">
+                        {le.dayOfWeek} · {le.dateDisplay?.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '')}
+                      </p>
                     </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-[#757A7F] italic">No loose ends from the latest L10 meeting.</p>
+              <p className="text-sm text-[#757A7F] italic">No loose ends scheduled for this or next week.</p>
             )}
           </div>
         </div>
