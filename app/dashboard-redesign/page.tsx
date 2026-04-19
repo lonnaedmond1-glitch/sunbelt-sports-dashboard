@@ -9,8 +9,6 @@ import {
   fetchArAging,
   fetchReworkLog,
 } from '@/lib/sheets-data';
-import { formatDollars } from '@/lib/format';
-
 export const revalidate = 3600;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,27 +81,10 @@ export default async function DashboardRedesign() {
   const billedPct = totalPortfolio > 0 ? totalBilled / totalPortfolio : 0;
 
   // ── Derive: A/R at risk (91+ days) ────────────────────────────────────────
-  const arRows = (arAging as any[]) || [];
-  const arOver90 = arRows.reduce((s, r) => {
-    const v =
-      Number(r.Days_Over_90) ||
-      Number(r['91_and_over']) ||
-      Number(r.Over_90) ||
-      Number(r['91+']) ||
-      0;
-    return s + v;
-  }, 0);
-  const arTotal = arRows.reduce((s, r) => {
-    const v =
-      Number(r.Total) ||
-      Number(r.Balance) ||
-      (Number(r.Current) || 0) +
-        (Number(r.Days_1_30) || 0) +
-        (Number(r.Days_31_60) || 0) +
-        (Number(r.Days_61_90) || 0) +
-        (Number(r.Days_Over_90) || 0);
-    return s + v;
-  }, 0);
+  const arRows = arAging?.rows || [];
+  const arOver90 = arAging?.totals?.d91Plus || 0;
+  const arTotal = arAging?.totals?.total || 0;
+  const arOver90Count = arRows.filter((r) => (Number(r.Days_91_Plus) || 0) > 0).length;
 
   // ── Derive: portfolio margin (QBO + WIP contract) ─────────────────────────
   const wipLookup = new Map<string, any>(
@@ -127,11 +108,9 @@ export default async function DashboardRedesign() {
   const lossJobs = qboWip.filter((q) => q.Profit < 0);
   const marginAtRiskDollars = lossJobs.reduce((s, q) => s + Math.abs(q.Profit), 0);
 
-  // ── Derive: change orders + rework totals (if present) ────────────────────
-  const reworkYtd = (reworkLog as any[]).reduce(
-    (s, r) => s + (Number(r.Cost) || Number(r.Amount) || 0),
-    0,
-  );
+  // ── Derive: rework totals ─────────────────────────────────────────────────
+  const reworkYtd = reworkLog.reduce((s, r) => s + (Number(r.Cost) || 0), 0);
+  const reworkCount = reworkLog.length;
 
   // ── Derive: live field view per active job ────────────────────────────────
   const today = todayISO();
@@ -167,7 +146,7 @@ export default async function DashboardRedesign() {
     attention.push({
       severity: 'danger',
       title: `${fmtDollars(arOver90)} unpaid over 90 days`,
-      detail: `${arRows.filter((r) => (Number(r.Days_Over_90) || 0) > 0).length} customers past due`,
+      detail: `${arOver90Count} customer${arOver90Count === 1 ? '' : 's'} past due`,
       cta: 'Open A/R',
       href: '/portfolio',
     });
@@ -354,7 +333,7 @@ export default async function DashboardRedesign() {
               label="A/R at risk"
               value={fmtDollars(arOver90)}
               sub={arTotal > 0 ? `${fmtPct(arOver90 / arTotal)} of total A/R (91+ days)` : 'over 90 days'}
-              source="A/R Aging (QBO sync)"
+              source="QBO A/R Aging"
               href="/portfolio"
               tone={arOver90 > 50_000 ? 'danger' : arOver90 > 0 ? 'warning' : 'ok'}
             />
@@ -405,7 +384,7 @@ export default async function DashboardRedesign() {
             <MoneyCard
               label="A/R over 90 days"
               value={fmtDollars(arOver90)}
-              caption="customers past due"
+              caption={`${arOver90Count} customer${arOver90Count === 1 ? '' : 's'} past due`}
               tone={arOver90 > 50_000 ? 'danger' : 'neutral'}
             />
             <MoneyCard
@@ -417,7 +396,7 @@ export default async function DashboardRedesign() {
             <MoneyCard
               label="Rework cost (logged)"
               value={fmtDollars(reworkYtd)}
-              caption={`${(reworkLog as any[]).length} rework events`}
+              caption={`${reworkCount} rework events`}
               tone={reworkYtd > 0 ? 'warning' : 'neutral'}
             />
             <MoneyCard
