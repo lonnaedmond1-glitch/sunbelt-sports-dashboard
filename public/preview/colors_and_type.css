@@ -1,0 +1,287 @@
+/* ============================================================
+   Sunbelt Sports — Colors & Type Tokens
+   Source of truth for all products (emails, dashboards,
+   mobile app, slides, signage).
+   ============================================================ */
+
+:root {
+  /* ---------- BRAND ---------------------------------------- */
+  --brand-green:          #198754;  /* Primary — AppSheet spec       */
+  --brand-green-600:      #157347;  /* Hover / pressed               */
+  --brand-green-700:      #1B5E20;  /* Deep — section headers (email)*/
+  --brand-green-800:      #14633A;  /* Banner shadow side            */
+  --brand-green-900:      #0F4025;  /* Deepest — ink on green        */
+  --brand-green-500:      #2E9755;  /* Banner light side             */
+  --brand-green-400:      #4CAF50;  /* OK indicator dot              */
+  --brand-green-300:      #81C784;  /* Accent lines on hero          */
+  --brand-green-50:       #E8F5E9;  /* Stat card fill                */
+  --brand-green-25:       #F1F8F2;  /* Subtle zebra / hover row      */
+
+  /* Gradient for headers + splash */
+  --brand-gradient:
+    linear-gradient(135deg, #2E9755 0%, #1E7E47 40%, #14633A 100%);
+
+  /* Metallic chrome (wordmark on dark/green) */
+  --chrome-text-shadow:
+    0 1px 0 #e0e0e0,
+    0 2px 0 #ccc,
+    0 3px 0 #b8b8b8,
+    0 4px 0 #a0a0a0,
+    0 5px 0 #888,
+    0 6px 2px rgba(0,0,0,0.4),
+    0 -1px 0 rgba(255,255,255,0.4);
+
+  /* ---------- NEUTRAL / INK -------------------------------- */
+  --ink:                  #14181F;  /* Primary foreground            */
+  --ink-2:                #263238;  /* Body text on light            */
+  --ink-3:                #455A64;  /* Meta / eyebrows               */
+  --ink-4:                #5C6470;  /* Muted / captions              */
+  --ink-5:                #78909C;  /* Very muted / disclaimers      */
+  --ink-on-dark:          #B0BEC5;  /* Text on charcoal footer       */
+
+  --surface:              #FFFFFF;  /* Card / sheet background       */
+  --surface-2:            #F5F5F5;  /* Page bg (email), zebra row    */
+  --surface-3:            #F1F3F5;  /* Page bg (app)                 */
+  --surface-dark:         #263238;  /* Charcoal footer               */
+  --surface-dark-2:       #1B2228;  /* Deeper charcoal               */
+
+  --border:               #CCD2D9;  /* Hairline borders              */
+  --border-soft:          #ECEFF1;  /* Table row divider             */
+
+  /* ---------- SEMANTIC — STATUS ---------------------------- */
+  /* On Track (green) */
+  --status-ok-bg:         #D4EDDA;
+  --status-ok-text:       #155724;
+  --status-ok-bar:        #198754;
+
+  /* Watch (amber) */
+  --status-watch-bg:      #FFF3CD;
+  --status-watch-text:    #856404;
+  --status-watch-bar:     #F0A500;
+  --status-watch-bar-alt: #F57F17;  /* used in emails                */
+
+  /* At Risk (red) */
+  --status-risk-bg:       #F8D7DA;
+  --status-risk-text:     #721C24;
+  --status-risk-bar:      #DC3545;
+  --status-risk-bar-alt:  #C62828;  /* used in emails                */
+
+  /* Callout fills (soft, used in email left-border alerts) */
+  --callout-warn-bg:      #FFF3E0;
+  --callout-warn-text:    #E65100;
+  --callout-warn-border:  #F57F17;
+  --callout-danger-bg:    #FFEBEE;
+  --callout-danger-text:  #C62828;
+  --callout-danger-border:#C62828;
+  --callout-info-bg:      #E3F2FD;
+  --callout-info-text:    #1565C0;
+  --callout-info-border:  #1565C0;
+
+  /* Burn-bar color thresholds (< 55 / 55–79 / ≥ 80) */
+  --burn-low:             var(--status-ok-bar);
+  --burn-mid:             var(--status-watch-bar);
+  --burn-high:            var(--status-risk-bar);
+
+  /* ---------- TYPOGRAPHY ----------------------------------- */
+  /* Families */
+  --font-display:   "Bebas Neue", "Oswald", "Arial Narrow", Impact, sans-serif;
+  --font-sans:      "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-email:     Arial, "Helvetica Neue", Helvetica, sans-serif; /* MSO-safe */
+  --font-mono:      "JetBrains Mono", "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
+
+  /* Display scale (marketing/slide/hero) */
+  --fs-display-xl:  96px;  /* 1920 deck title                      */
+  --fs-display-lg:  72px;
+  --fs-display:     56px;
+  --fs-display-sm:  40px;
+
+  /* Headings */
+  --fs-h1:          32px;
+  --fs-h2:          24px;
+  --fs-h3:          20px;
+  --fs-h4:          16px;
+  --fs-h5:          14px;  /* uppercase eyebrow                    */
+
+  /* Body */
+  --fs-body-lg:     18px;
+  --fs-body:        16px;
+  --fs-body-sm:     14px;
+  --fs-caption:     13px;
+  --fs-micro:       11px;
+
+  /* Weights */
+  --fw-regular:     400;
+  --fw-medium:      500;
+  --fw-semibold:    600;
+  --fw-bold:        700;
+
+  /* Line heights */
+  --lh-tight:       1.15;
+  --lh-snug:        1.3;
+  --lh-normal:      1.5;
+  --lh-loose:       1.65;
+
+  /* Letter spacing */
+  --ls-display:     0.06em;  /* chrome wordmark                    */
+  --ls-eyebrow:     0.08em;  /* UPPERCASE META LABELS              */
+  --ls-caps:        0.05em;  /* caps section headings              */
+  --ls-normal:      0;
+  --ls-tight:       -0.01em;
+
+  /* ---------- SPACING (4pt base) --------------------------- */
+  --s-1:   4px;
+  --s-2:   8px;
+  --s-3:   12px;
+  --s-4:   16px;
+  --s-5:   20px;
+  --s-6:   24px;
+  --s-7:   28px;
+  --s-8:   32px;
+  --s-10:  40px;
+  --s-12:  48px;
+  --s-16:  64px;
+  --s-20:  80px;
+  --s-24:  96px;
+
+  /* ---------- RADII ---------------------------------------- */
+  --r-sm:   4px;   /* email container                             */
+  --r-md:   6px;   /* stat cards in email                         */
+  --r-lg:   10px;  /* pills                                       */
+  --r-xl:   12px;  /* app cards                                   */
+  --r-2xl:  16px;
+  --r-pill: 9999px;
+
+  /* ---------- ELEVATION ------------------------------------ */
+  /* Sunbelt is mostly flat — shadows appear only on: modal
+     overlays, the mobile app's FAB-style header accent, and
+     photography frames. Avoid shadows on standard cards.     */
+  --shadow-0:  none;
+  --shadow-1:  0 1px 2px rgba(20,24,31,0.06), 0 1px 1px rgba(20,24,31,0.04);
+  --shadow-2:  0 4px 12px rgba(20,24,31,0.08), 0 2px 4px rgba(20,24,31,0.04);
+  --shadow-3:  0 12px 28px rgba(20,24,31,0.14), 0 4px 10px rgba(20,24,31,0.06);
+  --shadow-inset-hi: inset 0 1px 0 rgba(255,255,255,0.15);
+  --shadow-chrome-drop: 0 2px 1px rgba(0,0,0,0.5);
+
+  /* ---------- BORDERS -------------------------------------- */
+  --bw-hairline: 1px;
+  --bw-accent:   2px;  /* 2px under section titles in email       */
+  --bw-header:   3px;  /* 3px green banner under email header     */
+
+  /* ---------- MOTION --------------------------------------- */
+  --dur-fast:   120ms;
+  --dur-med:    200ms;
+  --dur-slow:   320ms;
+  --ease-out:   cubic-bezier(0.2, 0.8, 0.2, 1);   /* default */
+  --ease-std:   cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in:    cubic-bezier(0.4, 0, 1, 1);
+  /* No bounce — construction brand, motion is purposeful.     */
+
+  /* ---------- LAYOUT --------------------------------------- */
+  --container-app:    420px;   /* mobile app max content width     */
+  --container-email:  600px;   /* email container                  */
+  --container-prose:  680px;
+  --container-wide:   1200px;  /* dashboard                        */
+  --container-deck-w: 1920px;
+  --container-deck-h: 1080px;
+  --hit-target:       48px;    /* min tap/click                    */
+}
+
+/* ============================================================
+   Google Fonts import
+   Note: System substitution fallbacks in stack above.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ============================================================
+   Semantic element presets — apply to any root that also
+   imports this file. Opt-in per UI kit via <html data-sbs>.
+   ============================================================ */
+[data-sbs],
+[data-sbs] body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-normal);
+  color: var(--ink);
+  background: var(--surface-2);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+[data-sbs] h1, [data-sbs] .h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0;
+}
+[data-sbs] h2, [data-sbs] .h2 {
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-snug);
+  letter-spacing: var(--ls-tight);
+  color: var(--ink);
+  margin: 0;
+}
+[data-sbs] h3, [data-sbs] .h3 {
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--ink);
+  margin: 0;
+}
+[data-sbs] h4, [data-sbs] .h4 {
+  font-size: var(--fs-h4);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--ink);
+  margin: 0;
+}
+
+/* Eyebrow / section label — the signature Sunbelt pattern */
+[data-sbs] .eyebrow {
+  font-size: var(--fs-h5);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--brand-green-700);
+  border-bottom: var(--bw-accent) solid var(--brand-green);
+  padding-bottom: var(--s-2);
+  display: block;
+}
+
+[data-sbs] p { margin: 0 0 var(--s-3); line-height: var(--lh-loose); }
+[data-sbs] small, [data-sbs] .caption {
+  font-size: var(--fs-caption);
+  color: var(--ink-4);
+}
+[data-sbs] .meta {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--ink-3);
+}
+
+[data-sbs] code, [data-sbs] .mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+/* The metallic "JOB TRACKER"-style chrome wordmark helper */
+[data-sbs] .chrome-wordmark {
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-display);
+  color: #D8D8D8;
+  text-shadow: var(--chrome-text-shadow);
+}
+
+/* Focus ring */
+[data-sbs] :focus-visible {
+  outline: 2px solid var(--brand-green);
+  outline-offset: 2px;
+}
