@@ -1389,13 +1389,13 @@ export default async function MasterDashboard() {
           // Target base-to-paving ratio: >= 1.2x so base crews stay ahead of paving.
           const t = crewDays.totals;
           // If crew days fetch returned 0, use hardcoded values from the 12/10/25 Crew Days Sold export
-          const _stone = _stone || 205;
-          const _mill = _mill || 30;
-          const _curb = _curb || 64;
-          const _pave = _pave || 62;
-          const _contract = _contract || 10182590;
-          const _left = _left || 10182590;
-          const _jobCount = _jobCount || 27;
+          const _stone = t.stoneBaseDays || 205;
+          const _mill = t.millMiscDays || 30;
+          const _curb = t.curbDays || 64;
+          const _pave = t.pavingDays || 62;
+          const _contract = t.totalContract || 10182590;
+          const _left = t.totalLeftToBill || 10182590;
+          const _jobCount = crewDays.jobs.length || 27;
           const baseCapacity = _stone + _mill + _curb;
           const paveCapacity = _pave;
           const ratio = paveCapacity > 0 ? baseCapacity / paveCapacity : null;
