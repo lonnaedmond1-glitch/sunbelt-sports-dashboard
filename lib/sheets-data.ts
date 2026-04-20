@@ -312,10 +312,36 @@ export function fetchLiveRentals() {
   return cached('liveRentals', 24 * 60 * 60 * 1000, async () => {
     try {
       const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
-      const [sunbeltRows, unitedRows] = await Promise.all([
+      // Pull the job index so we can join rentals to their job number by name.
+      // Without this join, every per-job page shows "STATIC DATA" for rentals.
+      const [sunbeltRows, unitedRows, liveJobs] = await Promise.all([
         fetchSheetByName(RENTAL_SHEET_ID, 'Sunbelt Rentals Live'),
         fetchSheetByName(RENTAL_SHEET_ID, 'United Rentals Live'),
+        fetchLiveJobs(),
       ]);
+
+      const jobIndex: { num: string; tokens: string[] }[] = (liveJobs as any[]).map((j: any) => ({
+        num: (j?.Job_Number || '').trim(),
+        tokens: (j?.Job_Name || '').toLowerCase().split(/\s+/).filter((t: string) => t.length > 3),
+      })).filter(j => j.num);
+
+      const extractJobNumber = (...parts: string[]): string => {
+        const hay = parts.filter(Boolean).join(' ');
+        // Match YY-NNN first (Sunbelt standard).
+        const ym = hay.match(/\b(\d{2}-\d{3})\b/);
+        if (ym) return ym[1];
+        // Fallback: match by job name tokens.
+        const lower = hay.toLowerCase();
+        let best: { num: string; len: number } | null = null;
+        for (const j of jobIndex) {
+          for (const t of j.tokens) {
+            if (lower.includes(t) && (!best || t.length > best.len)) {
+              best = { num: j.num, len: t.length };
+            }
+          }
+        }
+        return best?.num || '';
+      };
 
       const rentals: any[] = [];
 
@@ -331,12 +357,16 @@ export function fetchLiveRentals() {
           };
           const equipType = getCol('equipment_type') || getCol('class_name');
           if (!equipType) continue;
+          const jobName = getCol('job_name');
+          const jobLocation = getCol('job_location');
+          const jobCity = getCol('job_city');
           rentals.push({
             vendor: 'Sunbelt Rentals',
             contractNumber: getCol('contract_number'),
-            jobName: getCol('job_name'),
-            jobLocation: getCol('job_location'),
-            jobCity: getCol('job_city'),
+            Job_Number: extractJobNumber(getCol('job_number'), jobName, jobLocation),
+            jobName,
+            jobLocation,
+            jobCity,
             equipmentType: equipType,
             className: getCol('class_name'),
             dayRate: parseMoney(getCol('day_rate')),
@@ -362,11 +392,14 @@ export function fetchLiveRentals() {
           };
           const equipType = getCol('description') || getCol('equipment') || getCol('class') || r[2]?.trim() || '';
           if (!equipType) continue;
+          const jobName = getCol('job') || getCol('site') || '';
+          const jobLocation = getCol('location') || getCol('address') || '';
           rentals.push({
             vendor: 'United Rentals',
             contractNumber: getCol('contract') || getCol('order') || r[0]?.trim() || '',
-            jobName: getCol('job') || getCol('site') || '',
-            jobLocation: getCol('location') || getCol('address') || '',
+            Job_Number: extractJobNumber(getCol('job_number'), jobName, jobLocation),
+            jobName,
+            jobLocation,
             jobCity: '',
             equipmentType: equipType,
             className: '',
@@ -404,11 +437,14 @@ export function fetchLiveRentals() {
                 const equipModel = g(col('equipmentmodel')) || g(col('model'));
                 const equipClass = g(col('equipmentclass')) || g(col('class'));
                 if (!equipModel && !equipClass) continue;
+                const jobName = g(col('jobname')) || g(col('job_name'));
+                const jobLocation = `${g(col('jobcity'))}, ${g(col('jobstate'))}`.replace(/^, |, $/g, '');
                 rentals.push({
                   vendor: 'Sunbelt Rentals',
                   contractNumber: g(col('contractnumber')) || g(col('contract')),
-                  jobName: g(col('jobname')) || g(col('job_name')),
-                  jobLocation: `${g(col('jobcity'))}, ${g(col('jobstate'))}`.replace(/^, |, $/g, ''),
+                  Job_Number: extractJobNumber(g(col('jobnumber')), jobName, jobLocation),
+                  jobName,
+                  jobLocation,
                   jobCity: g(col('jobcity')),
                   equipmentType: equipModel || equipClass,
                   className: equipClass,
@@ -440,9 +476,12 @@ export function fetchLiveRentals() {
                   const equipType = (r[1] || '').trim();
                   if (!equipType) continue;
                   const vendor = (r[2] || '').trim() || 'Sunbelt Rentals';
+                  // Simple fallback CSV header: Job_Number,Equipment_Type,Vendor,Days_On_Site,Target_Off_Rent,Daily_Rate
+                  const jobNumberRaw = (r[0] || '').trim();
                   rentals.push({
                     vendor,
                     contractNumber: '',
+                    Job_Number: extractJobNumber(jobNumberRaw),
                     jobName: '',
                     jobLocation: '',
                     jobCity: '',
@@ -1131,7 +1170,7 @@ export async function fetchScheduleData() {
     }
 
     // Parse schedule
-    if (!schedRes.ok) return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: ganttJobs.length };
+    if (!schedRes.ok) return { currentWeek: { days: [] }, nextWeek: { days: [] }, allDays: [], deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], scheduledJobCount: 0, ganttJobCount: ganttJobs.length };
     const csvText = await schedRes.text();
     const lines = csvText.split('\n').map(l => l.replace(/\r$/, ''));
 
@@ -1141,6 +1180,10 @@ export async function fetchScheduleData() {
     const thisMonday = new Date(today); thisMonday.setDate(today.getDate() + monOffset);
     const nextMonday = new Date(thisMonday); nextMonday.setDate(thisMonday.getDate() + 7);
     const endOfNextWeek = new Date(nextMonday); endOfNextWeek.setDate(nextMonday.getDate() + 7);
+    // Extended window for the /schedule page so every scheduled row appears,
+    // not just the current + next 14 days. (4 weeks back, 12 weeks forward.)
+    const windowStart = new Date(thisMonday); windowStart.setDate(thisMonday.getDate() - 28);
+    const windowEnd = new Date(thisMonday); windowEnd.setDate(thisMonday.getDate() + 84);
 
     // First pass: job occurrences
     const jobOccurrences = new Map<string, { firstDate: string; lastDate: string; jobRef: string; ganttJobNumber: string }>();
@@ -1164,9 +1207,10 @@ export async function fetchScheduleData() {
     }
     const jobFirstOccurrences = Array.from(jobOccurrences.values());
 
-    // Second pass: current/next week
+    // Second pass: current/next week plus the extended rolling window
     const currentWeekDays: any[] = [];
     const nextWeekDays: any[] = [];
+    const allWindowDays: any[] = [];
     const deliveries: any[] = [];
     const looseEndsRaw: { date: string; text: string }[] = [];
 
@@ -1174,8 +1218,10 @@ export async function fetchScheduleData() {
       const cols = parseCSVLine(lines[i]);
       const dateStr = cols[0];
       const date = parseScheduleDate(dateStr);
-      if (!date || date < thisMonday || date >= endOfNextWeek) continue;
-      const isCurrentWeek = date < nextMonday;
+      if (!date || date < windowStart || date >= windowEnd) continue;
+      const inCurrentWeek = date >= thisMonday && date < nextMonday;
+      const inNextWeek = date >= nextMonday && date < endOfNextWeek;
+      const isCurrentWeek = inCurrentWeek;
 
       // Collect loose ends from cols 6 + 35
       for (const lec of LOOSE_ENDS_COLS) {
@@ -1217,7 +1263,9 @@ export async function fetchScheduleData() {
       if (deliveryText) { deliveries.push({ date: date.toISOString().split('T')[0], dateDisplay: dateStr, dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }), description: deliveryText, isCurrentWeek }); }
 
       const dayData = { date: date.toISOString().split('T')[0], dateDisplay: dateStr, dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }), assignments, isToday: date.getTime() === today.getTime() };
-      if (isCurrentWeek) currentWeekDays.push(dayData); else nextWeekDays.push(dayData);
+      allWindowDays.push(dayData);
+      if (inCurrentWeek) currentWeekDays.push(dayData);
+      else if (inNextWeek) nextWeekDays.push(dayData);
     }
 
     const activeGanttJobs = ganttJobs.filter((g: any) => g.startDate && g.endDate && g.startDate <= endOfNextWeek && g.endDate >= today);
@@ -1236,11 +1284,12 @@ export async function fetchScheduleData() {
     return {
       currentWeek: { weekOf: thisMonday.toISOString().split('T')[0], label: `Week of ${thisMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: currentWeekDays },
       nextWeek: { weekOf: nextMonday.toISOString().split('T')[0], label: `Week of ${nextMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: nextWeekDays },
+      allDays: allWindowDays,
       deliveries, activeGanttJobs, jobFirstOccurrences, looseEnds,
       scheduledJobCount: scheduledJobs.size, ganttJobCount: ganttJobs.length,
       timestamp: new Date().toISOString(),
     };
-  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], looseEnds: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
+  } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, allDays: [], deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], looseEnds: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
 }
 // ──────────────────────────── PROJECT SCORECARDS (Google Sheets Hub) ────────────────────────────
 const SCORECARD_HUB_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
@@ -1696,7 +1745,8 @@ export async function fetchBidLog(): Promise<BidLogRow[]> {
     for (let i = headerIdx + 1; i < lines.length; i++) {
       const cells = parseCSVLine(lines[i]);
       const bidNo = (cells[iBid] || '').trim();
-      if (!/^2\d{3}-\d{3}$/.test(bidNo)) continue;
+      // Sunbelt job numbers are YY-NNN (e.g. 25-201). Older regex required YYYY-NNN and dropped every row.
+      if (!/^\d{2}-\d{3}$/.test(bidNo)) continue;
       rows.push({
         Bid_Number: bidNo,
         Date_Bid: (cells[iDate] || '').trim(),

@@ -1,12 +1,13 @@
 import React from 'react';
 import Link from 'next/link';
 import { fetchLiveJobs, fetchLiveFieldReports } from '@/lib/sheets-data';
-import { formatDollars } from '@/lib/format';
+import { formatDollars, formatDollarsCompact } from '@/lib/format';
 
-export const revalidate = 86400; // Daily ISR
+export const revalidate = 86400;
 
-// Per Jackie 4/9 review: unstarted jobs are Not Started (gray), not At Risk (red).
-function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' | 'gray' {
+type Health = 'green' | 'amber' | 'red' | 'gray';
+
+function getJobHealth(job: any, report: any): Health {
   const pct = job.Pct_Complete || 0;
   const hasReport = !!report;
   if (pct === 0 && !hasReport) return 'gray';
@@ -14,11 +15,31 @@ function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' | 'gray'
   return 'green';
 }
 
-const healthColor: Record<string, string> = { green: '#20BC64', amber: '#fb923c', red: '#ef4444', gray: '#9CA3AF' };
+const healthColor: Record<Health, string> = {
+  green: '#198754',
+  amber: '#E8892B',
+  red: '#D8392B',
+  gray: '#6B7278',
+};
+
+const healthLabel: Record<Health, string> = {
+  green: 'On Track',
+  amber: 'Watch',
+  red: 'At Risk',
+  gray: 'Not Started',
+};
 
 function isJobClosed(job: any): boolean {
   const s = String(job?.Status || '').trim().toLowerCase();
   return s === 'complete' || s === 'closed';
+}
+
+function statusPill(status: string): string {
+  const s = (status || '').toLowerCase();
+  if (s === 'executed') return 'pill pill-success';
+  if (s === 'signed') return 'pill pill-info';
+  if (s === 'received' || s === 'pending') return 'pill pill-warning';
+  return 'pill pill-neutral';
 }
 
 export default async function PortfolioPage({ searchParams }: { searchParams: Promise<{ status?: string; state?: string; showClosed?: string }> }) {
@@ -31,10 +52,9 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     fetchLiveJobs(),
     fetchLiveFieldReports(),
   ]);
-  // Per Jackie 4/9: default hide closed jobs; toggle with ?showClosed=1
+
   const jobs = showClosed ? allJobs : allJobs.filter((j: any) => !isJobClosed(j));
 
-  // Build report map
   const reportMap: Record<string, any> = {};
   for (const r of fieldReports) {
     if (r.Job_Number && (!reportMap[r.Job_Number] || r.Date > reportMap[r.Job_Number].Date)) {
@@ -42,141 +62,140 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
     }
   }
 
-  // Stats
   const totalValue = jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0);
   const totalBilled = jobs.reduce((s: number, j: any) => s + (j.Billed_To_Date || 0), 0);
   const statusCounts: Record<string, number> = {};
   const stateCounts: Record<string, number> = {};
   jobs.forEach((j: any) => {
     statusCounts[j.Status] = (statusCounts[j.Status] || 0) + 1;
-    stateCounts[j.State] = (stateCounts[j.State] || 0) + 1;
+    if (j.State) stateCounts[j.State] = (stateCounts[j.State] || 0) + 1;
   });
 
-  const healthCounts = { green: 0, amber: 0, red: 0, gray: 0 };
+  const healthCounts: Record<Health, number> = { green: 0, amber: 0, red: 0, gray: 0 };
   jobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
 
+  const filtered = jobs.filter((j: any) => (!filterStatus || j.Status === filterStatus) && (!filterState || j.State === filterState));
+
   return (
-    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
-      <header className="mb-6 flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Full Portfolio</h1>
-          <p className="text-[#757A7F] text-sm">{jobs.length} active jobs across {Object.keys(stateCounts).length} states — ${totalValue.toLocaleString()} total contract value</p>
-        </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-white transition-colors">← Dashboard</Link>
-      </header>
+    <div className="min-h-screen p-8">
+      <div className="max-w-[1400px] mx-auto">
+        <header className="mb-8 flex justify-between items-end">
+          <div>
+            <span className="eyebrow">Portfolio</span>
+            <h1 className="text-4xl font-display mt-2">Every Active Job</h1>
+            <p className="text-steel-grey text-sm mt-1">
+              {jobs.length} jobs across {Object.keys(stateCounts).length} states — source: Master Job Index (Sports Level 10)
+            </p>
+          </div>
+          <Link href="/dashboard" className="text-xs text-sunbelt-green font-display tracking-widest uppercase hover:text-sunbelt-green-hover">← Dashboard</Link>
+        </header>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Total Jobs</p>
-          <p className="text-3xl font-black text-[#20BC64]">{jobs.length}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Contract Value</p>
-          <p className="text-3xl font-black">${(totalValue / 1000000).toFixed(1)}M</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Billed to Date</p>
-          <p className="text-3xl font-black text-[#60a5fa]">${(totalBilled / 1000000).toFixed(1)}M</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Remaining</p>
-          <p className="text-3xl font-black text-[#F5A623]">${((totalValue - totalBilled) / 1000000).toFixed(1)}M</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Health</p>
-          <div className="flex gap-3 mt-1">
-            {(['green', 'amber', 'red', 'gray'] as const).map(h => (
-              <span key={h} className="text-sm font-black" style={{ color: healthColor[h] }} title={h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : h === 'red' ? 'At Risk' : 'Not Started'}>
-                ● {healthCounts[h]}
-              </span>
-            ))}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <div className="card card-padded">
+            <p className="stat-label">Open Jobs</p>
+            <p className="stat-value text-sunbelt-green">{jobs.length}</p>
+          </div>
+          <div className="card card-padded">
+            <p className="stat-label">Contract Value</p>
+            <p className="stat-value font-mono">{formatDollarsCompact(totalValue)}</p>
+          </div>
+          <div className="card card-padded">
+            <p className="stat-label">Billed To Date</p>
+            <p className="stat-value font-mono">{formatDollarsCompact(totalBilled)}</p>
+          </div>
+          <div className="card card-padded">
+            <p className="stat-label">Remaining</p>
+            <p className="stat-value font-mono" style={{ color: '#E8892B' }}>{formatDollarsCompact(totalValue - totalBilled)}</p>
+          </div>
+          <div className="card card-padded">
+            <p className="stat-label">Health</p>
+            <div className="flex flex-wrap gap-3 mt-2">
+              {(['green', 'amber', 'red', 'gray'] as Health[]).map(h => (
+                <span key={h} className="font-mono text-sm" style={{ color: healthColor[h] }} title={healthLabel[h]}>
+                  ● {healthCounts[h]}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Status + State breakdown */}
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-3">By Status {filterStatus && <a href="/portfolio" className="text-xs text-blue-400 ml-2">(clear)</a>}</p>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(statusCounts).sort((a, b) => b[1] - a[1]).map(([status, count]) => {
-              const color = status === 'Executed' ? '#20BC64' : status === 'Signed' ? '#60a5fa' : status === 'Received' ? '#fb923c' : '#9ca3af';
-              return (
-                <a href={`/portfolio?status=${encodeURIComponent(status)}`} key={status} className="cursor-pointer hover:opacity-80 text-xs font-bold px-3 py-1.5 rounded-full" style={{ color, backgroundColor: `${color}15`, border: `1px solid ${color}30`, ...(filterStatus === status ? {fontWeight:"bold",outline:"2px solid currentColor"} : {}) }}>
-                  {status} ({count})
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+          <div className="card card-padded">
+            <p className="eyebrow">By Status {filterStatus && <a href="/portfolio" className="text-xs text-steel-grey ml-2 normal-case tracking-normal">(clear)</a>}</p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {Object.entries(statusCounts).sort((a, b) => b[1] - a[1]).map(([status, count]) => (
+                <a href={`/portfolio?status=${encodeURIComponent(status)}`} key={status}
+                   className={`${statusPill(status)} ${filterStatus === status ? 'ring-2 ring-offset-1 ring-sunbelt-green' : ''}`}>
+                  {status} · {count}
                 </a>
-              );
-            })}
+              ))}
+            </div>
+          </div>
+          <div className="card card-padded">
+            <p className="eyebrow">By State {filterState && <a href="/portfolio" className="text-xs text-steel-grey ml-2 normal-case tracking-normal">(clear)</a>}</p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).map(([state, count]) => (
+                <a href={`/portfolio?state=${encodeURIComponent(state)}`} key={state}
+                   className={`pill pill-neutral ${filterState === state ? 'ring-2 ring-offset-1 ring-sunbelt-green' : ''}`}>
+                  {state} · {count}
+                </a>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-3">By State {filterState && <a href="/portfolio" className="text-xs text-blue-400 ml-2">(clear)</a>}</p>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(stateCounts).sort((a, b) => b[1] - a[1]).map(([state, count]) => (
-              <a href={`/portfolio?state=${encodeURIComponent(state)}`} style={filterState === state ? {fontWeight:"bold",outline:"2px solid currentColor"} : {}} key={state} className="cursor-pointer hover:opacity-80 text-xs font-bold px-3 py-1.5 rounded-full bg-[#F1F3F4] text-[#3C4043]/70 border border-[#3C4043]/15">
-                {state} ({count})
-              </a>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Main Table */}
-      <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden shadow-md">
-        <div className="px-6 py-4 border-b border-[#F1F3F4] bg-black/20 flex justify-between items-center">
-          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">All Jobs — {jobs.length}{showClosed ? '' : ` (${allJobs.length - jobs.length} closed hidden)`}</h2>
-          <div className="flex items-center gap-3">
-            <a href={showClosed ? '/portfolio' : '/portfolio?showClosed=1'} className="text-xs font-bold text-[#20BC64] hover:underline">
-              {showClosed ? 'Hide closed jobs' : 'Show closed jobs'}
+        <div className="card overflow-hidden">
+          <div className="px-6 py-4 border-b border-line-grey flex justify-between items-center">
+            <p className="eyebrow">All Jobs · {filtered.length}{showClosed ? '' : ` (${allJobs.length - jobs.length} closed hidden)`}</p>
+            <a href={showClosed ? '/portfolio' : '/portfolio?showClosed=1'} className="text-xs font-display tracking-widest uppercase text-sunbelt-green hover:underline">
+              {showClosed ? 'Hide closed' : 'Show closed'}
             </a>
-            <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Live Data Feed</span>
           </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-white z-10">
-              <tr className="border-b border-[#F1F3F4]">
-                {['Job #', 'Name', 'General Contractor', 'PM', 'State', 'Status', 'Contract Value', 'Billed', 'Billed %', 'Health'].map(h => (
-                  <th key={h} className="text-left px-4 py-3 text-xs font-bold uppercase tracking-widest text-[#757A7F] whitespace-nowrap">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.filter((j: any) => (!filterStatus || j.Status === filterStatus) && (!filterState || j.State === filterState)).map((job: any, i: number) => {
-                const pct = Math.round(job.Pct_Complete || 0);
-                const health = ['Signed','Pending','Bid'].includes(job.Status) ? '\u2014' : getJobHealth(job, reportMap[job.Job_Number]);
-                const statusColor = job.Status === 'Executed' ? '#20BC64' : job.Status === 'Signed' ? '#60a5fa' : job.Status === 'Received' ? '#fb923c' : '#9ca3af';
-                return (
-                  <tr key={job.Job_Number} className={`border-b border-[#F1F3F4] hover:bg-[#F1F3F4] transition-colors ${i % 2 === 0 ? 'bg-transparent' : 'bg-[#F1F3F4]/50'}`}>
-                    <td className="px-4 py-3">
-                      <Link href={`/jobs/${job.Job_Number}`} className="text-[#20BC64] font-bold hover:text-white transition-colors text-xs">{job.Job_Number}</Link>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-[#3C4043] max-w-[200px] truncate text-xs">{job.Job_Name}</td>
-                    <td className="px-4 py-3 text-[#757A7F] text-xs truncate max-w-[140px]">{job.General_Contractor}</td>
-                    <td className="px-4 py-3 text-[#757A7F] text-xs">{job.Project_Manager}</td>
-                    <td className="px-4 py-3"><span className="text-xs bg-[#F1F3F4] rounded px-2 py-0.5 text-[#757A7F]">{job.State}</span></td>
-                    <td className="px-4 py-3"><span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: statusColor, backgroundColor: `${statusColor}15` }}>{job.Status}</span></td>
-                    <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">{formatDollars(job.Contract_Amount)}</td>
-                    <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">{formatDollars(job.Billed_To_Date)}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: healthColor[health] }} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  {['Job #', 'Name', 'GC', 'PM', 'State', 'Status', 'Contract', 'Billed', 'Billed %', 'Health'].map(h => (
+                    <th key={h} className="table-header text-left px-4 py-3 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((job: any, i: number) => {
+                  const pct = Math.round(job.Pct_Complete || 0);
+                  const isActiveFlow = !['Signed', 'Pending', 'Bid'].includes(job.Status);
+                  const health: Health = isActiveFlow ? getJobHealth(job, reportMap[job.Job_Number]) : 'gray';
+                  return (
+                    <tr key={`${job.Job_Number}-${i}`} className="table-row-zebra border-b border-line-grey hover:bg-sunbelt-green-light/40 transition-athletic">
+                      <td className="px-4 py-3">
+                        <Link href={`/jobs/${job.Job_Number}`} className="text-sunbelt-green font-display tracking-wider hover:underline">{job.Job_Number}</Link>
+                      </td>
+                      <td className="px-4 py-3 font-medium max-w-[260px] truncate">{job.Job_Name}</td>
+                      <td className="px-4 py-3 text-steel-grey text-xs truncate max-w-[160px]">{job.General_Contractor}</td>
+                      <td className="px-4 py-3 text-steel-grey text-xs">{job.Project_Manager}</td>
+                      <td className="px-4 py-3"><span className="pill pill-neutral">{job.State || '—'}</span></td>
+                      <td className="px-4 py-3"><span className={statusPill(job.Status)}>{job.Status}</span></td>
+                      <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{formatDollars(job.Contract_Amount)}</td>
+                      <td className="px-4 py-3 font-mono text-xs whitespace-nowrap">{formatDollars(job.Billed_To_Date)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 bg-mist-grey rounded-full h-1.5 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, backgroundColor: healthColor[health] }} />
+                          </div>
+                          <span className="font-mono text-xs text-steel-grey">{pct}%</span>
                         </div>
-                        <span className="text-xs text-[#757A7F]">{pct}%</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-black" style={{ color: healthColor[health as keyof typeof healthColor] }}>
-                        {health === '—' ? '—' : health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : health === 'red' ? '● Risk' : '● N/S'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="font-display text-xs tracking-wider" style={{ color: healthColor[health] }}>
+                          ● {isActiveFlow ? healthLabel[health] : 'N/A'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
