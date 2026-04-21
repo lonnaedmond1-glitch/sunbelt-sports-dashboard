@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
+import { getPrepForJob, getRentalsForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed, fetchVisionLinkAssets, fetchFleetAssets, fetchLiveRentals, fetchScheduleData } from '@/lib/sheets-data';
 import JobTabs from '@/components/JobTabs';
 
@@ -103,7 +103,6 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
   const csvJob = getJobByNumber(jobNumber);
   const prep = getPrepForJob(jobNumber);
   const rentals = getRentalsForJob(jobNumber);
-  const csvReport = getFieldReportForJob(jobNumber);
   const changeOrders = getChangeOrdersForJob(jobNumber);
   const scorecard = getScorecardForJob(jobNumber);
   const jobFolder = getJobFolder(jobNumber);
