@@ -131,6 +131,67 @@ export function fetchLevel10Meeting() {
   });
 }
 
+// ──────────────────────────── MASTER JOBS (Scorecard Hub → Jobs tab) ────────────
+// Ground truth for portfolio value. Columns: Job # | Job Name | PM | Status |
+// Region | Type | Start Date | End Date | Est. Cost | Actual Cost | Notes
+
+export interface MasterJob {
+  Job_Number: string;
+  Job_Name: string;
+  PM: string;
+  Status: string;
+  Region: string;
+  Type: string;
+  Start_Date: string;
+  End_Date: string;
+  Est_Cost: number;
+  Actual_Cost: number;
+  Notes: string;
+}
+
+const MASTER_JOBS_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
+
+export function fetchMasterJobs(): Promise<MasterJob[]> {
+  return cached('masterJobs', 5 * 60 * 1000, async () => {
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${MASTER_JOBS_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Jobs`;
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+      if (!res.ok) return [];
+      const text = await res.text();
+      if (!text || text.includes('<!DOCTYPE')) return [];
+      const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+      if (rows.length < 2) return [];
+      const hdr = rows[0].map(c => c.trim());
+      const idx = (name: string) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
+      const iNum  = idx('Job #');
+      const iName = idx('Job Name');
+      const iPM   = idx('PM');
+      const iStat = idx('Status');
+      const iReg  = idx('Region');
+      const iType = idx('Type');
+      const iStart= idx('Start Date');
+      const iEnd  = idx('End Date');
+      const iEst  = idx('Est. Cost');
+      const iAct  = idx('Actual Cost');
+      const iNote = idx('Notes');
+      const g = (r: string[], i: number) => (i >= 0 && i < r.length) ? r[i].trim() : '';
+      return rows.slice(1).map(r => ({
+        Job_Number:  g(r, iNum),
+        Job_Name:    g(r, iName),
+        PM:          g(r, iPM),
+        Status:      g(r, iStat),
+        Region:      g(r, iReg),
+        Type:        g(r, iType),
+        Start_Date:  g(r, iStart),
+        End_Date:    g(r, iEnd),
+        Est_Cost:    parseMoney(g(r, iEst)),
+        Actual_Cost: parseMoney(g(r, iAct)),
+        Notes:       g(r, iNote),
+      })).filter(j => j.Job_Number);
+    } catch { return []; }
+  });
+}
+
 export function fetchLiveJobs() {
   return cached('liveJobs', 24 * 60 * 60 * 1000, async () => {
   try {
@@ -308,199 +369,63 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
   } catch { return []; }
 }
 
+// Real schema for "Sunbelt Rentals Live" and "United Rentals Live" tabs:
+// Item Code | Description | Quantity | Daily Rate | Start Date | Job # | Status
+// United Rentals Live is currently EMPTY — renders empty state, no CSV fallback.
+
 export function fetchLiveRentals() {
-  return cached('liveRentals', 24 * 60 * 60 * 1000, async () => {
+  return cached('liveRentals', 5 * 60 * 1000, async () => {
     try {
-      const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
-      // Pull the job index so we can join rentals to their job number by name.
-      // Without this join, every per-job page shows "STATIC DATA" for rentals.
-      const [sunbeltRows, unitedRows, liveJobs] = await Promise.all([
-        fetchSheetByName(RENTAL_SHEET_ID, 'Sunbelt Rentals Live'),
-        fetchSheetByName(RENTAL_SHEET_ID, 'United Rentals Live'),
-        fetchLiveJobs(),
+      const [sunbeltRows, unitedRows] = await Promise.all([
+        fetchScorecardTabCsv('Sunbelt Rentals Live'),
+        fetchScorecardTabCsv('United Rentals Live'),
       ]);
-
-      const jobIndex: { num: string; tokens: string[] }[] = (liveJobs as any[]).map((j: any) => ({
-        num: (j?.Job_Number || '').trim(),
-        tokens: (j?.Job_Name || '').toLowerCase().split(/\s+/).filter((t: string) => t.length > 3),
-      })).filter(j => j.num);
-
-      const extractJobNumber = (...parts: string[]): string => {
-        const hay = parts.filter(Boolean).join(' ');
-        // Match YY-NNN first (Sunbelt standard).
-        const ym = hay.match(/\b(\d{2}-\d{3})\b/);
-        if (ym) return ym[1];
-        // Fallback: match by job name tokens.
-        const lower = hay.toLowerCase();
-        let best: { num: string; len: number } | null = null;
-        for (const j of jobIndex) {
-          for (const t of j.tokens) {
-            if (lower.includes(t) && (!best || t.length > best.len)) {
-              best = { num: j.num, len: t.length };
-            }
-          }
-        }
-        return best?.num || '';
-      };
 
       const rentals: any[] = [];
 
-      // Parse Sunbelt tab (standardized columns from our Apps Script):
-      if (sunbeltRows.length > 1) {
-        const headers = sunbeltRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
-        for (let i = 1; i < sunbeltRows.length; i++) {
-          const r = sunbeltRows[i];
-          if (!r || r.length < 5) continue;
-          const getCol = (name: string) => {
-            const idx = headers.indexOf(name);
-            return idx >= 0 ? (r[idx] || '').trim() : '';
-          };
-          const equipType = getCol('equipment_type') || getCol('class_name');
-          if (!equipType) continue;
-          const jobName = getCol('job_name');
-          const jobLocation = getCol('job_location');
-          const jobCity = getCol('job_city');
-          rentals.push({
-            vendor: 'Sunbelt Rentals',
-            contractNumber: getCol('contract_number'),
-            Job_Number: extractJobNumber(getCol('job_number'), jobName, jobLocation),
-            jobName,
-            jobLocation,
-            jobCity,
-            equipmentType: equipType,
-            className: getCol('class_name'),
-            dayRate: parseMoney(getCol('day_rate')),
-            weekRate: parseMoney(getCol('week_rate')),
-            fourWeekRate: parseMoney(getCol('fourweek_rate')),
-            dateRented: getCol('date_rented'),
-            daysOnRent: parseInt(getCol('days_on_rent')) || 0,
-            pickupDate: getCol('pickup_date'),
-            emailDate: getCol('email_date'),
-          });
-        }
-      }
-
-      // Parse United Rentals tab (columns may vary — we handle dynamically)
-      if (unitedRows.length > 1) {
-        const headers = unitedRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
-        for (let i = 1; i < unitedRows.length; i++) {
-          const r = unitedRows[i];
+      function parseRentalRows(rows: string[][], vendor: string) {
+        if (rows.length < 2) return;
+        const hdr = rows[0].map(h => h.trim());
+        const idx = (name: string) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
+        const iCode  = idx('Item Code');
+        const iDesc  = idx('Description');
+        const iQty   = idx('Quantity');
+        const iRate  = idx('Daily Rate');
+        const iStart = idx('Start Date');
+        const iJob   = idx('Job #');
+        const iStat  = idx('Status');
+        const g = (r: string[], i: number) => (i >= 0 && i < r.length) ? r[i].trim() : '';
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
           if (!r || r.every(c => !c?.trim())) continue;
-          const getCol = (name: string) => {
-            const idx = headers.findIndex(h => h.includes(name));
-            return idx >= 0 ? (r[idx] || '').trim() : '';
-          };
-          const equipType = getCol('description') || getCol('equipment') || getCol('class') || r[2]?.trim() || '';
-          if (!equipType) continue;
-          const jobName = getCol('job') || getCol('site') || '';
-          const jobLocation = getCol('location') || getCol('address') || '';
+          const desc = g(r, iDesc);
+          if (!desc) continue;
           rentals.push({
-            vendor: 'United Rentals',
-            contractNumber: getCol('contract') || getCol('order') || r[0]?.trim() || '',
-            Job_Number: extractJobNumber(getCol('job_number'), jobName, jobLocation),
-            jobName,
-            jobLocation,
-            jobCity: '',
-            equipmentType: equipType,
-            className: '',
-            dayRate: parseMoney(getCol('daily') || getCol('day_rate') || getCol('rate') || ''),
-            weekRate: parseMoney(getCol('weekly') || getCol('week_rate') || ''),
-            fourWeekRate: parseMoney(getCol('monthly') || getCol('4_week') || ''),
-            dateRented: getCol('start') || getCol('rent_date') || getCol('date') || '',
-            daysOnRent: parseInt(getCol('days')) || 0,
-            pickupDate: '',
-            emailDate: getCol('email_date') || '',
+            vendor,
+            contractNumber: g(r, iCode),
+            Job_Number:     g(r, iJob),
+            jobName:        '',
+            jobLocation:    '',
+            jobCity:        '',
+            equipmentType:  desc,
+            className:      '',
+            quantity:       parseInt(g(r, iQty)) || 1,
+            dayRate:        parseMoney(g(r, iRate)),
+            weekRate:       0,
+            fourWeekRate:   0,
+            startDate:      g(r, iStart),
+            dateRented:     g(r, iStart),
+            daysOnRent:     0,
+            pickupDate:     '',
+            emailDate:      '',
+            status:         g(r, iStat),
           });
         }
       }
 
-      // ── CSV FALLBACK: if Google Sheet returned nothing, read local CSVs ──
-      if (rentals.length === 0) {
-        const fs = require('fs');
-        const path = require('path');
-        const dataDir = path.join(process.cwd(), 'data');
-
-        // Equipment_On_Rent_Latest.csv — Sunbelt Rentals detailed export
-        // Cols: OrderedBy,EquipmentModel,EquipmentClass,JobCity,JobState,JobName,TimeOut,Quantity,PurchaseOrderNumber,PickupDate,ContractNumber,TotalAmountBilled,MonthlyRate,WeeklyRate,DailyRate,DateOut,Days on Rent,AccruedAmount
-        try {
-          const latestPath = path.join(dataDir, 'Equipment_On_Rent_Latest.csv');
-          if (fs.existsSync(latestPath)) {
-            const text = fs.readFileSync(latestPath, 'utf-8');
-            const rows = parseCSV(text);
-            if (rows.length > 1) {
-              const hdr = rows[0].map((h: string) => h.trim().toLowerCase().replace(/\s+/g, '_'));
-              const col = (name: string) => hdr.findIndex((h: string) => h.includes(name));
-              for (let i = 1; i < rows.length; i++) {
-                const r = rows[i];
-                if (!r || r.length < 5) continue;
-                const g = (idx: number) => (idx >= 0 && idx < r.length) ? (r[idx] || '').trim() : '';
-                const equipModel = g(col('equipmentmodel')) || g(col('model'));
-                const equipClass = g(col('equipmentclass')) || g(col('class'));
-                if (!equipModel && !equipClass) continue;
-                const jobName = g(col('jobname')) || g(col('job_name'));
-                const jobLocation = `${g(col('jobcity'))}, ${g(col('jobstate'))}`.replace(/^, |, $/g, '');
-                rentals.push({
-                  vendor: 'Sunbelt Rentals',
-                  contractNumber: g(col('contractnumber')) || g(col('contract')),
-                  Job_Number: extractJobNumber(g(col('jobnumber')), jobName, jobLocation),
-                  jobName,
-                  jobLocation,
-                  jobCity: g(col('jobcity')),
-                  equipmentType: equipModel || equipClass,
-                  className: equipClass,
-                  dayRate: parseMoney(g(col('dailyrate')) || g(col('daily'))),
-                  weekRate: parseMoney(g(col('weeklyrate')) || g(col('weekly'))),
-                  fourWeekRate: parseMoney(g(col('monthlyrate')) || g(col('monthly'))),
-                  dateRented: g(col('dateout')) || g(col('date_out')),
-                  daysOnRent: parseInt(g(col('days_on_rent')) || g(col('days'))) || 0,
-                  pickupDate: g(col('pickupdate')) || g(col('pickup')),
-                  emailDate: '',
-                });
-              }
-            }
-          }
-        } catch (e) { console.error('Rental CSV fallback error:', e); }
-
-        // Equipment_On_Rent.csv — simple fallback (both vendors)
-        // Cols: Job_Number,Equipment_Type,Vendor,Days_On_Site,Target_Off_Rent,Daily_Rate
-        if (rentals.length === 0) {
-          try {
-            const simplePath = path.join(dataDir, 'Equipment_On_Rent.csv');
-            if (fs.existsSync(simplePath)) {
-              const text = fs.readFileSync(simplePath, 'utf-8');
-              const rows = parseCSV(text);
-              if (rows.length > 1) {
-                for (let i = 1; i < rows.length; i++) {
-                  const r = rows[i];
-                  if (!r || r.length < 3) continue;
-                  const equipType = (r[1] || '').trim();
-                  if (!equipType) continue;
-                  const vendor = (r[2] || '').trim() || 'Sunbelt Rentals';
-                  // Simple fallback CSV header: Job_Number,Equipment_Type,Vendor,Days_On_Site,Target_Off_Rent,Daily_Rate
-                  const jobNumberRaw = (r[0] || '').trim();
-                  rentals.push({
-                    vendor,
-                    contractNumber: '',
-                    Job_Number: extractJobNumber(jobNumberRaw),
-                    jobName: '',
-                    jobLocation: '',
-                    jobCity: '',
-                    equipmentType: equipType,
-                    className: '',
-                    dayRate: parseMoney(r[5] || ''),
-                    weekRate: 0,
-                    fourWeekRate: 0,
-                    dateRented: '',
-                    daysOnRent: parseInt(r[3] || '') || 0,
-                    pickupDate: (r[4] || '').trim(),
-                    emailDate: '',
-                  });
-                }
-              }
-            }
-          } catch (e) { console.error('Simple rental CSV fallback error:', e); }
-        }
-      }
+      parseRentalRows(sunbeltRows, 'Sunbelt Rentals');
+      // United Rentals Live is currently empty — no fallback per product decision
+      parseRentalRows(unitedRows, 'United Rentals');
 
       return rentals;
     } catch {
@@ -519,90 +444,54 @@ export function fetchLiveRentals() {
 //
 // Dashboard reads the sheet (no API credentials needed in Vercel, no static CSV).
 
+// Real VisionLink_Live tab columns (Master Jobs Sheet):
+// Equipment ID | Make | Model | Last GPS | Mileage | Engine Hours | Status | Last Update
 export interface VisionLinkAsset {
-  Asset_ID: string;
-  Asset_Name: string;
+  Equipment_ID: string;
   Make: string;
   Model: string;
-  Serial: string;
-  Hours: number;
-  Last_Reported: string;
-  Latitude: number | null;
-  Longitude: number | null;
-  Location_Source: string;
-  Geofence: string;
-  Matched_Job_Id: string;
-  Matched_Job_Name: string;
-  State: string;
+  Last_GPS: string;
+  Mileage: number;
+  Engine_Hours: number;
   Status: string;
-  Notes: string;
-  Synced_At: string;
+  Last_Update: string;
+  // Convenience aliases used by fleet/page.tsx
+  Asset_Name: string;   // = Make + ' ' + Model
+  Last_Reported: string; // = Last_Update
 }
 
 export async function fetchVisionLinkAssets(): Promise<VisionLinkAsset[]> {
   try {
-    // Try sheet first; fall back to local CSV (data/VisionLink_Live.csv)
-    let rows: string[][] = [];
-    try { rows = await fetchScorecardTabCsv('VisionLink_Live'); } catch {}
-    // Validate: sheet tab might contain wrong data (e.g. scorecard rows instead of assets).
-    // Real VisionLink_Live has 'asset_id' in header; if missing, discard and use local CSV.
-    const sheetHdr = (rows[0] || []).map(c => c.trim().toLowerCase());
-    if (!sheetHdr.includes('asset_id') && !sheetHdr.includes('asset_name')) {
-      rows = []; // wrong data in sheet tab
-    }
-    if (rows.length < 2) {
-      const fs = await import('fs');
-      const pathMod = await import('path');
-      const csvPath = pathMod.join(process.cwd(), 'data', 'VisionLink_Live.csv');
-      if (fs.existsSync(csvPath)) {
-        const text = fs.readFileSync(csvPath, 'utf-8');
-        rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
-      }
-    }
+    const rows = await fetchScorecardTabCsv('VisionLink_Live');
     if (rows.length < 2) return [];
-    if (rows.length < 2) return [];
-    const hdr = rows[0].map(c => c.trim().toLowerCase());
-    const idx = (name: string) => hdr.indexOf(name);
-    const iSync = idx('synced_at');
-    const iId = idx('asset_id');
-    const iName = idx('asset_name');
-    const iMake = idx('make');
-    const iModel = idx('model');
-    const iSerial = idx('serial');
-    const iHours = idx('hours');
-    const iReported = idx('last_reported');
-    const iLat = idx('latitude');
-    const iLng = idx('longitude');
-    const iLocSrc = idx('location_source');
-    const iGeo = idx('visionlink_geofence');
-    const iJobId = idx('matched_job_id');
-    const iJobName = idx('matched_job_name');
-    const iState = idx('state');
-    const iStatus = idx('status');
-    const iNotes = idx('notes');
+    const hdr = rows[0].map(c => c.trim());
+    const idx = (name: string) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const iId   = idx('Equipment ID');
+    const iMake = idx('Make');
+    const iMod  = idx('Model');
+    const iGPS  = idx('Last GPS');
+    const iMile = idx('Mileage');
+    const iHrs  = idx('Engine Hours');
+    const iStat = idx('Status');
+    const iUpd  = idx('Last Update');
+    const g = (r: string[], i: number) => (i >= 0 && i < r.length) ? r[i].trim() : '';
     return rows.slice(1).map(r => {
-      const lat = parseFloat((r[iLat] || '').trim());
-      const lng = parseFloat((r[iLng] || '').trim());
+      const make = g(r, iMake);
+      const model = g(r, iMod);
+      const lastUpdate = g(r, iUpd);
       return {
-        Asset_ID: (r[iId] || '').trim(),
-        Asset_Name: (r[iName] || '').trim(),
-        Make: (r[iMake] || '').trim(),
-        Model: (r[iModel] || '').trim(),
-        Serial: (r[iSerial] || '').trim(),
-        Hours: parseFloat((r[iHours] || '0').trim()) || 0,
-        Last_Reported: (r[iReported] || '').trim(),
-        Latitude: isNaN(lat) ? null : lat,
-        Longitude: isNaN(lng) ? null : lng,
-        Location_Source: (r[iLocSrc] || '').trim(),
-        Geofence: (r[iGeo] || '').trim(),
-        Matched_Job_Id: (r[iJobId] || '').trim(),
-        Matched_Job_Name: (r[iJobName] || '').trim(),
-        State: (r[iState] || '').trim(),
-        Status: (r[iStatus] || '').trim(),
-        Notes: (r[iNotes] || '').trim(),
-        Synced_At: (r[iSync] || '').trim(),
+        Equipment_ID: g(r, iId),
+        Make:         make,
+        Model:        model,
+        Last_GPS:     g(r, iGPS),
+        Mileage:      parseFloat(g(r, iMile)) || 0,
+        Engine_Hours: parseFloat(g(r, iHrs))  || 0,
+        Status:       g(r, iStat),
+        Last_Update:  lastUpdate,
+        Asset_Name:   [make, model].filter(Boolean).join(' '),
+        Last_Reported: lastUpdate,
       };
-    }).filter(a => a.Asset_ID || a.Serial);
+    }).filter(a => a.Equipment_ID || a.Make);
   } catch { return []; }
 }
 
@@ -1367,96 +1256,105 @@ function n(v: string | undefined): number {
   return isNaN(x) ? 0 : x;
 }
 
-export async function fetchQboFinancials(): Promise<QboJobFinancials[]> {
+// Real QBO_Financials tab columns: Account | Period | Revenue | COGS | Expenses | Net Income | Variance to Budget
+export interface QboMonthlyRow {
+  Account: string;
+  Period: string;
+  Revenue: number;
+  COGS: number;
+  Expenses: number;
+  Net_Income: number;
+  Variance_To_Budget: number;
+}
+
+export async function fetchQboFinancials(): Promise<QboMonthlyRow[]> {
   try {
-    const rows = await fetchScorecardTabCsv('QBO Est vs Actuals');
+    const rows = await fetchScorecardTabCsv('QBO_Financials');
     if (rows.length < 2) return [];
     const hdr = rows[0].map(c => c.trim());
-    const idx = (name: string) => hdr.indexOf(name);
-    const iJob   = idx('Job_Number');
-    const iName  = idx('Project_Name');
-    const iEstC  = idx('Est_Cost');
-    const iActC  = idx('Act_Cost');
-    const iEstI  = idx('Est_Income');
-    const iActI  = idx('Act_Income');
-    const iProf  = idx('Profit');
-    const iMarg  = idx('Profit_Margin');
-    const iUpd   = idx('Updated_At');
-    return rows.slice(1).map(r => ({
-      Job_Number: (r[iJob] || '').trim(),
-      Project_Name: (r[iName] || '').trim(),
-      Est_Cost: n(r[iEstC]),
-      Act_Cost: n(r[iActC]),
-      Est_Income: n(r[iEstI]),
-      Act_Income: n(r[iActI]),
-      Profit: n(r[iProf]),
-      Profit_Margin: n(r[iMarg]),
-      Updated_At: (r[iUpd] || '').trim(),
-    })).filter(r => r.Job_Number || r.Project_Name);
+    const idx = (name: string) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const iAcc  = idx('Account');
+    const iPer  = idx('Period');
+    const iRev  = idx('Revenue');
+    const iCOGS = idx('COGS');
+    const iExp  = idx('Expenses');
+    const iNet  = idx('Net Income');
+    const iVar  = idx('Variance to Budget');
+    const g = (r: string[], i: number) => (i >= 0 && i < r.length) ? r[i].trim() : '';
+    return rows.slice(1)
+      .filter(r => r.some(c => c.trim()))
+      .map(r => ({
+        Account:            g(r, iAcc),
+        Period:             g(r, iPer),
+        Revenue:            parseMoney(g(r, iRev)),
+        COGS:               parseMoney(g(r, iCOGS)),
+        Expenses:           parseMoney(g(r, iExp)),
+        Net_Income:         parseMoney(g(r, iNet)),
+        Variance_To_Budget: parseMoney(g(r, iVar)),
+      }))
+      .filter(r => r.Account || r.Period);
   } catch {
     return [];
   }
 }
 
-export async function fetchArAging(): Promise<QboArSummary> {
-  const empty: QboArSummary = { rows: [], totals: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 } };
+// Real AR_Aging tab columns: Invoice # | Customer | Amount Due | Days Outstanding | Status | Last Payment Date
+export interface ArAgingRow {
+  Invoice_Number: string;
+  Customer: string;
+  Amount_Due: number;
+  Days_Outstanding: number;
+  Status: string;
+  Last_Payment_Date: string;
+}
+
+export interface ArAgingSummary {
+  rows: ArAgingRow[];
+  totals: { current: number; d1_30: number; d31_60: number; d61_90: number; d91Plus: number; total: number };
+}
+
+export async function fetchArAging(): Promise<ArAgingSummary> {
+  const empty: ArAgingSummary = { rows: [], totals: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 } };
   try {
-    const rows = await fetchScorecardTabCsv('QBO AR Aging');
+    const rows = await fetchScorecardTabCsv('AR_Aging');
     if (rows.length < 2) return empty;
     const hdr = rows[0].map(c => c.trim());
-    const idx = (name: string) => hdr.indexOf(name);
-    const iJob    = idx('Job_Number');
-    const iName   = idx('Project_Name');
-    const iCust   = idx('Customer');
-    const iCurr   = idx('Current');
-    const iD1     = idx('Days_1_30');
-    const iD31    = idx('Days_31_60');
-    const iD61    = idx('Days_61_90');
-    const iD91    = idx('Days_91_Plus');
-    const iTot    = idx('Total');
-    const iUpd    = idx('Updated_At');
+    const idx = (name: string) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const iInv  = idx('Invoice #');
+    const iCust = idx('Customer');
+    const iAmt  = idx('Amount Due');
+    const iDays = idx('Days Outstanding');
+    const iStat = idx('Status');
+    const iLast = idx('Last Payment Date');
+    const g = (r: string[], i: number) => (i >= 0 && i < r.length) ? r[i].trim() : '';
+    const parsed: ArAgingRow[] = rows.slice(1)
+      .filter(r => r.some(c => c.trim()))
+      .map(r => ({
+        Invoice_Number:   g(r, iInv),
+        Customer:         g(r, iCust),
+        Amount_Due:       parseMoney(g(r, iAmt)),
+        Days_Outstanding: parseInt(g(r, iDays)) || 0,
+        Status:           g(r, iStat),
+        Last_Payment_Date: g(r, iLast),
+      }))
+      .filter(r => r.Customer || r.Invoice_Number);
 
-    const parsed: QboArJob[] = rows.slice(1).map(r => ({
-      Job_Number: (r[iJob] || '').trim(),
-      Project_Name: (r[iName] || '').trim(),
-      Customer: (r[iCust] || '').trim(),
-      Current: n(r[iCurr]),
-      Days_1_30: n(r[iD1]),
-      Days_31_60: n(r[iD31]),
-      Days_61_90: n(r[iD61]),
-      Days_91_Plus: n(r[iD91]),
-      Total: n(r[iTot]),
-      Updated_At: (r[iUpd] || '').trim(),
-    }));
-
-    const totalRow = parsed.find(r => r.Job_Number === '__TOTAL__');
-    const lines = parsed.filter(r => r.Job_Number !== '__TOTAL__');
-    if (totalRow) {
-      return {
-        rows: lines,
-        totals: {
-          current: totalRow.Current,
-          d1_30: totalRow.Days_1_30,
-          d31_60: totalRow.Days_31_60,
-          d61_90: totalRow.Days_61_90,
-          d91Plus: totalRow.Days_91_Plus,
-          total: totalRow.Total,
-        },
-      };
-    }
-    // No synthetic total row — recompute
-    const totals = lines.reduce(
-      (acc, r) => ({
-        current: acc.current + r.Current,
-        d1_30: acc.d1_30 + r.Days_1_30,
-        d31_60: acc.d31_60 + r.Days_31_60,
-        d61_90: acc.d61_90 + r.Days_61_90,
-        d91Plus: acc.d91Plus + r.Days_91_Plus,
-        total: acc.total + r.Total,
-      }),
+    const totals = parsed.reduce(
+      (acc, r) => {
+        const d = r.Days_Outstanding;
+        const amt = r.Amount_Due;
+        return {
+          current: acc.current + (d === 0 ? amt : 0),
+          d1_30:   acc.d1_30   + (d >= 1  && d <= 30  ? amt : 0),
+          d31_60:  acc.d31_60  + (d >= 31 && d <= 60  ? amt : 0),
+          d61_90:  acc.d61_90  + (d >= 61 && d <= 90  ? amt : 0),
+          d91Plus: acc.d91Plus + (d > 90 ? amt : 0),
+          total:   acc.total   + amt,
+        };
+      },
       { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 }
     );
-    return { rows: lines, totals };
+    return { rows: parsed, totals };
   } catch {
     return empty;
   }
@@ -1578,53 +1476,55 @@ export async function fetchMarketingLeads(): Promise<MarketingLead[]> {
 // ──────────────────────────── PROJECT SCORECARD (Live sheet) ────────────────────────────
 // Reads est-vs-actual rows from the "Project_Scorecards_Live" tab of the Scorecard Hub.
 // Falls back to empty array if the tab doesn't exist yet.
+// Real SCORECARD DASHBOARD tab columns (Project_Scorecards_Live is EMPTY — use this tab):
+// Job # | Job Name | PM | Status | Estimated Asphalt Tons | Actual Asphalt Tons |
+// Variance Tons | Variance % | Man Hours | Efficiency
 export interface LiveScorecardRow {
   Job_Number: string;
-  Est_Man_Hours: number;
-  Act_Man_Hours: number;
-  Est_Stone_Tons: number;
-  Act_Stone_Tons: number;
-  Est_Binder_Tons: number;
-  Act_Binder_Tons: number;
-  Est_Topping_Tons: number;
-  Act_Topping_Tons: number;
-  Est_Days_On_Site: number;
-  Act_Days_On_Site: number;
-  Weather_Days: number;
-  Updated_At: string;
+  Job_Name: string;
+  PM: string;
+  Status: string;
+  Est_Asphalt_Tons: number;
+  Act_Asphalt_Tons: number;
+  Variance_Tons: number;
+  Variance_Pct: number;
+  Man_Hours: number;
+  Efficiency: number;
 }
 
 export async function fetchProjectScorecardsEstVsAct(): Promise<LiveScorecardRow[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Project_Scorecards_Live')}`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return [];
-    const text = await res.text();
-    const rows = text.split(/\r\n|\n|\r/).filter(l => l.trim()).map(l => parseCSVLine(l));
+    const rows = await fetchScorecardTabCsv('SCORECARD DASHBOARD');
     if (rows.length < 2) return [];
     const hdr = rows[0].map(c => c.trim());
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-    const idx = (name: string) => hdr.findIndex(h => norm(h) === norm(name));
-    const n = (v: string | undefined): number => {
-      if (!v) return 0;
-      const x = parseFloat(String(v).replace(/[$,\s"]/g, '').replace(/%$/, ''));
-      return isNaN(x) ? 0 : x;
-    };
-    return rows.slice(1).map(r => ({
-      Job_Number: (r[idx('Job_Number')] || '').trim(),
-      Est_Man_Hours: n(r[idx('Est_Man_Hours')]),
-      Act_Man_Hours: n(r[idx('Act_Man_Hours')]),
-      Est_Stone_Tons: n(r[idx('Est_Stone_Tons')]),
-      Act_Stone_Tons: n(r[idx('Act_Stone_Tons')]),
-      Est_Binder_Tons: n(r[idx('Est_Binder_Tons')]),
-      Act_Binder_Tons: n(r[idx('Act_Binder_Tons')]),
-      Est_Topping_Tons: n(r[idx('Est_Topping_Tons')]),
-      Act_Topping_Tons: n(r[idx('Act_Topping_Tons')]),
-      Est_Days_On_Site: n(r[idx('Est_Days_On_Site')]),
-      Act_Days_On_Site: n(r[idx('Act_Days_On_Site')]),
-      Weather_Days: n(r[idx('Weather_Days')]),
-      Updated_At: (r[idx('Updated_At')] || '').trim(),
-    })).filter(r => r.Job_Number);
+    const idx = (name: string) => hdr.findIndex(h => h.toLowerCase() === name.toLowerCase());
+    const iNum  = idx('Job #');
+    const iName = idx('Job Name');
+    const iPM   = idx('PM');
+    const iStat = idx('Status');
+    const iEstT = idx('Estimated Asphalt Tons');
+    const iActT = idx('Actual Asphalt Tons');
+    const iVarT = idx('Variance Tons');
+    const iVarP = idx('Variance %');
+    const iMH   = idx('Man Hours');
+    const iEff  = idx('Efficiency');
+    const g = (r: string[], i: number) => (i >= 0 && i < r.length) ? r[i].trim() : '';
+    const nv = (v: string) => { const x = parseFloat(v.replace(/[$,\s"%]/g, '')); return isNaN(x) ? 0 : x; };
+    return rows.slice(1)
+      .filter(r => r.some(c => c.trim()))
+      .map(r => ({
+        Job_Number:      g(r, iNum),
+        Job_Name:        g(r, iName),
+        PM:              g(r, iPM),
+        Status:          g(r, iStat),
+        Est_Asphalt_Tons: nv(g(r, iEstT)),
+        Act_Asphalt_Tons: nv(g(r, iActT)),
+        Variance_Tons:   nv(g(r, iVarT)),
+        Variance_Pct:    nv(g(r, iVarP)),
+        Man_Hours:       nv(g(r, iMH)),
+        Efficiency:      nv(g(r, iEff)),
+      }))
+      .filter(r => r.Job_Number);
   } catch { return []; }
 }
 

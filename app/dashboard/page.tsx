@@ -1,115 +1,83 @@
 import React from 'react';
 import Link from 'next/link';
 import {
-  fetchLiveJobs,
+  fetchMasterJobs,
   fetchScheduleData,
-  fetchProjectScorecards,
-  fetchQboFinancials,
   fetchArAging,
 } from '@/lib/sheets-data';
 import { formatDollars, formatDollarsCompact } from '@/lib/format';
 
-export const revalidate = 86400; // Daily ISR
-
-// ──────────────────────────── Helpers ────────────────────────────
+export const revalidate = 300; // 5-min ISR
 
 function todayISO(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
+  const d = new Date(); d.setHours(0, 0, 0, 0);
   return d.toISOString().split('T')[0];
 }
-
 function tomorrowISO(): string {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
+  const d = new Date(); d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() + 1);
   return d.toISOString().split('T')[0];
 }
-
 function truncate(s: string, n: number): string {
   if (!s) return '';
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
-
 function prettyDate(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-// ──────────────────────────── Page ────────────────────────────
-
 export default async function DashboardPage() {
-  const [liveJobs, schedule, scorecards, qbo, ar] = await Promise.all([
-    fetchLiveJobs(),
+  const [masterJobs, schedule, ar] = await Promise.all([
+    fetchMasterJobs(),
     fetchScheduleData(),
-    fetchProjectScorecards(),
-    fetchQboFinancials(),
     fetchArAging(),
   ]);
-  // scorecards fetched to keep cache warm / data parity — not rendered in this view.
-  void scorecards;
 
-  // ── Jobs derived metrics ──
-  const jobs = (liveJobs || []) as any[];
-  const executedJobs = jobs.filter((j) => String(j.Status).toLowerCase() === 'executed');
-  const totalContract = executedJobs.reduce((s, j) => s + (j.Contract_Amount || 0), 0);
-  const totalBilled = executedJobs.reduce((s, j) => s + (j.Billed_To_Date || 0), 0);
+  // ── Portfolio metrics (from Master Jobs Sheet Jobs tab) ──
+  const activeJobs = masterJobs.filter(j => {
+    const s = j.Status.toLowerCase();
+    return s === 'active' || s === 'executed' || s === 'in progress';
+  });
+  const totalPortfolio = activeJobs.reduce((s, j) => s + (j.Est_Cost || 0), 0);
 
-  // ── AR aging totals ──
+  // ── AR metrics ──
   const arTotal = ar.totals.total || 0;
-  const arBuckets: { label: string; amount: number }[] = [
-    { label: 'Current', amount: ar.totals.current },
-    { label: '1–30 days', amount: ar.totals.d1_30 },
-    { label: '31–60 days', amount: ar.totals.d31_60 },
-    { label: '61–90 days', amount: ar.totals.d61_90 },
-    { label: '91+ days', amount: ar.totals.d91Plus },
-  ];
-
-  // ── Margin (weighted by Act_Income) ──
-  let weightedMargin: number | null = null;
-  if (qbo.length > 0) {
-    const totIncome = qbo.reduce((s, j) => s + (j.Act_Income || 0), 0);
-    if (totIncome > 0) {
-      const weighted = qbo.reduce((s, j) => s + (j.Profit_Margin || 0) * (j.Act_Income || 0), 0);
-      weightedMargin = Math.round((weighted / totIncome) * 10) / 10;
-    } else {
-      const sum = qbo.reduce((s, j) => s + (j.Profit_Margin || 0), 0);
-      weightedMargin = Math.round((sum / qbo.length) * 10) / 10;
-    }
-  }
+  const arPast90 = ar.rows.filter(r => r.Days_Outstanding > 90);
+  const arAlerts = ar.rows
+    .filter(r => r.Days_Outstanding > 60)
+    .sort((a, b) => b.Days_Outstanding - a.Days_Outstanding);
 
   // ── Today's crews ──
   const tISO = todayISO();
+  const tomISO = tomorrowISO();
   const today = (schedule.currentWeek?.days || []).find((d: any) => d.date === tISO);
   const todaysAssignments = (today?.assignments || []).filter((a: any) => !a.decoded?.isOff);
 
   // ── Deliveries today + tomorrow ──
-  const tomISO = tomorrowISO();
   const nearDeliveries = (schedule.deliveries || [])
     .filter((d: any) => d.date === tISO || d.date === tomISO)
     .sort((a: any, b: any) => a.date.localeCompare(b.date));
 
-  // ── Biggest jobs by contract ──
-  const topJobs = [...executedJobs]
-    .sort((a, b) => (b.Contract_Amount || 0) - (a.Contract_Amount || 0))
-    .slice(0, 8);
+  // ── Job health table (active jobs sorted by Est_Cost desc, top 10) ──
+  const healthJobs = [...activeJobs]
+    .sort((a, b) => (b.Est_Cost || 0) - (a.Est_Cost || 0))
+    .slice(0, 10);
 
-  // ── Schedule counts ──
-  const scheduledCount = schedule.scheduledJobCount || 0;
-  const ganttCount = schedule.ganttJobCount || 0;
-  const openCount = Math.max(0, ganttCount - scheduledCount);
+  const dateLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  });
 
   return (
     <div className="min-h-screen font-body">
       <div className="max-w-[1400px] mx-auto px-6 py-8">
+
         {/* Header */}
         <header className="mb-8 flex items-end justify-between">
           <div>
-            <h1 className="text-4xl font-display tracking-wide">Sunbelt Sports</h1>
-            <p className="text-sm text-steel-grey mt-1">
-              Live snapshot — {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
+            <h1 className="text-4xl font-display tracking-wide">Sunbelt Sports Construction</h1>
+            <p className="text-sm text-steel-grey mt-1">{dateLabel}</p>
           </div>
           <nav className="flex gap-3 text-sm font-display tracking-wider">
             <Link href="/portfolio" className="text-iron-charcoal hover:text-sunbelt-green">Portfolio</Link>
@@ -120,177 +88,116 @@ export default async function DashboardPage() {
           </nav>
         </header>
 
-        {/* ZONE 2 — AT-A-GLANCE */}
-        <section className="mb-8">
-          <div className="mb-3"><span className="eyebrow">At A Glance</span></div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Portfolio */}
-            <div className="card card-padded">
-              <p className="stat-label">Total Portfolio</p>
-              <p className="stat-value mt-2">{formatDollarsCompact(totalContract)}</p>
-              <p className="stat-sub mt-2">
-                {formatDollarsCompact(totalBilled)} billed · {executedJobs.length} active
-              </p>
-            </div>
-
-            {/* Cash Out */}
-            <div className="card card-padded">
-              <p className="stat-label">Cash Out</p>
-              <p className="stat-value mt-2">{formatDollarsCompact(arTotal)}</p>
-              <p className="stat-sub mt-2">
-                {formatDollarsCompact(ar.totals.d91Plus)} past 90 days
-              </p>
-            </div>
-
-            {/* Schedule Health */}
-            <div className="card card-padded">
-              <p className="stat-label">Schedule Health</p>
-              <p className="stat-value mt-2 font-mono">
-                {scheduledCount} / {ganttCount}
-              </p>
-              <p className="stat-sub mt-2">
-                {scheduledCount} booked · {openCount} open
-              </p>
-            </div>
-
-            {/* Margin */}
-            <div className="card card-padded">
-              <p className="stat-label">Margin</p>
-              {weightedMargin === null ? (
-                <>
-                  <p className="stat-value mt-2 text-steel-grey">—</p>
-                  <p className="stat-sub mt-2">No data yet</p>
-                </>
-              ) : (
-                <>
-                  <p className="stat-value mt-2">{weightedMargin.toFixed(1)}%</p>
-                  <p className="stat-sub mt-2">{qbo.length} jobs reporting</p>
-                </>
-              )}
-            </div>
+        {/* Stat pills */}
+        <div className="flex flex-wrap gap-6 mb-8 text-sm">
+          <div>
+            <span className="font-display text-2xl tracking-wide text-iron-charcoal">
+              {totalPortfolio > 0 ? formatDollarsCompact(totalPortfolio) : '—'}
+            </span>
+            <span className="text-steel-grey ml-2">portfolio</span>
           </div>
-        </section>
-
-        {/* ZONE 3 — LIVE FIELD */}
-        <section className="mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Today's Crews */}
-            <div className="card card-padded">
-              <div className="mb-4"><span className="eyebrow">Today In The Field</span></div>
-              {todaysAssignments.length === 0 ? (
-                <p className="font-display text-xl text-steel-grey text-center py-10">No crews booked today</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="table-header">
-                      <th className="text-left py-2">Crew</th>
-                      <th className="text-left py-2">Job</th>
-                      <th className="text-left py-2">PM</th>
-                      <th className="text-left py-2">Supplier</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {todaysAssignments.map((a: any, i: number) => (
-                      <tr key={i} className="border-b border-line-grey last:border-0">
-                        <td className="py-2 pr-2 text-iron-charcoal">{a.crew}</td>
-                        <td className="py-2 pr-2 text-iron-charcoal">{truncate(a.decoded?.jobRef || a.job, 28)}</td>
-                        <td className="py-2 pr-2 text-slate">{a.pm || '—'}</td>
-                        <td className="py-2 text-slate">{a.supplierFull || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* Deliveries */}
-            <div className="card card-padded">
-              <div className="mb-4"><span className="eyebrow">Delivery Board</span></div>
-              {nearDeliveries.length === 0 ? (
-                <p className="font-display text-xl text-steel-grey text-center py-10">No deliveries scheduled</p>
-              ) : (
-                <ul>
-                  {nearDeliveries.map((d: any, i: number) => (
-                    <li key={i} className={`flex items-start gap-4 py-3 ${i === 0 ? '' : 'border-t border-line-grey'}`}>
-                      <span className="font-bold text-iron-charcoal whitespace-nowrap w-28 shrink-0">
-                        {d.date === tISO ? 'Today' : d.date === tomISO ? 'Tomorrow' : prettyDate(d.date)}
-                      </span>
-                      <span className="text-sm text-slate flex-1">{d.description}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          <span className="text-line-grey self-center">·</span>
+          <div>
+            <span className="font-display text-2xl tracking-wide text-iron-charcoal">
+              {activeJobs.length}
+            </span>
+            <span className="text-steel-grey ml-2">active jobs</span>
           </div>
-        </section>
+          <span className="text-line-grey self-center">·</span>
+          <div>
+            <span className="font-display text-2xl tracking-wide text-iron-charcoal">
+              {arTotal > 0 ? formatDollarsCompact(arTotal) : '—'}
+            </span>
+            <span className="text-steel-grey ml-2">AR out</span>
+          </div>
+          <span className="text-line-grey self-center">·</span>
+          <div>
+            <span className="font-display text-2xl tracking-wide"
+              style={{ color: arPast90.length > 0 ? '#D8392B' : 'inherit' }}>
+              {arPast90.length}
+            </span>
+            <span className="text-steel-grey ml-2">invoices past 90d</span>
+          </div>
+        </div>
 
-        {/* ZONE 4 — MONEY HEALTH */}
+        {/* TODAY IN THE FIELD */}
         <section className="mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* AR Aging */}
-            <div className="card card-padded">
-              <div className="mb-4"><span className="eyebrow">Aging Buckets</span></div>
+          <div className="mb-3"><span className="eyebrow">Today In The Field</span></div>
+          <div className="card overflow-hidden">
+            {todaysAssignments.length === 0 ? (
+              <p className="font-display text-lg text-steel-grey text-center py-10">No crews scheduled today</p>
+            ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="table-header">
-                    <th className="text-left py-2">Bucket</th>
-                    <th className="text-right py-2">Amount</th>
-                    <th className="text-right py-2">% of total</th>
+                    <th className="text-left px-4 py-3">Crew</th>
+                    <th className="text-left px-4 py-3">Job</th>
+                    <th className="text-left px-4 py-3">PM</th>
+                    <th className="text-left px-4 py-3">Supplier</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {arBuckets.map((b) => {
-                    const pct = arTotal > 0 ? (b.amount / arTotal) * 100 : 0;
-                    return (
-                      <tr key={b.label} className="border-b border-line-grey">
-                        <td className="py-2 text-iron-charcoal">{b.label}</td>
-                        <td className="py-2 text-right font-mono text-iron-charcoal">{formatDollars(b.amount)}</td>
-                        <td className="py-2 text-right font-mono text-xs text-steel-grey">{pct.toFixed(1)}%</td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="hairline">
-                    <td className="py-3 font-display tracking-wider">Total</td>
-                    <td className="py-3 text-right font-mono font-bold text-iron-charcoal">{formatDollars(arTotal)}</td>
-                    <td className="py-3 text-right font-mono text-xs text-steel-grey">100%</td>
-                  </tr>
+                  {todaysAssignments.map((a: any, i: number) => (
+                    <tr key={i} className="border-b border-line-grey last:border-0">
+                      <td className="px-4 py-2 font-display tracking-wider text-iron-charcoal">{a.crew}</td>
+                      <td className="px-4 py-2 text-iron-charcoal">{truncate(a.decoded?.jobRef || a.job, 36)}</td>
+                      <td className="px-4 py-2 text-slate">{a.pm || '—'}</td>
+                      <td className="px-4 py-2 text-slate">{a.supplierFull || '—'}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
-            </div>
+            )}
+          </div>
+        </section>
 
-            {/* Top Jobs */}
-            <div className="card card-padded">
-              <div className="mb-4"><span className="eyebrow">Top Jobs</span></div>
-              {topJobs.length === 0 ? (
-                <p className="font-display text-xl text-steel-grey text-center py-10">No executed jobs</p>
+        {/* JOB HEALTH + AR ALERTS + DELIVERIES */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+          {/* JOB HEALTH */}
+          <section>
+            <div className="mb-3"><span className="eyebrow">Job Health</span></div>
+            <div className="card overflow-hidden">
+              {healthJobs.length === 0 ? (
+                <p className="font-display text-lg text-steel-grey text-center py-10">No active jobs</p>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="table-header">
-                      <th className="text-left py-2">Job #</th>
-                      <th className="text-left py-2">Name</th>
-                      <th className="text-left py-2">GC</th>
-                      <th className="text-right py-2">Contract</th>
-                      <th className="text-right py-2">Billed</th>
+                      <th className="text-left px-4 py-3">Job #</th>
+                      <th className="text-left px-4 py-3">Name</th>
+                      <th className="text-left px-4 py-3">PM</th>
+                      <th className="text-right px-4 py-3">Est. Cost</th>
+                      <th className="text-right px-4 py-3">Progress</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {topJobs.map((j) => {
-                      const pct = j.Contract_Amount > 0 ? (j.Billed_To_Date / j.Contract_Amount) * 100 : 0;
+                    {healthJobs.map((j) => {
+                      const pct = j.Est_Cost > 0 ? Math.min(100, Math.round((j.Actual_Cost / j.Est_Cost) * 100)) : 0;
+                      const hasActual = j.Actual_Cost > 0;
                       return (
                         <tr key={j.Job_Number} className="border-b border-line-grey last:border-0">
-                          <td className="py-2 pr-2">
-                            <Link href={`/jobs/${j.Job_Number}`} className="text-sunbelt-green font-mono">
+                          <td className="px-4 py-2">
+                            <Link href={`/jobs/${j.Job_Number}`} className="text-sunbelt-green font-mono text-xs">
                               {j.Job_Number}
                             </Link>
                           </td>
-                          <td className="py-2 pr-2 text-iron-charcoal">{truncate(j.Job_Name || '', 30)}</td>
-                          <td className="py-2 pr-2 text-slate">{truncate(j.General_Contractor || '', 20)}</td>
-                          <td className="py-2 text-right font-mono text-iron-charcoal whitespace-nowrap">
-                            {formatDollars(j.Contract_Amount)}
+                          <td className="px-4 py-2 text-iron-charcoal">{truncate(j.Job_Name, 26)}</td>
+                          <td className="px-4 py-2 text-slate text-xs">{j.PM || '—'}</td>
+                          <td className="px-4 py-2 text-right font-mono text-xs text-iron-charcoal whitespace-nowrap">
+                            {formatDollarsCompact(j.Est_Cost)}
                           </td>
-                          <td className="py-2 text-right font-mono text-xs text-steel-grey pl-2 whitespace-nowrap">
-                            {pct.toFixed(0)}%
+                          <td className="px-4 py-2 text-right">
+                            {hasActual ? (
+                              <div className="flex items-center gap-2 justify-end">
+                                <div className="w-14 h-1.5 bg-mist-grey rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full bg-sunbelt-green" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="font-mono text-xs text-steel-grey w-8 text-right">{pct}%</span>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-steel-grey">—</span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -299,8 +206,75 @@ export default async function DashboardPage() {
                 </table>
               )}
             </div>
+          </section>
+
+          {/* RIGHT COLUMN */}
+          <div className="flex flex-col gap-6">
+
+            {/* AR ALERTS */}
+            <section>
+              <div className="mb-3"><span className="eyebrow">AR Alerts</span></div>
+              <div className="card overflow-hidden">
+                {arAlerts.length === 0 ? (
+                  <p className="font-display text-lg text-steel-grey text-center py-8">
+                    No invoices past 60 days
+                  </p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="table-header">
+                        <th className="text-left px-4 py-3">Days</th>
+                        <th className="text-left px-4 py-3">Customer</th>
+                        <th className="text-left px-4 py-3">Invoice #</th>
+                        <th className="text-right px-4 py-3">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {arAlerts.slice(0, 6).map((r, i) => (
+                        <tr key={i} className="border-b border-line-grey last:border-0">
+                          <td className="px-4 py-2">
+                            <span className="font-mono text-xs font-bold"
+                              style={{ color: r.Days_Outstanding > 90 ? '#D8392B' : '#E8892B' }}>
+                              {r.Days_Outstanding}d
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-iron-charcoal">{truncate(r.Customer, 22)}</td>
+                          <td className="px-4 py-2 text-steel-grey font-mono text-xs">{r.Invoice_Number || '—'}</td>
+                          <td className="px-4 py-2 text-right font-mono text-xs text-iron-charcoal whitespace-nowrap">
+                            {formatDollars(r.Amount_Due)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </section>
+
+            {/* DELIVERIES */}
+            <section>
+              <div className="mb-3"><span className="eyebrow">Delivery Board</span></div>
+              <div className="card card-padded">
+                {nearDeliveries.length === 0 ? (
+                  <p className="font-display text-lg text-steel-grey text-center py-6">No deliveries scheduled</p>
+                ) : (
+                  <ul>
+                    {nearDeliveries.map((d: any, i: number) => (
+                      <li key={i} className={`flex items-start gap-4 py-3 ${i === 0 ? '' : 'border-t border-line-grey'}`}>
+                        <span className="font-display tracking-wider text-iron-charcoal whitespace-nowrap w-24 shrink-0 text-sm">
+                          {d.date === tISO ? 'Today' : d.date === tomISO ? 'Tomorrow' : prettyDate(d.date)}
+                        </span>
+                        <span className="text-sm text-slate flex-1">{d.description}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+
           </div>
-        </section>
+        </div>
+
       </div>
     </div>
   );
