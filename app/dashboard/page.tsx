@@ -2,12 +2,10 @@ import React from 'react';
 import Link from 'next/link';
 import {
   fetchLiveJobs,
-  fetchLiveFieldReports,
   fetchScheduleData,
   fetchProjectScorecards,
   fetchQboFinancials,
   fetchArAging,
-  fetchReworkLog,
 } from '@/lib/sheets-data';
 import { formatDollars, formatDollarsCompact } from '@/lib/format';
 
@@ -28,15 +26,6 @@ function tomorrowISO(): string {
   return d.toISOString().split('T')[0];
 }
 
-function daysSince(dateStr: string | undefined | null): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  const now = new Date();
-  const ms = now.getTime() - d.getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
-}
-
 function truncate(s: string, n: number): string {
   if (!s) return '';
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
@@ -51,14 +40,12 @@ function prettyDate(iso: string): string {
 // ──────────────────────────── Page ────────────────────────────
 
 export default async function DashboardPage() {
-  const [liveJobs, fieldReports, schedule, scorecards, qbo, ar, rework] = await Promise.all([
+  const [liveJobs, schedule, scorecards, qbo, ar] = await Promise.all([
     fetchLiveJobs(),
-    fetchLiveFieldReports(),
     fetchScheduleData(),
     fetchProjectScorecards(),
     fetchQboFinancials(),
     fetchArAging(),
-    fetchReworkLog(),
   ]);
   // scorecards fetched to keep cache warm / data parity — not rendered in this view.
   void scorecards;
@@ -68,65 +55,6 @@ export default async function DashboardPage() {
   const executedJobs = jobs.filter((j) => String(j.Status).toLowerCase() === 'executed');
   const totalContract = executedJobs.reduce((s, j) => s + (j.Contract_Amount || 0), 0);
   const totalBilled = executedJobs.reduce((s, j) => s + (j.Billed_To_Date || 0), 0);
-
-  // ── Latest field report per job ──
-  const latestReportByJob: Record<string, string> = {};
-  for (const r of fieldReports as any[]) {
-    const jn = r?.Job_Number;
-    const dt = r?.Last_Report_Date;
-    if (!jn || !dt) continue;
-    if (!latestReportByJob[jn] || dt > latestReportByJob[jn]) {
-      latestReportByJob[jn] = dt;
-    }
-  }
-
-  // ── ATTENTION items ──
-  type Attn = { severity: 'danger' | 'warning'; label: string; message: string; right: string };
-  const attention: Attn[] = [];
-
-  // 1. Overdue AR (per-job)
-  for (const row of ar.rows) {
-    if ((row.Days_91_Plus || 0) > 0) {
-      attention.push({
-        severity: 'danger',
-        label: '91+ days',
-        message: `${row.Customer || row.Project_Name || 'Customer'} — ${truncate(row.Project_Name || '', 40)}`,
-        right: formatDollars(row.Days_91_Plus),
-      });
-    } else if ((row.Days_61_90 || 0) > 0) {
-      attention.push({
-        severity: 'warning',
-        label: '61–90 days',
-        message: `${row.Customer || row.Project_Name || 'Customer'} — ${truncate(row.Project_Name || '', 40)}`,
-        right: formatDollars(row.Days_61_90),
-      });
-    }
-  }
-
-  // 2. Executed jobs with no field report in 7+ days
-  for (const j of executedJobs) {
-    const last = latestReportByJob[j.Job_Number];
-    const gap = last ? daysSince(last) : null;
-    if (gap === null || gap >= 7) {
-      attention.push({
-        severity: 'warning',
-        label: 'No report',
-        message: `${j.Job_Number} · ${truncate(j.Job_Name || '', 40)}`,
-        right: gap === null ? 'no reports yet' : `${gap} days`,
-      });
-    }
-  }
-
-  // 3. Rework — latest 5
-  const sortedRework = [...rework].sort((a, b) => (b.Date || '').localeCompare(a.Date || '')).slice(0, 5);
-  for (const rw of sortedRework) {
-    attention.push({
-      severity: 'warning',
-      label: 'Rework',
-      message: `${rw.Job_Number || '—'} · ${truncate(rw.Note || rw.Job_Name || '', 50)}`,
-      right: rw.Cost > 0 ? formatDollars(rw.Cost) : (rw.Date || ''),
-    });
-  }
 
   // ── AR aging totals ──
   const arTotal = ar.totals.total || 0;
@@ -191,29 +119,6 @@ export default async function DashboardPage() {
             <Link href="/scorecard" className="text-iron-charcoal hover:text-sunbelt-green">Scorecard</Link>
           </nav>
         </header>
-
-        {/* ZONE 1 — ATTENTION NOW */}
-        {attention.length > 0 && (
-          <section className="mb-8">
-            <div className="mb-3"><span className="eyebrow">Needs You Today</span></div>
-            <div className="card">
-              <ul>
-                {attention.map((a, i) => (
-                  <li
-                    key={i}
-                    className={`flex items-center justify-between gap-4 px-6 py-3 ${i === 0 ? '' : 'border-t border-line-grey'}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className={`pill ${a.severity === 'danger' ? 'pill-danger' : 'pill-warning'} shrink-0`}>{a.label}</span>
-                      <span className="text-sm text-iron-charcoal truncate">{a.message}</span>
-                    </div>
-                    <span className="font-mono text-sm text-slate shrink-0">{a.right}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-        )}
 
         {/* ZONE 2 — AT-A-GLANCE */}
         <section className="mb-8">
