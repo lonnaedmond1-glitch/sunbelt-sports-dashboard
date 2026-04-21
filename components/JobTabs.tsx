@@ -25,36 +25,47 @@ interface JobTabsProps {
 }
 
 const TABS = [
-  { id: 'overview', label: 'Overview & Logistics' },
-  { id: 'production', label: 'Production & Reports' },
-  { id: 'changeorders', label: 'Scope & Change Orders' },
-  { id: 'documents', label: 'Documents & QC' },
+  { id: 'overview', label: 'Overview & Logistics', icon: '📍' },
+  { id: 'production', label: 'Production & Reports', icon: '📊' },
+  { id: 'changeorders', label: 'Scope & Change Orders', icon: '📝' },
+  { id: 'documents', label: 'Documents & QC', icon: '📂' },
 ];
 
-// Text label for a short weather forecast string (no emoji).
-function weatherLabel(short: string): string {
+function WeatherIcon({ short }: { short: string }) {
   const s = (short || '').toLowerCase();
-  if (s.includes('thunder')) return 'Storm';
-  if (s.includes('rain') || s.includes('shower')) return 'Rain';
-  if (s.includes('snow')) return 'Snow';
-  if (s.includes('partly')) return 'P. Cloudy';
-  if (s.includes('cloud') || s.includes('overcast')) return 'Cloud';
-  if (s.includes('fog') || s.includes('mist') || s.includes('haze')) return 'Fog';
-  if (s.includes('wind')) return 'Windy';
-  return 'Sun';
+  if (s.includes('thunder')) return <>⛈</>;
+  if (s.includes('rain') || s.includes('shower')) return <>🌧</>;
+  if (s.includes('snow')) return <>❄️</>;
+  if (s.includes('cloud') || s.includes('overcast')) return <>☁️</>;
+  if (s.includes('partly')) return <>⛅</>;
+  return <>☀️</>;
 }
 
-function StatusPill({ status }: { status: string }) {
-  const s = (status || '').toLowerCase();
-  if (s === 'approved') return <span className="pill pill-success">Approved</span>;
-  if (s === 'pending') return <span className="pill pill-warning">Pending approval</span>;
-  if (s === 'rejected') return <span className="pill pill-danger">Rejected</span>;
-  return <span className="pill pill-neutral">{status || 'Unknown'}</span>;
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'Approved') return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/25">
+      <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">APPROVED — Scope Added to Contract</span>
+    </div>
+  );
+  if (status === 'Pending') return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/25">
+      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+      <span className="text-[10px] font-black uppercase tracking-widest text-amber-400">⛔ PENDING — DO NOT EXECUTE SCOPE</span>
+    </div>
+  );
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25">
+      <span className="w-2 h-2 rounded-full bg-red-400 shrink-0"></span>
+      <span className="text-[10px] font-black uppercase tracking-widest text-red-400">{status}</span>
+    </div>
+  );
 }
 
 // Extract Google Drive folder ID from URL
 function extractDriveFolderId(url: string): string | null {
   if (!url) return null;
+  // folders/FOLDER_ID
   const folderMatch = url.match(/folders\/([a-zA-Z0-9_-]+)/);
   if (folderMatch) return folderMatch[1];
   return null;
@@ -63,20 +74,13 @@ function extractDriveFolderId(url: string): string | null {
 // Extract Google Drive file ID from URL for iframe embeds
 function extractDriveFileId(url: string): string | null {
   if (!url) return null;
+  // /file/d/FILE_ID/
   const fileMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (fileMatch) return fileMatch[1];
+  // /open?id=FILE_ID
   const openMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (openMatch) return openMatch[1];
   return null;
-}
-
-// Days between start date and today. Returns null if unparseable.
-function daysOnJob(startDate: string): number | null {
-  if (!startDate) return null;
-  const t = Date.parse(startDate);
-  if (isNaN(t)) return null;
-  const diff = Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24));
-  return diff >= 0 ? diff : null;
 }
 
 export default function JobTabs({
@@ -87,368 +91,152 @@ export default function JobTabs({
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
   const [fullscreenDoc, setFullscreenDoc] = useState<string | null>(null);
+  const [surfaceReadyUploads, setSurfaceReadyUploads] = useState<Record<string, boolean>>({});
   const [surfaceReadyAuthorized, setSurfaceReadyAuthorized] = useState<{ by: string; at: string } | null>(null);
 
-  const pct = Math.round(Number(job.Pct_Complete) || 0);
+  const pct = Math.round(job.Pct_Complete || 0);
+  const pctColor = pct >= 80 ? '#20BC64' : pct >= 50 ? '#fb923c' : '#ef4444';
 
   const originalContract = parseFloat(job.Contract_Amount) || 0;
-  const billedToDate = parseFloat(job.Billed_To_Date) || 0;
-
   const approvedCOs = changeOrders
     .filter(co => co.Status === 'Approved')
-    .reduce((sum, co) => sum + (parseFloat(co.Amount?.replace?.(/[^0-9.-]/g, '') || '0') || 0), 0);
-  const pendingCOsAmount = changeOrders
-    .filter(co => co.Status === 'Pending')
     .reduce((sum, co) => sum + (parseFloat(co.Amount?.replace?.(/[^0-9.-]/g, '') || '0') || 0), 0);
   const revisedContract = originalContract + approvedCOs;
   const pendingCOs = changeOrders.filter(co => co.Status === 'Pending');
   const approvedCOList = changeOrders.filter(co => co.Status === 'Approved');
 
-  // Scorecard — build Est/Act totals. CSV scorecard has per-type tons; QBO fields
-  // (Act_Income, Est_Income, Profit) may or may not be present.
-  const sc = scorecard || {};
-  const estTons =
-    (parseFloat(sc.Est_Stone_Tons) || 0) +
-    (parseFloat(sc.Est_Binder_Tons) || 0) +
-    (parseFloat(sc.Est_Topping_Tons) || 0);
-  const actTons =
-    (parseFloat(sc.Act_Stone_Tons) || 0) +
-    (parseFloat(sc.Act_Binder_Tons) || 0) +
-    (parseFloat(sc.Act_Topping_Tons) || 0);
-  const estIncome = parseFloat(sc.Est_Income) || 0;
-  const actIncome = parseFloat(sc.Act_Income) || 0;
-  const profit = parseFloat(sc.Profit) || 0;
-  const honestMargin = actIncome > 0 ? (profit / actIncome) * 100 : null;
-
-  // Tonnage variance pill
-  let tonsPill: { cls: string; text: string } | null = null;
-  if (actTons > 0 && estTons > 0) {
-    if (actTons > estTons * 1.05) tonsPill = { cls: 'pill pill-danger', text: `Over by ${Math.round(((actTons - estTons) / estTons) * 100)}%` };
-    else if (actTons < estTons * 0.95) tonsPill = { cls: 'pill pill-warning', text: `Under by ${Math.round(((estTons - actTons) / estTons) * 100)}%` };
-    else tonsPill = { cls: 'pill pill-success', text: 'On plan' };
-  }
-
   const QC_ITEMS = [
-    { id: 'compaction', label: 'Compaction Test', desc: 'Nuclear gauge or sand cone results' },
-    { id: 'laser', label: 'Laser Grade Verification', desc: 'Grade rod reads at 25ft grid' },
-    { id: 'straightedge', label: '10-ft Straightedge', desc: 'Smoothness check before pave' },
+    { id: 'compaction', label: 'Compaction Test', icon: '🔵', desc: 'Nuclear gauge or sand cone results' },
+    { id: 'laser', label: 'Laser Grade Verification', icon: '📏', desc: 'Grade rod reads at 25ft grid' },
+    { id: 'straightedge', label: '10-ft Straightedge', icon: '📐', desc: 'Smoothness check before pave' },
   ];
 
-  // Google Drive folder ID for embeds (kept for future use)
+  const hasVisionLinkData = vlAssets && vlAssets.length > 0;
+
+  // Google Drive folder ID for embeds
   const driveFolderId = jobFolder?.Job_Folder_Link ? extractDriveFolderId(jobFolder.Job_Folder_Link) : null;
-  void driveFolderId;
 
-  // Filter live rentals for this job by Job_Number (set upstream by fetchLiveRentals).
-  const jobRentals = (liveRentals || []).filter((r: any) => r.Job_Number === jobNumber);
-  const totalDailyBurn = jobRentals.reduce((sum: number, r: any) => sum + (Number(r.dayRate) || 0), 0);
-  const totalBurnToDate = jobRentals.reduce(
-    (sum: number, r: any) => sum + ((Number(r.daysOnRent) || 0) * (Number(r.dayRate) || 0)),
-    0,
-  );
-
-  // Assets on site: VisionLink + internal fleet equipment near this job.
-  const vlOnSite = (vlAssets || []).filter((a: any) => {
-    const jn = (a.jobNumber || a.Job_Number || '').toString().trim();
-    return jn && jn === jobNumber;
-  });
-  const fleetOnSite = (fleetAssets?.equipment || []).filter((e: any) => {
-    const jn = (e.jobNumber || e.Job_Number || '').toString().trim();
-    return jn && jn === jobNumber;
-  });
-  const assetsOnSite = [
-    ...vlOnSite.map((a: any) => ({
-      name: a.displayName || a.assetName || a.name || 'Equipment',
-      id: a.assetNum || a.serialNumber || a.id || '',
-      source: 'VisionLink',
-      driver: a.driver || '',
-    })),
-    ...fleetOnSite.map((e: any) => ({
-      name: e.displayName || e.name || 'Equipment',
-      id: e.assetNum || e.id || '',
-      source: 'Fleet',
-      driver: e.driver || '',
-    })),
+  // Check for individual file links
+  const docLinks = [
+    { label: 'Contract', link: jobFolder?.Contract_Link, icon: '📄', color: '#20BC64' },
+    { label: 'Work Order', link: jobFolder?.Work_Order_Link, icon: '📋', color: '#60a5fa' },
+    { label: 'Plans', link: jobFolder?.Plans_Link, icon: '📐', color: '#a78bfa' },
+    { label: 'Materials', link: jobFolder?.Material_Resources_Link, icon: '🏗️', color: '#fb923c' },
   ];
-
-  // Last ~10 field reports for the feed table
-  const recentReports = (fieldReportFeed || []).slice(0, 10);
-
-  // Crew size today from latest field report
-  const crewSizeToday = report?.Crew_Size || report?.crewCount || 0;
-  const daysOn = daysOnJob(job.Start_Date);
-
-  // Documents list — only show doc rows whose link is present.
-  const docLinks: { label: string; link: string }[] = [];
-  if (jobFolder?.Contract_Link) docLinks.push({ label: 'Contract', link: jobFolder.Contract_Link });
-  if (jobFolder?.Work_Order_Link) docLinks.push({ label: 'Work Order', link: jobFolder.Work_Order_Link });
-  if (jobFolder?.Plans_Link) docLinks.push({ label: 'Plans', link: jobFolder.Plans_Link });
-  if (jobFolder?.Material_Resources_Link) docLinks.push({ label: 'Materials', link: jobFolder.Material_Resources_Link });
-  // Extras — only include if they actually exist on the folder object.
-  if (jobFolder?.Insurance_Link) docLinks.push({ label: 'Insurance', link: jobFolder.Insurance_Link });
-  if (jobFolder?.Permits_Link) docLinks.push({ label: 'Permits', link: jobFolder.Permits_Link });
-
-  const surfaceReadyReady = QC_ITEMS.every(q => qcDone[q.id]);
 
   return (
     <div className="flex flex-col min-h-0">
 
       {/* ── Fullscreen Doc Overlay ──────────────────────────────────────── */}
       {fullscreenDoc && (
-        <div className="fixed inset-0 z-[100] bg-iron-charcoal/90 flex flex-col">
-          <div className="flex justify-between items-center px-4 py-3 bg-safety-white border-b border-line-grey">
-            <span className="font-display tracking-widest uppercase text-sm text-iron-charcoal">Document Viewer</span>
-            <button
-              onClick={() => setFullscreenDoc(null)}
-              className="btn-secondary text-xs"
-            >
-              Close
+        <div className="fixed inset-0 z-[100] bg-black/95 flex flex-col">
+          <div className="flex justify-between items-center px-4 py-3 bg-[#1e2023] border-b border-white/10">
+            <span className="text-white font-black text-sm">📄 Document Viewer</span>
+            <button onClick={() => setFullscreenDoc(null)}
+              className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 text-xs font-black hover:bg-red-500/30 transition-all">
+              ✕ Close
             </button>
           </div>
-          <iframe src={fullscreenDoc} className="flex-1 w-full bg-safety-white" allow="autoplay" />
+          <iframe src={fullscreenDoc} className="flex-1 w-full" allow="autoplay" />
         </div>
       )}
 
-      {/* ── Tab Nav ─────────────────────────────────────────────────────── */}
-      <div className="sticky top-[112px] z-40 bg-safety-white border-b border-line-grey">
-        <div className="flex overflow-x-auto">
+      {/* ── Sticky KPI Bar ─────────────────────────────────────────────── */}
+      <div className="sticky top-[104px] z-40 bg-[#1a1c1f] border-b border-white/8 shadow-lg">
+        {hasCreditFlag && (
+          <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center gap-2">
+            <span className="text-amber-400 text-sm">⚠️</span>
+            <p className="text-amber-300 font-black text-xs">
+              CREDIT FLAG —
+              {asphaltCredit !== 'Active' && ` Asphalt (${prep?.Nearest_Asphalt_Plant}): ${asphaltCredit}.`}
+              {baseCredit !== 'Active' && ` Quarry (${prep?.Nearest_Quarry}): ${baseCredit}.`}
+              {' '} Confirm before scheduling pave.
+              <span className="ml-2 text-amber-400/40 text-[9px]">SOURCE: JOB PREP BOARD (Manual)</span>
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 px-4 py-3 overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="relative w-10 h-10">
+              <svg className="w-10 h-10 -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3"/>
+                <circle cx="18" cy="18" r="15" fill="none" stroke={pctColor} strokeWidth="3"
+                  strokeDasharray={`${pct * 0.942} 94.2`} strokeLinecap="round"/>
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black" style={{ color: pctColor }}>{pct}%</span>
+            </div>
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-white/30">Complete</p>
+              <p className="text-xs font-black text-white">{pct}%</p>
+            </div>
+          </div>
+
+          <div className="w-px h-8 bg-white/10 shrink-0"/>
+
+          {[
+            { label: 'Contract', value: formatDollars(originalContract), color: '#20BC64' },
+            { label: 'Billed', value: formatDollars(job.Billed_To_Date), color: '#60a5fa' },
+            ...(approvedCOs > 0 ? [{ label: 'CO Added', value: '+' + formatDollars(approvedCOs), color: '#a78bfa' }] : []),
+          ].map(kpi => (
+            <div key={kpi.label} className="shrink-0">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-white/30">{kpi.label}</p>
+              <p className="text-xs font-black" style={{ color: kpi.color }}>{kpi.value}</p>
+            </div>
+          ))}
+
+          {weatherDays.length > 0 && (
+            <>
+              <div className="w-px h-8 bg-white/10 shrink-0"/>
+              {weatherDays.slice(0, 4).map((period: any, i: number) => {
+                const rawDay = (period.name || '').split(' ')[0];
+                const dayLabel = rawDay.toLowerCase() === 'tonight' || rawDay.toLowerCase() === 'today' ? 'TODAY'
+                  : rawDay.toLowerCase() === 'this' ? 'TODAY'
+                  : rawDay.slice(0, 3).toUpperCase();
+                return (
+                <div key={i} className={`shrink-0 flex flex-col items-center px-2 py-1 rounded-lg ${i === 0 ? 'bg-white/8 border border-white/10' : ''}`}>
+                  <p className="text-[9px] font-bold text-white/30 uppercase">{dayLabel}</p>
+                  <p className="text-base leading-none my-0.5"><WeatherIcon short={period.shortForecast || ''} /></p>
+                  <p className="text-[9px] font-black text-white">{period.temperature}°</p>
+                  {period.probabilityOfPrecipitation?.value ? (
+                    <p className="text-[8px] text-blue-400 font-bold">{period.probabilityOfPrecipitation.value}%</p>
+                  ) : null}
+                </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+
+        <div className="flex border-t border-white/6">
           {TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`shrink-0 px-5 py-3 font-display tracking-widest uppercase text-xs transition-colors border-b-2 ${
+              className={`flex-1 py-2.5 px-2 text-[10px] font-black uppercase tracking-widest transition-all flex flex-col items-center gap-0.5 ${
                 activeTab === tab.id
-                  ? 'text-sunbelt-green border-sunbelt-green'
-                  : 'text-steel-grey border-transparent hover:text-iron-charcoal'
+                  ? 'text-[#20BC64] border-b-2 border-[#20BC64] bg-[#20BC64]/5'
+                  : 'text-white/30 hover:text-white/60 hover:bg-white/3'
               }`}
             >
-              {tab.label}
+              <span className="text-sm">{tab.icon}</span>
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* ── Tab Content ─────────────────────────────────────────────────── */}
-      <div className="flex-1 p-4 md:p-6 space-y-5 max-w-7xl w-full mx-auto">
+      {/* ── Tab Content ────────────────────────────────────────────────── */}
+      <div className="flex-1 p-4 md:p-6 space-y-5">
 
-        {/* ════ TAB 1: OVERVIEW & LOGISTICS ═════════════════════════════ */}
+        {/* ════ TAB 1: OVERVIEW & LOGISTICS ════════════════════════════ */}
         {activeTab === 'overview' && (
           <div className="space-y-5">
 
-            {/* KPI row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="card card-padded">
-                <p className="stat-label">Contract Value</p>
-                <p className="stat-value font-mono mt-1">{formatDollars(originalContract)}</p>
-                <p className="stat-sub mt-1">{approvedCOs > 0 ? `+ ${formatDollars(approvedCOs)} approved COs` : 'No approved COs'}</p>
-              </div>
-              <div className="card card-padded">
-                <p className="stat-label">Billed</p>
-                <p className="stat-value font-mono mt-1">
-                  {originalContract > 0 ? Math.round((billedToDate / originalContract) * 100) : 0}%
-                </p>
-                <p className="stat-sub mt-1">{formatDollars(billedToDate)} of {formatDollars(originalContract)}</p>
-              </div>
-              <div className="card card-padded">
-                <p className="stat-label">Days On Job</p>
-                <p className="stat-value font-mono mt-1">{daysOn !== null ? daysOn : '—'}</p>
-                <p className="stat-sub mt-1">Since {job.Start_Date || 'start'}</p>
-              </div>
-              <div className="card card-padded">
-                <p className="stat-label">Crew Today</p>
-                <p className="stat-value font-mono mt-1">{crewSizeToday || '—'}</p>
-                <p className="stat-sub mt-1">{pct}% complete</p>
-              </div>
-            </div>
-
-            {/* Credit flag */}
-            {hasCreditFlag && (
-              <div className="card card-padded border-l-4" style={{ borderLeftColor: '#E8892B' }}>
-                <p className="eyebrow" style={{ color: '#E8892B', borderBottomColor: '#E8892B' }}>Credit Hold</p>
-                <p className="text-sm text-iron-charcoal mt-2">
-                  Confirm vendor credit before scheduling pave.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-                  <div className="flex justify-between items-center p-3 rounded bg-mist-grey">
-                    <div>
-                      <p className="text-xs text-steel-grey uppercase tracking-wide">Asphalt plant</p>
-                      <p className="text-sm text-iron-charcoal">{prep?.Nearest_Asphalt_Plant || 'Unknown'}</p>
-                    </div>
-                    <span className={asphaltCredit === 'Active' ? 'pill pill-success' : 'pill pill-warning'}>
-                      {asphaltCredit}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-3 rounded bg-mist-grey">
-                    <div>
-                      <p className="text-xs text-steel-grey uppercase tracking-wide">Quarry</p>
-                      <p className="text-sm text-iron-charcoal">{prep?.Nearest_Quarry || 'Unknown'}</p>
-                    </div>
-                    <span className={baseCredit === 'Active' ? 'pill pill-success' : 'pill pill-warning'}>
-                      {baseCredit}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Weather */}
-            <div className="card card-padded">
-              <p className="eyebrow">5-Day Forecast</p>
-              {weatherDays.length > 0 ? (
-                <div className="grid grid-cols-5 gap-2 mt-4">
-                  {weatherDays.slice(0, 5).map((p: any, i: number) => {
-                    const rawDay = (p.name || '').split(' ')[0];
-                    const dayLabel = rawDay.toLowerCase() === 'tonight' || rawDay.toLowerCase() === 'today' || rawDay.toLowerCase() === 'this'
-                      ? 'TODAY'
-                      : rawDay.slice(0, 3).toUpperCase();
-                    const pop = p.probabilityOfPrecipitation?.value;
-                    return (
-                      <div key={i} className={`p-3 rounded border ${i === 0 ? 'border-sunbelt-green bg-sunbelt-green/5' : 'border-line-grey bg-mist-grey'}`}>
-                        <p className="stat-label text-[10px]">{dayLabel}</p>
-                        <p className="text-sm text-iron-charcoal font-medium mt-1">{weatherLabel(p.shortForecast || '')}</p>
-                        <p className="font-mono text-base text-iron-charcoal mt-1">{p.temperature}&deg;</p>
-                        {pop ? <p className="font-mono text-xs text-info-blue mt-0.5">{pop}% rain</p> : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-steel-grey text-sm italic mt-3">Forecast unavailable for this location.</p>
-              )}
-            </div>
-
-            {/* Active Rentals */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Active Rentals</p>
-                {jobRentals.length > 0 && (
-                  <span className="pill pill-neutral">{jobRentals.length} unit{jobRentals.length === 1 ? '' : 's'}</span>
-                )}
-              </div>
-              {jobRentals.length > 0 ? (
-                <>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                    <div className="p-4 rounded bg-mist-grey">
-                      <p className="stat-label">Daily burn</p>
-                      <p className="font-display text-2xl text-iron-charcoal font-mono mt-1">
-                        {formatDollars(totalDailyBurn)}
-                        <span className="text-sm text-steel-grey"> / day</span>
-                      </p>
-                    </div>
-                    <div className="p-4 rounded bg-mist-grey">
-                      <p className="stat-label">Total burn to date</p>
-                      <p className="font-display text-2xl text-iron-charcoal font-mono mt-1">
-                        {formatDollars(totalBurnToDate)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="overflow-x-auto mt-4">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr>
-                          <th className="table-header text-left px-3 py-2">Equipment</th>
-                          <th className="table-header text-left px-3 py-2">Vendor</th>
-                          <th className="table-header text-left px-3 py-2">Contract</th>
-                          <th className="table-header text-right px-3 py-2">Day Rate</th>
-                          <th className="table-header text-right px-3 py-2">Days On</th>
-                          <th className="table-header text-left px-3 py-2">Pickup</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {jobRentals.map((r: any, i: number) => {
-                          const overdue = Number(r.daysOnRent) > 30;
-                          return (
-                            <tr key={i} className="table-row-zebra">
-                              <td className="px-3 py-2 text-iron-charcoal">{r.equipmentType || '—'}</td>
-                              <td className="px-3 py-2 text-iron-charcoal">{r.vendor || '—'}</td>
-                              <td className="px-3 py-2 font-mono text-xs text-steel-grey">{r.contractNumber || '—'}</td>
-                              <td className="px-3 py-2 text-right font-mono text-iron-charcoal">
-                                {Number(r.dayRate) > 0 ? formatDollars(r.dayRate) : '—'}
-                              </td>
-                              <td className={`px-3 py-2 text-right font-mono ${overdue ? 'text-danger-red' : 'text-iron-charcoal'}`}>
-                                {Number(r.daysOnRent) > 0 ? r.daysOnRent : '—'}
-                                {overdue && <span className="ml-2 pill pill-danger">Over 30d</span>}
-                              </td>
-                              <td className="px-3 py-2 text-steel-grey text-xs">{r.pickupDate || 'Open'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              ) : (
-                <p className="text-steel-grey text-sm italic mt-3">No active rentals on this job.</p>
-              )}
-            </div>
-
-            {/* Assets on site */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Assets On Site</p>
-                {assetsOnSite.length > 0 && (
-                  <span className="pill pill-neutral">{assetsOnSite.length}</span>
-                )}
-              </div>
-              {assetsOnSite.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                  {assetsOnSite.map((a, i) => (
-                    <div key={i} className="p-3 rounded border border-line-grey bg-safety-white">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm text-iron-charcoal font-medium truncate">{a.name}</p>
-                        <span className="pill pill-info">{a.source}</span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-steel-grey">
-                        {a.id && <span className="font-mono">{a.id}</span>}
-                        {a.driver && <span>Driver: {a.driver}</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-steel-grey text-sm italic mt-3">No equipment currently reported on this job.</p>
-              )}
-            </div>
-
-            {/* Nearby vehicles (Samsara, 0.5mi radius) */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Nearby Vehicles (0.5 mi)</p>
-                {vehicles.length > 0 && (
-                  <span className="pill pill-neutral">{vehicles.length}</span>
-                )}
-              </div>
-              {vehicles.length > 0 ? (
-                <div className="overflow-x-auto mt-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="table-header text-left px-3 py-2">Vehicle</th>
-                        <th className="table-header text-left px-3 py-2">Driver</th>
-                        <th className="table-header text-right px-3 py-2">Speed</th>
-                        <th className="table-header text-left px-3 py-2">Location</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vehicles.map((v: any, i: number) => (
-                        <tr key={i} className="table-row-zebra">
-                          <td className="px-3 py-2 text-iron-charcoal">{v.name}</td>
-                          <td className="px-3 py-2 text-iron-charcoal">{v.driver || 'Unassigned'}</td>
-                          <td className="px-3 py-2 text-right font-mono text-iron-charcoal">{Math.round(v.speed || 0)} mph</td>
-                          <td className="px-3 py-2 text-xs text-steel-grey">{v.address || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-steel-grey text-sm italic mt-3">No Sunbelt vehicles within half a mile of the site right now.</p>
-              )}
-            </div>
-
             {/* Job Intel */}
-            <div className="card card-padded">
-              <p className="eyebrow">Job Details</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mt-4">
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <h2 className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Job Intel</h2>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {[
                   { label: 'PM', value: job.Project_Manager },
                   { label: 'GC', value: job.General_Contractor },
@@ -459,184 +247,385 @@ export default function JobTabs({
                   { label: 'Start Date', value: job.Start_Date },
                   { label: 'Status', value: job.Status },
                   { label: 'Contact', value: job.Point_Of_Contact },
-                ]
-                  .filter(i => i.value)
-                  .map(item => (
-                    <div key={item.label} className="p-3 rounded bg-mist-grey">
-                      <p className="stat-label">{item.label}</p>
-                      <p className="text-sm text-iron-charcoal mt-0.5">{item.value}</p>
-                    </div>
-                  ))}
+                ].filter(i => i.value).map(item => (
+                  <div key={item.label} className="p-3 rounded-lg bg-black/20 border border-white/5">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-white/30">{item.label}</p>
+                    <p className="text-sm font-bold text-white/80 mt-0.5">{item.value}</p>
+                  </div>
+                ))}
               </div>
             </div>
+
+            {/* Supply Chain / Vendor Credit */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Supply Chain Status</h2>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: JOB PREP BOARD (Manual)</span>
+              </div>
+              {prep ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="flex justify-between items-center p-4 rounded-xl bg-black/20 border border-white/5">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-white/30 mb-1">Asphalt Plant</p>
+                      <p className="text-sm font-bold text-white">{prep.Nearest_Asphalt_Plant}</p>
+                    </div>
+                    <span className={`text-xs font-black px-3 py-1.5 rounded-full ${asphaltCredit === 'Active' ? 'bg-[#20BC64]/10 text-[#20BC64] border border-[#20BC64]/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                      {asphaltCredit}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center p-4 rounded-xl bg-black/20 border border-white/5">
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-white/30 mb-1">Quarry</p>
+                      <p className="text-sm font-bold text-white">{prep.Nearest_Quarry}</p>
+                    </div>
+                    <span className={`text-xs font-black px-3 py-1.5 rounded-full ${baseCredit === 'Active' ? 'bg-[#20BC64]/10 text-[#20BC64] border border-[#20BC64]/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
+                      {baseCredit}
+                    </span>
+                  </div>
+                </div>
+              ) : <p className="text-white/20 text-sm">Awaiting Live Data — No supply chain data on file.</p>}
+            </div>
+
+            {/* Box A: Assets on Site — Filtered by Schedule + Proximity */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              {(() => {
+                const today = scheduleData?.currentWeek?.days?.find((d: any) => d.isToday);
+                const todayCrews = today?.crews?.filter((c: any) => 
+                  c.assignments?.some((a: any) => 
+                    a.jobNumber === jobNumber || 
+                    (a.jobRef && a.jobRef.toLowerCase().includes(job.Job_Name.toLowerCase()))
+                  )
+                ).map((c: any) => c.crewName.toLowerCase().trim()) || [];
+
+                // Filter fleet assets by scheduled crews
+                const scheduledEquipment = fleetAssets.equipment.filter(e => {
+                  const driver = (e.driver || '').toLowerCase().trim();
+                  return todayCrews.some((c: string) => driver.includes(c) || c.includes(driver));
+                });
+
+                // Also show vehicles that are physically nearby (from Samsara/GPS)
+                const nearbyVehicles = vehicles || [];
+
+                const allOnSite = [
+                  ...scheduledEquipment.map(e => ({ ...e, type: 'EQUIPMENT', source: 'SCHEDULE' })),
+                  ...nearbyVehicles.map((v: any) => ({
+                    displayName: v.name,
+                    assetNum: v.id,
+                    type: 'VEHICLE',
+                    source: 'GPS',
+                    driver: v.driverName || 'Unknown',
+                    isRental: false,
+                  }))
+                ];
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
+                        🚜 Assets on Site
+                        <span className="ml-2 text-[9px] font-bold text-[#20BC64]/60">LIVE TRACKING</span>
+                      </h2>
+                      <div className="flex gap-2">
+                        <span className="text-[10px] font-black px-2 py-1 rounded-full bg-[#20BC64]/10 text-[#20BC64] border border-[#20BC64]/20">
+                          {allOnSite.length} Active
+                        </span>
+                      </div>
+                    </div>
+
+                    {allOnSite.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {allOnSite.map((item, i) => {
+                          const isGPS = item.source === 'GPS';
+                          const isRental = item.isRental;
+                          return (
+                            <div key={i} className="p-4 rounded-xl bg-black/20 border border-white/5 flex items-center gap-4">
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${isRental ? 'bg-amber-500/10 text-amber-400' : 'bg-[#20BC64]/10 text-[#20BC64]'}`}>
+                                {item.type === 'VEHICLE' ? '🚛' : '🚜'}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-black text-white truncate">{item.displayName}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {item.assetNum && <span className="text-[10px] font-bold text-white/40">{item.assetNum}</span>}
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${isGPS ? 'border-[#20BC64]/30 text-[#20BC64]' : 'border-white/10 text-white/30'}`}>
+                                    {isGPS ? 'GPS CONFIRMED' : 'SCHEDULED'}
+                                  </span>
+                                  {isRental && <span className="text-[9px] font-black px-1.5 py-0.5 rounded border border-amber-500/30 text-amber-400 uppercase">Rental</span>}
+                                </div>
+                                {item.driver && <p className="text-[10px] text-white/30 mt-1 font-bold">Assigned: {item.driver}</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center bg-black/10 rounded-xl border border-dashed border-white/5">
+                        <p className="text-white/20 text-sm font-bold">No assets currently reported on site.</p>
+                        <p className="text-[10px] text-white/10 mt-1 px-4">Assets appear here when crews are scheduled or GPS units are detected within 0.5 miles.</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Box B: Active Rentals — from Gmail-synced sheets, falls back to CSV */}
+            {(() => {
+              // Filter live rentals for THIS job
+              const matchedLive = liveRentals.filter(r => {
+                const searchStr = `${r.jobName} ${r.jobLocation}`.toLowerCase();
+                const jNum = (jobNumber || '').toLowerCase().trim();
+                const jName = (job.Job_Name || '').toLowerCase().trim();
+                return searchStr.includes(jNum) || 
+                       searchStr.includes(jName) || 
+                       jName.includes(r.jobName.toLowerCase().trim());
+              });
+
+              // Use live rentals if available, otherwise fall back to CSV
+              const activeRentals = matchedLive.length > 0 ? matchedLive : rentals.map(r => ({
+                vendor: r.Vendor || 'Unknown',
+                equipmentType: r.Equipment_Type || '',
+                dayRate: parseFloat(r.Daily_Rate) || 0,
+                weekRate: 0,
+                fourWeekRate: 0,
+                daysOnRent: parseInt(r.Days_On_Site) || 0,
+                dateRented: '',
+                jobName: '',
+                contractNumber: '',
+              }));
+              const isLive = matchedLive.length > 0;
+              const totalDailyBurn = activeRentals.reduce((sum, r) => sum + (r.dayRate || 0), 0);
+              const totalBurnToDate = activeRentals.reduce((sum, r) => sum + ((r.daysOnRent || 0) * (r.dayRate || 0)), 0);
+
+              return (
+                <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xs font-black uppercase tracking-widest text-white/40">
+                      💳 Active Rentals
+                      <span className={`ml-2 text-[9px] font-bold ${isLive ? 'text-[#20BC64]/60' : 'text-amber-400/60'}`}>
+                        {isLive ? 'LIVE FROM GMAIL' : 'STATIC DATA'}
+                      </span>
+                    </h2>
+                    {activeRentals.length > 0 && (
+                      <span className="text-[10px] font-black px-2 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                        {activeRentals.length} Units
+                      </span>
+                    )}
+                  </div>
+                  {activeRentals.length > 0 ? (
+                    <div className="space-y-3">
+                      {totalDailyBurn > 0 && (
+                        <div className="flex gap-3 mb-4">
+                          <div className="flex-1 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-amber-400/60">Daily Burn Rate</p>
+                            <p className="text-xl font-black text-amber-400">{formatDollars(totalDailyBurn)}<span className="text-sm">/day</span></p>
+                          </div>
+                          <div className="flex-1 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-red-400/60">Total Burn</p>
+                            <p className="text-xl font-black text-red-400">{formatDollars(totalBurnToDate)}</p>
+                          </div>
+                        </div>
+                      )}
+                      {activeRentals.map((r: any, i: number) => {
+                        const isOverdue = r.daysOnRent > 30;
+                        const vendorColor = r.vendor?.includes('Sunbelt') ? 'text-orange-400 bg-orange-500/10 border-orange-500/20' : 'text-green-400 bg-green-500/10 border-green-500/20';
+                        return (
+                          <div key={i} className={`p-4 rounded-xl border ${isOverdue ? 'bg-red-500/5 border-red-500/20' : 'bg-black/20 border-white/5'}`}>
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <p className="text-sm font-black text-white">{r.equipmentType}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${vendorColor}`}>{r.vendor}</span>
+                                  {r.contractNumber && <span className="text-[10px] text-white/30">#{r.contractNumber}</span>}
+                                </div>
+                              </div>
+                              <div className="text-right ml-3 shrink-0">
+                                {r.dayRate > 0 && <p className="text-lg font-black text-amber-400">{formatDollars(r.dayRate)}<span className="text-xs text-amber-400/50">/day</span></p>}
+                                {r.weekRate > 0 && <p className="text-xs text-white/30">{formatDollars(r.weekRate)}/wk</p>}
+                                <p className={`text-xs font-bold ${isOverdue ? 'text-red-400' : 'text-white/30'}`}>
+                                  {r.daysOnRent > 0 ? `${r.daysOnRent}d on rent` : ''}
+                                  {r.dateRented ? ` · since ${r.dateRented}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                            {isOverdue && (
+                              <p className="text-[10px] text-red-400 font-black mt-2">⚠️ OVERDUE — {r.daysOnRent - 30} days past 30-day mark. Confirm off-rent.</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-white/20 text-sm py-4 text-center">No rental equipment data. Set up Gmail sync to auto-pull from Sunbelt & United.</p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
-        {/* ════ TAB 2: PRODUCTION & REPORTS ════════════════════════════ */}
+        {/* ════ TAB 2: PRODUCTION & FIELD REPORTS ═════════════════════ */}
         {activeTab === 'production' && (
           <div className="space-y-5">
 
-            {/* Scorecard comparison */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Estimated vs Actual</p>
-                {tonsPill && <span className={tonsPill.cls}>{tonsPill.text}</span>}
+            {/* Production Totals */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Production Totals</h2>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: SCORECARD + FIELD REPORTS</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Tons</p>
-                  <p className="stat-value font-mono mt-1">{actTons.toLocaleString()}</p>
-                  <p className="stat-sub mt-1">Est: {estTons.toLocaleString()}</p>
+              {report ? (
+                <div className="space-y-5">
+                  {[
+                    // Actuals: live field reports only. Estimates: scorecard CSV.
+                    { label: 'GAB / Base', actual: report ? (report.Base_Actual || report.GAB_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0, unit: 'tons', color: '#20BC64' },
+                    { label: 'Asphalt Binder', actual: report ? (report.Binder_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Binder_Tons) || 0 : 0, unit: 'tons', color: '#60a5fa' },
+                    { label: 'Asphalt Topping', actual: report ? (report.Topping_Tonnage || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0, unit: 'tons', color: '#a78bfa' },
+                    { label: 'Concrete', actual: report ? (report.Concrete_Actual || report.Concrete_CY || 0) : 0, est: 0, unit: 'CY', color: '#f472b6' },
+                    { label: 'Total Man-Hours', actual: report ? (report.Total_Man_Hours || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Man_Hours) || 0 : 0, unit: 'hrs', color: '#fb923c' },
+                    { label: 'Days Active', actual: report ? (report.Days_Active || 0) : 0, est: scorecard ? parseFloat(scorecard.Est_Days_On_Site) || 0 : 0, unit: 'days', color: '#fbbf24' },
+                  ].map(m => {
+                    const act = m.actual || 0;
+                    const est = m.est;
+                    const pctUsed = est > 0 ? Math.min(130, Math.round((act / est) * 100)) : 0;
+                    const isOver = est > 0 && act > est * 1.05;
+                    return (
+                      <div key={m.label}>
+                        <div className="flex justify-between items-end mb-2">
+                          <span className="text-xs text-white/50 font-bold">{m.label}</span>
+                          <div className="text-right">
+                            <span className="text-sm font-black" style={{ color: isOver ? '#ef4444' : m.color }}>{(act || 0).toLocaleString()} {m.unit}</span>
+                            {est > 0 && <span className="text-xs text-white/30 ml-2">/ {est.toLocaleString()} est</span>}
+                          </div>
+                        </div>
+                        {est > 0 && (
+                          <div className="w-full bg-white/5 rounded-full h-3 overflow-hidden relative">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, pctUsed)}%`, backgroundColor: isOver ? '#ef4444' : m.color }} />
+                            {isOver && (
+                              <div className="absolute right-0 top-0 h-full flex items-center pr-1">
+                                <span className="text-[8px] text-red-400 font-black">+{pctUsed - 100}%</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Yards Concrete</p>
-                  <p className="stat-value font-mono mt-1">
-                    {(report?.Yds_Concrete || report?.Concrete_CY || 0).toLocaleString()}
-                  </p>
-                  <p className="stat-sub mt-1">From latest report</p>
-                </div>
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Billed Income</p>
-                  <p className="stat-value font-mono mt-1">
-                    {actIncome > 0 ? formatDollars(actIncome) : '—'}
-                  </p>
-                  <p className="stat-sub mt-1">{estIncome > 0 ? `Est: ${formatDollars(estIncome)}` : 'No estimate on file'}</p>
-                </div>
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Honest Margin</p>
-                  <p className="stat-value font-mono mt-1">
-                    {honestMargin === null ? '—' : `${honestMargin.toFixed(1)}%`}
-                  </p>
-                  <p className="stat-sub mt-1">
-                    {profit !== 0 ? `${profit >= 0 ? '+' : ''}${formatDollars(profit)} profit` : 'Profit ÷ Billed'}
-                  </p>
-                </div>
-              </div>
+              ) : <p className="text-white/20 text-sm py-4">Awaiting Live Data — No field reports submitted for this job.</p>}
             </div>
 
-            {/* Per-type scorecard breakdown */}
-            {scorecard && (
-              <div className="card card-padded">
-                <p className="eyebrow">Material Scorecard</p>
-                <div className="overflow-x-auto mt-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="table-header text-left px-3 py-2">Material</th>
-                        <th className="table-header text-right px-3 py-2">Estimated</th>
-                        <th className="table-header text-right px-3 py-2">Actual</th>
-                        <th className="table-header text-right px-3 py-2">% Used</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[
-                        { label: 'Man Hours', est: parseFloat(scorecard.Est_Man_Hours) || 0, act: parseFloat(scorecard.Act_Man_Hours) || 0, unit: 'hrs' },
-                        { label: 'Stone Base', est: parseFloat(scorecard.Est_Stone_Tons) || 0, act: parseFloat(scorecard.Act_Stone_Tons) || 0, unit: 'tons' },
-                        { label: 'Asphalt Binder', est: parseFloat(scorecard.Est_Binder_Tons) || 0, act: parseFloat(scorecard.Act_Binder_Tons) || 0, unit: 'tons' },
-                        { label: 'Asphalt Topping', est: parseFloat(scorecard.Est_Topping_Tons) || 0, act: parseFloat(scorecard.Act_Topping_Tons) || 0, unit: 'tons' },
-                        { label: 'Days On Site', est: parseFloat(scorecard.Est_Days_On_Site) || 0, act: parseFloat(scorecard.Act_Days_On_Site) || 0, unit: 'days' },
-                      ].map(m => {
-                        const pctUsed = m.est > 0 ? Math.round((m.act / m.est) * 100) : 0;
-                        const isOver = m.est > 0 && m.act > m.est * 1.05;
-                        const isUnder = m.est > 0 && m.act > 0 && m.act < m.est * 0.95;
-                        return (
-                          <tr key={m.label} className="table-row-zebra">
-                            <td className="px-3 py-2 text-iron-charcoal">{m.label}</td>
-                            <td className="px-3 py-2 text-right font-mono text-steel-grey">
-                              {m.est ? `${m.est.toLocaleString()} ${m.unit}` : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-iron-charcoal">
-                              {m.act ? `${m.act.toLocaleString()} ${m.unit}` : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {m.est > 0 ? (
-                                <span className={isOver ? 'pill pill-danger' : isUnder ? 'pill pill-warning' : 'pill pill-success'}>
-                                  {pctUsed}%
-                                </span>
-                              ) : (
-                                <span className="text-steel-grey">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+            {/* FIELD REPORT FEED — Daily submissions */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Daily Field Reports</h2>
+                <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOURCE: FIELD REPORT API · {fieldReportFeed.length} Reports</span>
               </div>
-            )}
+              {fieldReportFeed.length > 0 ? (
+                <div className="space-y-3">
+                  {fieldReportFeed.map((entry: any, i: number) => {
+                    const d = new Date(entry.date);
+                    const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    const hasProduction = entry.gabTons > 0 || entry.binderTons > 0 || entry.toppingTons > 0 || entry.concreteCY > 0;
+                    return (
+                      <div key={entry.id || i} className="p-4 rounded-xl bg-black/20 border border-white/5">
+                        {/* Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black px-2 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                              📋 {dateStr}
+                            </span>
+                            {entry.difficulty && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white/5 text-white/30">{entry.difficulty}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-white/30">
+                            {entry.crewCount > 0 && <span>👷 {entry.crewCount} crew</span>}
+                            {entry.manHours > 0 && <span>⏱ {entry.manHours}h</span>}
+                            {entry.truckCount > 0 && <span>🚛 {entry.truckCount} trucks</span>}
+                          </div>
+                        </div>
 
-            {/* Recent field reports */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Recent Field Reports</p>
-                <span className="text-xs text-steel-grey">{fieldReportFeed.length} on file</span>
-              </div>
-              {recentReports.length > 0 ? (
-                <div className="overflow-x-auto mt-4">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        <th className="table-header text-left px-3 py-2">Date</th>
-                        <th className="table-header text-right px-3 py-2">Crew</th>
-                        <th className="table-header text-right px-3 py-2">Man-Hrs</th>
-                        <th className="table-header text-right px-3 py-2">Tons</th>
-                        <th className="table-header text-right px-3 py-2">Yds</th>
-                        <th className="table-header text-left px-3 py-2">Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentReports.map((e: any, i: number) => {
-                        const d = new Date(e.date);
-                        const dateStr = isNaN(d.getTime())
-                          ? (e.date || '—')
-                          : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
-                        const totalTons = (Number(e.gabTons) || 0) + (Number(e.binderTons) || 0) + (Number(e.toppingTons) || 0);
-                        return (
-                          <tr key={e.id || i} className="table-row-zebra">
-                            <td className="px-3 py-2 font-mono text-xs text-iron-charcoal">{dateStr}</td>
-                            <td className="px-3 py-2 text-right font-mono text-iron-charcoal">{e.crewCount || '—'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-iron-charcoal">{e.manHours || '—'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-iron-charcoal">{totalTons ? totalTons.toLocaleString() : '—'}</td>
-                            <td className="px-3 py-2 text-right font-mono text-iron-charcoal">{e.concreteCY ? Number(e.concreteCY).toLocaleString() : '—'}</td>
-                            <td className="px-3 py-2 text-xs text-steel-grey max-w-md truncate" title={e.summary}>
-                              {e.summary && e.summary !== 'no' ? e.summary : '—'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                        {/* Production Grid */}
+                        {hasProduction && (
+                          <div className="grid grid-cols-4 gap-2 mb-3">
+                            {entry.gabTons > 0 && (
+                              <div className="p-2 rounded-lg bg-[#20BC64]/5 border border-[#20BC64]/15">
+                                <p className="text-[8px] font-black uppercase text-[#20BC64]/60">GAB</p>
+                                <p className="text-sm font-black text-[#20BC64]">{entry.gabTons.toLocaleString()}t</p>
+                              </div>
+                            )}
+                            {entry.binderTons > 0 && (
+                              <div className="p-2 rounded-lg bg-blue-500/5 border border-blue-500/15">
+                                <p className="text-[8px] font-black uppercase text-blue-400/60">Binder</p>
+                                <p className="text-sm font-black text-blue-400">{entry.binderTons.toLocaleString()}t</p>
+                              </div>
+                            )}
+                            {entry.toppingTons > 0 && (
+                              <div className="p-2 rounded-lg bg-purple-500/5 border border-purple-500/15">
+                                <p className="text-[8px] font-black uppercase text-purple-400/60">Topping</p>
+                                <p className="text-sm font-black text-purple-400">{entry.toppingTons.toLocaleString()}t</p>
+                              </div>
+                            )}
+                            {entry.concreteCY > 0 && (
+                              <div className="p-2 rounded-lg bg-pink-500/5 border border-pink-500/15">
+                                <p className="text-[8px] font-black uppercase text-pink-400/60">Concrete</p>
+                                <p className="text-sm font-black text-pink-400">{entry.concreteCY.toLocaleString()} CY</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Summary */}
+                        {entry.summary && entry.summary !== 'no' && (
+                          <p className="text-xs text-white/50 leading-relaxed border-t border-white/5 pt-2">{entry.summary}</p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
-                <p className="text-steel-grey text-sm italic mt-3">No field reports submitted for this job yet.</p>
+                <div className="text-center py-6">
+                  <p className="text-3xl mb-2">📋</p>
+                  <p className="text-white/30 text-sm font-bold">Awaiting Live Data — No field reports submitted for this job.</p>
+                  <p className="text-white/15 text-xs mt-1">Foremen submit daily field reports. Reports appear here automatically.</p>
+                </div>
               )}
             </div>
 
-            {/* Latest report detail */}
-            {report && (
-              <div className="card card-padded">
-                <p className="eyebrow">Latest Report</p>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                  <div className="p-3 rounded bg-mist-grey">
-                    <p className="stat-label">Date</p>
-                    <p className="text-sm text-iron-charcoal mt-1">{report.Date || '—'}</p>
-                  </div>
-                  <div className="p-3 rounded bg-mist-grey">
-                    <p className="stat-label">Weather</p>
-                    <p className="text-sm text-iron-charcoal mt-1">{report.Weather || '—'}</p>
-                  </div>
-                  <div className="p-3 rounded bg-mist-grey">
-                    <p className="stat-label">Crew Size</p>
-                    <p className="text-sm text-iron-charcoal mt-1">{report.Crew_Size || '—'}</p>
-                  </div>
+            {/* Scorecard */}
+            {scorecard && (
+              <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Est vs Actual Scorecard</h2>
+                  {parseInt(scorecard.Weather_Days) > 0 && (
+                    <span className="text-xs font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      ☁️ {scorecard.Weather_Days} Weather Days
+                    </span>
+                  )}
                 </div>
-                {report.Notes && (
-                  <div className="mt-4 p-4 rounded bg-mist-grey border-l-4 border-sunbelt-green">
-                    <p className="stat-label mb-1">Foreman Notes</p>
-                    <p className="text-sm text-iron-charcoal leading-relaxed">{report.Notes}</p>
-                  </div>
-                )}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {[
+                    { label: 'Man Hours', est: parseFloat(scorecard.Est_Man_Hours)||0, act: parseFloat(scorecard.Act_Man_Hours)||0, unit: 'hrs', color: '#fb923c' },
+                    { label: 'Stone', est: parseFloat(scorecard.Est_Stone_Tons)||0, act: parseFloat(scorecard.Act_Stone_Tons)||0, unit: 'tons', color: '#a78bfa' },
+                    { label: 'Binder', est: parseFloat(scorecard.Est_Binder_Tons)||0, act: parseFloat(scorecard.Act_Binder_Tons)||0, unit: 'tons', color: '#60a5fa' },
+                    { label: 'Topping', est: parseFloat(scorecard.Est_Topping_Tons)||0, act: parseFloat(scorecard.Act_Topping_Tons)||0, unit: 'tons', color: '#20BC64' },
+                    { label: 'Days', est: parseFloat(scorecard.Est_Days_On_Site)||0, act: parseFloat(scorecard.Act_Days_On_Site)||0, unit: 'days', color: '#f472b6' },
+                  ].map(m => {
+                    const pctVal = m.est > 0 ? Math.round((m.act / m.est) * 100) : 0;
+                    const isOver = m.act > m.est * 1.05;
+                    return (
+                      <div key={m.label} className="bg-black/20 rounded-xl p-4 border border-white/5">
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: m.color }}>{m.label}</p>
+                        <p className="text-xl font-black mb-0.5" style={{ color: isOver ? '#ef4444' : m.color }}>{m.act.toLocaleString()}</p>
+                        <p className="text-xs text-white/30">est: {m.est.toLocaleString()} {m.unit}</p>
+                        <div className="w-full bg-white/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${Math.min(100, pctVal)}%`, backgroundColor: isOver ? '#ef4444' : m.color }} />
+                        </div>
+                        <p className="text-[10px] text-right mt-1" style={{ color: isOver ? '#ef4444' : 'rgba(255,255,255,0.2)' }}>{pctVal}%</p>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -646,89 +635,75 @@ export default function JobTabs({
         {activeTab === 'changeorders' && (
           <div className="space-y-5">
 
-            {/* Running totals */}
-            <div className="card card-padded">
-              <p className="eyebrow">Contract Total</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Original</p>
-                  <p className="stat-value font-mono mt-1">{formatDollars(originalContract)}</p>
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <h2 className="text-xs font-black uppercase tracking-widest text-white/40 mb-4">Contract Value Summary</h2>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-black/20 rounded-xl p-4 border border-white/5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Original Contract</p>
+                  <p className="text-xl font-black text-[#20BC64]">{formatDollars(originalContract)}</p>
                 </div>
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Approved COs</p>
-                  <p className="stat-value font-mono mt-1">+ {formatDollars(approvedCOs)}</p>
-                  <p className="stat-sub mt-1">{approvedCOList.length} approved</p>
+                <div className="bg-black/20 rounded-xl p-4 border border-white/5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-white/30">Approved COs</p>
+                  <p className="text-xl font-black text-[#a78bfa]">+{formatDollars(approvedCOs)}</p>
                 </div>
-                <div className="p-4 rounded bg-mist-grey">
-                  <p className="stat-label">Pending COs</p>
-                  <p className="stat-value font-mono mt-1">{formatDollars(pendingCOsAmount)}</p>
-                  <p className="stat-sub mt-1">{pendingCOs.length} awaiting approval</p>
-                </div>
-                <div className="p-4 rounded" style={{ backgroundColor: 'var(--color-sunbelt-green-light)' }}>
-                  <p className="stat-label">Revised Total</p>
-                  <p className="stat-value font-mono mt-1 text-sunbelt-green">{formatDollars(revisedContract)}</p>
-                  <p className="stat-sub mt-1">Original plus approved COs</p>
+                <div className="rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64]/60">Revised Contract</p>
+                  <p className="text-xl font-black text-[#20BC64]">{formatDollars(revisedContract)}</p>
                 </div>
               </div>
+              {pendingCOs.length > 0 && (
+                <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center gap-3">
+                  <span className="text-amber-400 text-lg shrink-0">⛔</span>
+                  <div>
+                    <p className="text-amber-300 font-black text-xs">{pendingCOs.length} PENDING CHANGE ORDER{pendingCOs.length > 1 ? 'S' : ''} — DO NOT EXECUTE SCOPE</p>
+                    <p className="text-amber-200/50 text-[10px] mt-0.5">Work associated with pending COs cannot be performed until approved by GC. Contact PM immediately.</p>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Pending */}
             {pendingCOs.length > 0 && (
-              <div className="card card-padded border-l-4" style={{ borderLeftColor: '#E8892B' }}>
-                <div className="flex items-center justify-between">
-                  <p className="eyebrow" style={{ color: '#E8892B', borderBottomColor: '#E8892B' }}>Pending Approval</p>
-                  <span className="pill pill-warning">{pendingCOs.length} open</span>
-                </div>
-                <p className="text-sm text-iron-charcoal mt-2">
-                  Pending approval — do not start this scope yet.
-                </p>
-                <div className="mt-4 space-y-3">
+              <div className="bg-[#1e2023] rounded-xl border border-amber-500/20 p-5">
+                <h2 className="text-xs font-black uppercase tracking-widest text-amber-400/70 mb-4">⛔ Pending — Awaiting Approval</h2>
+                <div className="space-y-3">
                   {pendingCOs.map((co, i) => (
-                    <div key={i} className="p-4 rounded border border-line-grey bg-safety-white">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3">
-                            <span className="font-display tracking-widest uppercase text-sm text-iron-charcoal">CO {co.CO_Number}</span>
-                            {co.Type && <span className="pill pill-neutral">{co.Type}</span>}
+                    <div key={i} className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-black text-[#60a5fa]">{co.CO_Number}</span>
+                            <span className="text-[10px] text-white/30">{co.Type}</span>
                           </div>
-                          <p className="text-sm text-iron-charcoal mt-2">{co.Description}</p>
-                          {co.Notes && <p className="text-xs text-steel-grey italic mt-1">{co.Notes}</p>}
+                          <p className="text-sm text-white/70">{co.Description}</p>
+                          {co.Notes && <p className="text-xs text-white/30 italic mt-1">{co.Notes}</p>}
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-mono font-display text-xl text-iron-charcoal">{co.Amount}</p>
-                          <div className="mt-2"><StatusPill status="Pending" /></div>
-                        </div>
+                        <p className="text-lg font-black text-amber-400 shrink-0">{co.Amount}</p>
                       </div>
+                      <StatusBadge status="Pending" />
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Approved */}
             {approvedCOList.length > 0 && (
-              <div className="card card-padded">
-                <div className="flex items-center justify-between">
-                  <p className="eyebrow">Approved &mdash; Scope Added</p>
-                  <span className="pill pill-success">{approvedCOList.length} approved</span>
-                </div>
-                <div className="mt-4 space-y-3">
+              <div className="bg-[#1e2023] rounded-xl border border-emerald-500/15 p-5">
+                <h2 className="text-xs font-black uppercase tracking-widest text-emerald-400/60 mb-4">✅ Approved — Scope Added to Contract</h2>
+                <div className="space-y-3">
                   {approvedCOList.map((co, i) => (
-                    <div key={i} className="p-4 rounded border border-line-grey bg-safety-white">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3">
-                            <span className="font-display tracking-widest uppercase text-sm text-iron-charcoal">CO {co.CO_Number}</span>
-                            {co.Type && <span className="pill pill-neutral">{co.Type}</span>}
+                    <div key={i} className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/15">
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-black text-[#60a5fa]">{co.CO_Number}</span>
+                            <span className="text-[10px] text-white/30">{co.Type}</span>
                           </div>
-                          <p className="text-sm text-iron-charcoal mt-2">{co.Description}</p>
-                          {co.Notes && <p className="text-xs text-steel-grey italic mt-1">{co.Notes}</p>}
+                          <p className="text-sm text-white/70">{co.Description}</p>
+                          {co.Notes && <p className="text-xs text-white/30 italic mt-1">{co.Notes}</p>}
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-mono font-display text-xl text-sunbelt-green">{co.Amount}</p>
-                          <div className="mt-2"><StatusPill status="Approved" /></div>
-                        </div>
+                        <p className="text-lg font-black text-emerald-400 shrink-0">{co.Amount}</p>
                       </div>
+                      <StatusBadge status="Approved" />
                     </div>
                   ))}
                 </div>
@@ -736,179 +711,322 @@ export default function JobTabs({
             )}
 
             {changeOrders.length === 0 && (
-              <div className="card card-padded text-center">
-                <p className="text-steel-grey text-sm italic">No change orders on file for this job.</p>
+              <div className="bg-[#1e2023] rounded-xl border border-white/5 p-8 text-center">
+                <p className="text-4xl mb-3">📝</p>
+                <p className="text-white/40 font-bold">No change orders on file for this job.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* ════ TAB 4: DOCUMENTS & QC ══════════════════════════════════ */}
+        {/* ════ TAB 4: DOCUMENTS & QC ═══════════════════════════════════ */}
         {activeTab === 'documents' && (
           <div className="space-y-5">
 
-            {/* Job folder + docs */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Job Documents</p>
+            {/* Job Documents — Button Layout */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Job Documents</h2>
                 {jobFolder?.Job_Folder_Link && (
-                  <a
-                    href={jobFolder.Job_Folder_Link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-primary text-xs"
-                  >
-                    Open Drive Folder
+                  <a href={jobFolder.Job_Folder_Link} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-xs font-black hover:bg-[#20BC64]/20 transition-all">
+                    📂 Open Job Folder →
                   </a>
                 )}
               </div>
-              {docLinks.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                  {docLinks.map(doc => (
-                    <a
-                      key={doc.label}
-                      href={doc.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-between p-4 rounded border border-line-grey bg-safety-white hover:border-sunbelt-green transition-colors group"
-                    >
+              {jobFolder ? (
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Contract', icon: '📄', link: jobFolder.Contract_Link || jobFolder.Job_Folder_Link, color: '#20BC64' },
+                    { label: 'Work Order', icon: '📋', link: jobFolder.Work_Order_Link || jobFolder.Job_Folder_Link, color: '#60a5fa' },
+                    { label: 'Plans', icon: '📐', link: jobFolder.Plans_Link || jobFolder.Job_Folder_Link, color: '#a78bfa' },
+                  ].map(doc => (
+                    <a key={doc.label} href={doc.link} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-4 rounded-xl bg-black/20 border border-white/5 hover:border-white/20 hover:bg-white/5 transition-all group cursor-pointer">
+                      <span className="text-2xl">{doc.icon}</span>
                       <div>
-                        <p className="font-display tracking-widest uppercase text-sm text-iron-charcoal">{doc.label}</p>
-                        <p className="text-xs text-steel-grey mt-1">Open in Google Drive</p>
+                        <p className="text-sm font-black" style={{ color: doc.color }}>{doc.label}</p>
+                        <p className="text-[10px] text-white/30 group-hover:text-white/50 transition-colors">View in Drive →</p>
                       </div>
-                      <span className="text-sunbelt-green font-display tracking-widest uppercase text-xs group-hover:translate-x-1 transition-transform">
-                        View &rarr;
-                      </span>
                     </a>
                   ))}
                 </div>
               ) : (
-                <p className="text-steel-grey text-sm italic mt-3">
-                  {jobFolder ? 'Folder linked, but no specific document links set.' : `No Drive folder linked for job ${jobNumber}.`}
-                </p>
+                <div className="text-center py-4">
+                  <p className="text-white/20 text-sm">No Drive folder linked for job {jobNumber}.</p>
+                </div>
               )}
             </div>
 
-            {/* QC Checklist */}
-            <div className="card card-padded">
-              <div className="flex items-center justify-between">
-                <p className="eyebrow">Field QC Checklist</p>
-                <span className="pill pill-neutral">
-                  {Object.values(qcDone).filter(Boolean).length} / {QC_ITEMS.length} done
+            {/* ── 🚨 THE SUNBELT WAY: Dynamic Phase QC Checklist ─────────── */}
+            {(() => {
+              // Phase detection from production data
+              const stoneActual = scorecard ? parseFloat(scorecard.Act_Stone_Tons) || 0 : (report?.GAB_Tonnage || 0);
+              const stoneEst = scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0;
+              const binderActual = scorecard ? parseFloat(scorecard.Act_Binder_Tons) || 0 : (report?.Binder_Tonnage || 0);
+              const toppingActual = scorecard ? parseFloat(scorecard.Act_Topping_Tons) || 0 : (report?.Topping_Tonnage || 0);
+              const toppingEst = scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0;
+              const concActual = report?.Concrete_Actual || report?.Concrete_CY || 0;
+              const pctDone = pct;
+              const hasMicromill = (job.Micromill || '').toLowerCase().includes('yes') || (job.Micromill || '').toLowerCase().includes('true');
+              const hasMillCap = (job.Track_Surface || '').toLowerCase().includes('mill');
+
+              type PhaseInfo = { phase: string; emoji: string; color: string; borderColor: string; bgColor: string; items: string[]; surfaceReadyGate?: boolean };
+
+              let activePhase: PhaseInfo;
+
+              if (hasMillCap || hasMicromill) {
+                activePhase = {
+                  phase: 'Mill & Cap',
+                  emoji: '🔄',
+                  color: 'text-orange-400',
+                  borderColor: 'border-orange-500/30',
+                  bgColor: 'bg-orange-500/5',
+                  items: [
+                    'Core a minimum of 12 random locations to verify existing thickness before mobilization.',
+                    'ZERO dump trucks/heavy equipment on the field without 3/4" plywood protection.',
+                  ],
+                };
+              } else if (pctDone >= 85 && toppingActual > 0 && toppingEst > 0 && toppingActual >= toppingEst * 0.8) {
+                activePhase = {
+                  phase: 'Post-Asphalt / QC',
+                  emoji: '✅',
+                  color: 'text-emerald-400',
+                  borderColor: 'border-emerald-500/30',
+                  bgColor: 'bg-emerald-500/5',
+                  items: [
+                    'Conduct a joint walkthrough with the track surfacing contractor.',
+                    'Mandatory 10-foot straightedge check for high spots and deviations.',
+                    'Complete all necessary grinding and sweep residue before surfacing begins.',
+                  ],
+                  surfaceReadyGate: true,
+                };
+              } else if (binderActual > 0 || toppingActual > 0) {
+                activePhase = {
+                  phase: 'Paving',
+                  emoji: '🚧',
+                  color: 'text-red-400',
+                  borderColor: 'border-red-500/30',
+                  bgColor: 'bg-red-500/5',
+                  items: [
+                    'Paint elevation marks at 30-foot intervals (remember asphalt is 25% thicker loose).',
+                    'Use a straightedge continuously to check flatness of the mat during paving.',
+                    'Use a digital level to verify proper cross slope.',
+                  ],
+                };
+              } else if (stoneActual > 0) {
+                activePhase = {
+                  phase: 'Aggregate Base',
+                  emoji: '🪨',
+                  color: 'text-amber-400',
+                  borderColor: 'border-amber-500/30',
+                  bgColor: 'bg-amber-500/5',
+                  items: [
+                    'Laser-grade subgrade before placing stone.',
+                    'Active water truck or hydrant MUST be present during installation to prevent segregation.',
+                    'Vibratory and 9-tire rollers MUST be used to seal rock against weather.',
+                  ],
+                };
+              } else if (concActual > 0) {
+                activePhase = {
+                  phase: 'Curbs & Drainage',
+                  emoji: '🧱',
+                  color: 'text-blue-400',
+                  borderColor: 'border-blue-500/30',
+                  bgColor: 'bg-blue-500/5',
+                  items: [
+                    'Curb tolerances: ±1/4 inch for both elevation and horizontal location.',
+                    'All concrete forms MUST be set using laser-guided elevations.',
+                    'Ensure landing areas do NOT have downhill throwing conditions (Max cross slope 1%).',
+                  ],
+                };
+              } else {
+                activePhase = {
+                  phase: 'Pre-Construction / Subgrade',
+                  emoji: '📐',
+                  color: 'text-purple-400',
+                  borderColor: 'border-purple-500/30',
+                  bgColor: 'bg-purple-500/5',
+                  items: [
+                    'Measure radius points to verify true 400m track layout.',
+                    'Set SINGLE hubs for inside and outside curbs to establish laser control.',
+                    'Verify subgrade elevation is within ±0.10 feet of design grade.',
+                  ],
+                };
+              }
+
+              return (
+                <div className={`rounded-xl border-2 ${activePhase.borderColor} ${activePhase.bgColor} p-5`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{activePhase.emoji}</span>
+                      <div>
+                        <h2 className="text-xs font-black uppercase tracking-widest text-amber-400">🚨 The Sunbelt Way</h2>
+                        <p className={`text-sm font-black mt-0.5 ${activePhase.color}`}>Active Phase: {activePhase.phase}</p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">SOP: JEFF REECE</span>
+                  </div>
+                  <div className="space-y-3">
+                    {activePhase.items.map((item, i) => {
+                      const qcKey = `sunbelt_${activePhase.phase}_${i}`;
+                      const done = qcDone[qcKey];
+                      return (
+                        <button key={i} onClick={() => setQcDone(prev => ({ ...prev, [qcKey]: !prev[qcKey] }))}
+                          className={`w-full text-left flex items-start gap-3 p-3 rounded-xl border transition-all ${done ? 'bg-emerald-500/10 border-emerald-500/25' : 'bg-black/15 border-white/5 hover:border-white/15'}`}>
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 text-xs font-black border transition-all ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-white/40'}`}>
+                            ✓
+                          </div>
+                          <p className={`text-sm leading-relaxed ${done ? 'text-emerald-400/80 line-through' : 'text-white/70'}`}>{item}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {activePhase.items.every((_, i) => qcDone[`sunbelt_${activePhase.phase}_${i}`]) && (
+                    <div className="mt-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-center">
+                      <p className="text-emerald-400 font-black text-xs">✅ ALL {activePhase.phase.toUpperCase()} QC ITEMS VERIFIED</p>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── 🔒 SURFACE READY QC GATE ─────────────────────────────────── */}
+            {(() => {
+              // Re-detect phase for gate rendering
+              const stoneAct2 = scorecard ? parseFloat(scorecard.Act_Stone_Tons) || 0 : (report?.GAB_Tonnage || 0);
+              const binderAct2 = scorecard ? parseFloat(scorecard.Act_Binder_Tons) || 0 : (report?.Binder_Tonnage || 0);
+              const toppingAct2 = scorecard ? parseFloat(scorecard.Act_Topping_Tons) || 0 : (report?.Topping_Tonnage || 0);
+              const toppingEst2 = scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0;
+              const isPostAsphalt = pct >= 85 && toppingAct2 > 0 && toppingEst2 > 0 && toppingAct2 >= toppingEst2 * 0.8;
+              if (!isPostAsphalt) return null;
+
+              const GATE_ITEMS = [
+                { id: 'straightedge', icon: '📸', label: '10-ft Straightedge Photo Verification', desc: 'Post-asphalt flatness inspection with physical straightedge.' },
+                { id: 'laser_grading', icon: '📄', label: 'Laser Grading Sign-Off', desc: 'Verified laser-level grade elevations meet spec.' },
+                { id: 'compaction', icon: '📄', label: 'Compaction Check Verification', desc: 'Nuclear density test results confirming 95%+ compaction.' },
+              ];
+              const allUploaded = GATE_ITEMS.every(item => surfaceReadyUploads[item.id]);
+              const uploadLink = jobFolder?.Job_Folder_Link || '#';
+
+              return (
+                <div className={`rounded-xl border-2 p-5 ${surfaceReadyAuthorized ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{surfaceReadyAuthorized ? '✅' : '🔒'}</span>
+                      <div>
+                        <h2 className="text-xs font-black uppercase tracking-widest text-red-400">Surface Ready QC Gate</h2>
+                        <p className="text-[10px] text-white/30 mt-0.5">Required before track surfacing (Beynon, AstroTurf, Geo Surfaces)</p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-bold text-white/20 px-2 py-1 rounded bg-white/5">THE SUNBELT WAY</span>
+                  </div>
+
+                  {/* Upload Slots */}
+                  <div className="space-y-3 mb-4">
+                    {GATE_ITEMS.map(item => {
+                      const done = surfaceReadyUploads[item.id];
+                      return (
+                        <div key={item.id} className={`p-4 rounded-xl border transition-all ${done ? 'bg-emerald-500/8 border-emerald-500/25' : 'bg-black/20 border-white/5'}`}>
+                          <div className="flex items-start gap-4">
+                            <button
+                              onClick={() => setSurfaceReadyUploads(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all font-black text-sm border ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-emerald-400'}`}>
+                              ✓
+                            </button>
+                            <div className="flex-1">
+                              <p className={`text-sm font-black ${done ? 'text-emerald-400' : 'text-white'}`}>
+                                {item.icon} {item.label}
+                              </p>
+                              <p className="text-xs text-white/40 mt-0.5">{item.desc}</p>
+                            </div>
+                            <a href={uploadLink} target="_blank" rel="noopener noreferrer"
+                              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-[10px] font-black hover:bg-[#20BC64]/20 transition-all">
+                              📤 Upload Proof
+                            </a>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Countersignature Lock */}
+                  {surfaceReadyAuthorized ? (
+                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-center">
+                      <p className="text-emerald-400 font-black text-sm">✅ SURFACE READY AUTHORIZED</p>
+                      <p className="text-emerald-300/50 text-[10px] mt-1">Authorized by {surfaceReadyAuthorized.by} on {surfaceReadyAuthorized.at}</p>
+                      <p className="text-emerald-300/30 text-[9px] mt-0.5">GANTT phase unlocked — surfacing contractor may proceed.</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center gap-3 mb-3">
+                        <span className="text-red-400 text-lg shrink-0">🔒</span>
+                        <div>
+                          <p className="text-red-300 font-black text-xs">GANTT PHASE LOCKED — Awaiting QC Authorization</p>
+                          <p className="text-red-200/50 text-[10px] mt-0.5">All 3 uploads must be verified before authorization can proceed.</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        {['Jefferson Reece', 'Pedro De Lara'].map(name => (
+                          <button
+                            key={name}
+                            disabled={!allUploaded}
+                            onClick={() => setSurfaceReadyAuthorized({ by: name, at: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}
+                            className={`p-3 rounded-xl border text-center transition-all ${
+                              allUploaded
+                                ? 'bg-emerald-500/10 border-emerald-500/25 hover:bg-emerald-500/20 cursor-pointer'
+                                : 'bg-white/5 border-white/10 cursor-not-allowed opacity-50'
+                            }`}>
+                            <p className={`text-xs font-black ${allUploaded ? 'text-emerald-400' : 'text-white/30'}`}>🔐 Authorize as {name}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* QC Verification Checklist */}
+            <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Field QC Verification</h2>
+                <span className="text-[10px] font-black px-2 py-1 rounded-full bg-white/5 text-white/30">
+                  {Object.values(qcDone).filter(Boolean).length}/{QC_ITEMS.length} Complete
                 </span>
               </div>
-              <p className="text-sm text-steel-grey mt-2">
-                Required before every pave. Tap to mark complete, then upload proof.
-              </p>
-              <div className="mt-4 space-y-3">
+              <p className="text-xs text-white/30 mb-5">Required before every pave. Tap to mark complete then upload proof photo.</p>
+              <div className="space-y-3">
                 {QC_ITEMS.map(item => {
-                  const done = !!qcDone[item.id];
+                  const done = qcDone[item.id];
                   const uploadLink = jobFolder?.Job_Folder_Link || '#';
                   return (
-                    <div
-                      key={item.id}
-                      className={`p-4 rounded border transition-colors ${
-                        done ? 'border-sunbelt-green bg-sunbelt-green/5' : 'border-line-grey bg-safety-white'
-                      }`}
-                    >
+                    <div key={item.id}
+                      className={`p-4 rounded-xl border transition-all ${done ? 'bg-emerald-500/8 border-emerald-500/25' : 'bg-black/20 border-white/5 hover:border-white/15'}`}>
                       <div className="flex items-start gap-4">
                         <button
                           onClick={() => setQcDone(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                          aria-pressed={done}
-                          aria-label={`Mark ${item.label} ${done ? 'not done' : 'done'}`}
-                          className={`w-6 h-6 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-                            done
-                              ? 'bg-sunbelt-green border-sunbelt-green text-safety-white'
-                              : 'border-steel-grey text-transparent hover:border-iron-charcoal'
-                          }`}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all font-black text-sm border ${done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-white/20 text-transparent hover:border-emerald-400'}`}>
+                          ✓
                         </button>
                         <div className="flex-1">
-                          <p className={`text-sm font-medium ${done ? 'text-sunbelt-green' : 'text-iron-charcoal'}`}>
-                            {item.label}
+                          <p className={`text-sm font-black ${done ? 'text-emerald-400' : 'text-white'}`}>
+                            {item.icon} {item.label}
                           </p>
-                          <p className="text-xs text-steel-grey mt-0.5">{item.desc}</p>
+                          <p className="text-xs text-white/40 mt-0.5">{item.desc}</p>
                         </div>
-                        {jobFolder?.Job_Folder_Link && (
-                          <a
-                            href={uploadLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="btn-secondary text-xs shrink-0"
-                          >
-                            Upload
-                          </a>
-                        )}
+                        <a href={uploadLink} target="_blank" rel="noopener noreferrer"
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#20BC64]/10 border border-[#20BC64]/20 text-[#20BC64] text-[10px] font-black hover:bg-[#20BC64]/20 transition-all">
+                          📤 Upload
+                        </a>
                       </div>
                     </div>
                   );
                 })}
               </div>
-              {surfaceReadyReady && (
-                <p className="text-sm text-sunbelt-green font-medium mt-4">
-                  All QC checks complete. Clear to pave.
-                </p>
-              )}
-            </div>
-
-            {/* Surface Ready authorization */}
-            <div className="card card-padded">
-              <p className="eyebrow">Surface Ready Authorization</p>
-              <p className="text-sm text-steel-grey mt-2">
-                Required before the surfacing contractor (Beynon, AstroTurf, Geo Surfaces) may proceed.
-              </p>
-              {surfaceReadyAuthorized ? (
-                <div className="mt-4 p-4 rounded border-l-4 border-sunbelt-green bg-sunbelt-green/5">
-                  <p className="font-display tracking-widest uppercase text-sm text-sunbelt-green">
-                    Surface Ready &mdash; Authorized
-                  </p>
-                  <p className="text-sm text-iron-charcoal mt-1">
-                    Signed by {surfaceReadyAuthorized.by} on {surfaceReadyAuthorized.at}.
-                  </p>
-                  <button
-                    onClick={() => setSurfaceReadyAuthorized(null)}
-                    className="btn-secondary text-xs mt-3"
-                  >
-                    Revoke
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-4">
-                  {!surfaceReadyReady && (
-                    <p className="text-sm text-alert-orange mb-3">
-                      Finish the QC checklist above before authorizing.
-                    </p>
-                  )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {['Jefferson Reece', 'Pedro De Lara'].map(name => (
-                      <button
-                        key={name}
-                        disabled={!surfaceReadyReady}
-                        onClick={() =>
-                          setSurfaceReadyAuthorized({
-                            by: name,
-                            at: new Date().toLocaleDateString('en-US', {
-                              month: 'short', day: 'numeric', year: 'numeric',
-                              hour: '2-digit', minute: '2-digit',
-                            }),
-                          })
-                        }
-                        className={`p-4 rounded border text-left transition-colors ${
-                          surfaceReadyReady
-                            ? 'border-sunbelt-green bg-sunbelt-green/5 hover:bg-sunbelt-green/10 cursor-pointer'
-                            : 'border-line-grey bg-mist-grey cursor-not-allowed opacity-60'
-                        }`}
-                      >
-                        <p className="font-display tracking-widest uppercase text-xs text-steel-grey">Authorize as</p>
-                        <p className={`text-base font-medium mt-1 ${surfaceReadyReady ? 'text-sunbelt-green' : 'text-steel-grey'}`}>
-                          {name}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
+              {Object.values(qcDone).filter(Boolean).length === QC_ITEMS.length && (
+                <div className="mt-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-center">
+                  <p className="text-emerald-400 font-black text-sm">✅ ALL QC CHECKS COMPLETE — Clear to pave.</p>
                 </div>
               )}
             </div>

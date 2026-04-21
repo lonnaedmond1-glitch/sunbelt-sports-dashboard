@@ -1,223 +1,275 @@
 import React from 'react';
-export const revalidate = 86400;
+export const revalidate = 86400; // Daily ISR
 import Link from 'next/link';
+import { getAllRentals } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveRentals, fetchVisionLinkAssets } from '@/lib/sheets-data';
-import { formatDollars, formatDollarsCompact } from '@/lib/format';
 
 export default async function EquipmentPage() {
-  const [jobs, liveRentals, vlAssets] = await Promise.all([
-    fetchLiveJobs(),
-    fetchLiveRentals(),
-    fetchVisionLinkAssets(),
-  ]);
+  const csvRentals = getAllRentals();
+  const jobs = await fetchLiveJobs();
+  const liveRentals = await fetchLiveRentals();
+  const vlAssets = await fetchVisionLinkAssets();
 
+  const isLive = liveRentals.length > 0;
+
+  // Job number / name lookups so rentals can deep-link into job pages.
   const jobNumToName = new Map<string, string>();
-  for (const j of jobs as any[]) {
-    if (j?.Job_Number) jobNumToName.set(j.Job_Number.trim(), j.Job_Name);
-  }
-
-  // ── RENTALS (live only — the rental fetcher now attaches Job_Number via the new join)
-  const seen = new Set<string>();
-  const rentals = (liveRentals as any[])
-    .map(r => {
-      const jobNum = (r.Job_Number || '').toString().trim();
-      const jobName = jobNum && jobNumToName.get(jobNum) ? jobNumToName.get(jobNum)! : (r.jobName || '').trim();
-      const days = parseInt(String(r.daysOnRent ?? '0')) || 0;
-      const rate = parseFloat(String(r.dayRate ?? '0')) || 0;
-      return {
-        Job_Number: jobNum,
-        Job_Name: jobName,
-        Equipment_Type: r.equipmentType || '',
-        Vendor: r.vendor || '',
-        Contract_Number: r.contractNumber || '',
-        days,
-        rate,
-        rateMissing: rate <= 0,
-        totalBurn: days * rate,
-        isOverdue: days > 30,
-        pickupDate: r.pickupDate || '',
-      };
-    })
-    .filter(r => {
-      const k = [r.Job_Number, r.Job_Name.toLowerCase(), r.Equipment_Type.toLowerCase(), r.Vendor.toLowerCase(), r.Contract_Number.toLowerCase()].join('|');
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    })
-    .sort((a, b) => b.totalBurn - a.totalBurn);
-
-  const totalDailyBurn = rentals.reduce((s, r) => s + r.rate, 0);
-  const overdueCount = rentals.filter(r => r.isOverdue).length;
-  const missingRateCount = rentals.filter(r => r.rateMissing).length;
-  const unmappedCount = rentals.filter(r => !r.Job_Number).length;
-
-  // ── VISIONLINK OWNED ASSETS
-  const enrichedAssets = (vlAssets as any[]).map(a => {
-    const last = a.Last_Reported ? new Date(a.Last_Reported) : null;
-    const daysSince = last && !isNaN(last.getTime())
-      ? Math.floor((Date.now() - last.getTime()) / (1000 * 60 * 60 * 24))
-      : null;
-    let status: { label: string; color: string };
-    if (daysSince == null) status = { label: 'No signal', color: '#6B7278' };
-    else if (daysSince > 30) status = { label: `Stale ${daysSince}d`, color: '#D8392B' };
-    else if (daysSince > 7) status = { label: `Check (${daysSince}d)`, color: '#E8892B' };
-    else status = { label: `Healthy (${daysSince}d)`, color: '#198754' };
-    return { ...a, daysSince, status };
-  }).sort((a, b) => {
-    const aR = a.daysSince == null ? 999 : a.daysSince;
-    const bR = b.daysSince == null ? 999 : b.daysSince;
-    return bR - aR;
+  const jobNameToNum = new Map<string, string>();
+  jobs.forEach((j: any) => {
+    if (j && j.Job_Number) {
+      const num = j.Job_Number.trim();
+      jobNumToName.set(num, j.Job_Name);
+      if (j.Job_Name) jobNameToNum.set(j.Job_Name.trim().toLowerCase(), num);
+    }
   });
 
-  const ownedActive = enrichedAssets.filter(a => a.daysSince != null && a.daysSince <= 30).length;
+  // ── RENTALS ─────────────────────────────────────────────────────────────
+  const rentals = isLive ? liveRentals.map((r: any) => {
+    const rawName = (r.jobName || '').trim();
+    const matchedNum = rawName ? jobNameToNum.get(rawName.toLowerCase()) || '' : '';
+    return {
+      Job_Number: matchedNum,
+      Job_Name_Raw: rawName,
+      Equipment_Type: r.equipmentType,
+      Vendor: r.vendor,
+      Days_On_Site: r.daysOnRent.toString(),
+      Target_Off_Rent: r.pickupDate || '',
+      Daily_Rate: r.dayRate.toString(),
+      Contract_Number: r.contractNumber,
+      isLive: true,
+    };
+  }) : csvRentals.map(r => ({ ...r, Job_Name_Raw: '', isLive: false }));
+
+  // Dedup — same job + equipment + vendor + contract is one row.
+  const seen = new Set<string>();
+  const dedupedRentals = rentals.filter((r: any) => {
+    const key = [
+      (r.Job_Number || r.Job_Name_Raw || '').toString().trim().toLowerCase(),
+      (r.Equipment_Type || '').trim().toLowerCase(),
+      (r.Vendor || '').trim().toLowerCase(),
+      (r.Contract_Number || '').trim().toLowerCase(),
+    ].join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  let totalDailyBurn = 0;
+  let overdueCount = 0;
+  let missingRateCount = 0;
+
+  const enrichedRentals = dedupedRentals.map((r: any) => {
+    const days = parseInt(r.Days_On_Site) || 0;
+    const rate = parseFloat(r.Daily_Rate) || 0;
+    const isOverdue = days > 30;
+    const rateMissing = rate <= 0;
+
+    totalDailyBurn += rate;
+    if (isOverdue) overdueCount++;
+    if (rateMissing) missingRateCount++;
+
+    const displayName =
+      (r.Job_Name_Raw && r.Job_Name_Raw.length > 0)
+        ? r.Job_Name_Raw
+        : jobNumToName.get((r.Job_Number || '').toString().trim()) || '';
+
+    return {
+      ...r,
+      days,
+      rate,
+      rateMissing,
+      totalBurn: days * rate,
+      isOverdue,
+      jobName: displayName || 'Unassigned',
+      hasJobLink: !!(r.Job_Number && r.Job_Number.toString().trim()),
+    };
+  }).sort((a: any, b: any) => b.totalBurn - a.totalBurn);
+
+  // ── OWNED (VisionLink) ──────────────────────────────────────────────────
+  const enrichedAssets = vlAssets.map((a: any) => {
+    const lastReportedDate = a.Last_Reported ? new Date(a.Last_Reported) : null;
+    const daysSince = lastReportedDate && !isNaN(lastReportedDate.getTime())
+      ? Math.floor((Date.now() - lastReportedDate.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+    let status: { label: string; color: string };
+    if (daysSince == null) status = { label: 'No signal', color: '#9CA3AF' };
+    else if (daysSince > 30) status = { label: `Stale ${daysSince}d`, color: '#E04343' };
+    else if (daysSince > 7) status = { label: `Check (${daysSince}d)`, color: '#F5A623' };
+    else status = { label: `Healthy (${daysSince}d)`, color: '#20BC64' };
+    return { ...a, daysSince, status };
+  }).sort((a: any, b: any) => {
+    // Surface stale/missing first
+    const aRank = a.daysSince == null ? 999 : a.daysSince;
+    const bRank = b.daysSince == null ? 999 : b.daysSince;
+    return bRank - aRank;
+  });
+
+  const ownedActiveCount = enrichedAssets.filter(a => a.daysSince != null && a.daysSince <= 30).length;
 
   return (
-    <div className="min-h-screen p-8">
-      <div className="max-w-[1400px] mx-auto">
-        <header className="mb-8 flex justify-between items-end">
-          <div>
-            <span className="eyebrow">Equipment</span>
-            <h1 className="text-4xl font-display mt-2">Owned And Rented</h1>
-            <p className="text-steel-grey text-sm mt-1">
-              Owned: VisionLink telematics feed. Rented: Gmail sync → Rentals sheet.
-            </p>
-          </div>
-          <Link href="/dashboard" className="text-xs text-sunbelt-green font-display tracking-widest uppercase hover:text-sunbelt-green-hover">← Dashboard</Link>
-        </header>
+    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
+      <header className="mb-6">
+        <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Equipment</h1>
+        <p className="text-[#757A7F] text-sm">Owned heavy equipment vs. on-rent units. Updated daily.</p>
+      </header>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="card card-padded">
-            <p className="stat-label">Owned Assets</p>
-            <p className="stat-value font-mono">{enrichedAssets.length}</p>
-            <p className="stat-sub">{ownedActive} reporting</p>
-          </div>
-          <div className="card card-padded">
-            <p className="stat-label">On Rent</p>
-            <p className="stat-value font-mono">{rentals.length}</p>
-            <p className="stat-sub">{overdueCount} overdue · {missingRateCount} no rate</p>
-          </div>
-          <div className="card card-padded">
-            <p className="stat-label">Daily Burn</p>
-            <p className="stat-value font-mono">{formatDollarsCompact(totalDailyBurn, 1)}</p>
-            <p className="stat-sub">per day, all rentals</p>
-          </div>
-          <div className="card card-padded">
-            <p className="stat-label">Unmapped</p>
-            <p className="stat-value font-mono" style={{ color: unmappedCount > 0 ? '#E8892B' : '#198754' }}>{unmappedCount}</p>
-            <p className="stat-sub">rentals with no job match</p>
+      {!isLive && (
+        <div className="mb-5 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
+          <span className="text-amber-600 text-lg mt-0.5" aria-hidden>!</span>
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-amber-700">Showing Static CSV Data</p>
+            <p className="text-xs text-[#757A7F] mt-0.5">Live rental data from Gmail sync is unavailable. Figures below come from <code className="font-mono">Equipment_On_Rent.csv</code> and may not reflect current on-rent status.</p>
           </div>
         </div>
+      )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <section className="card overflow-hidden">
-            <div className="px-5 py-4 border-b border-line-grey flex justify-between items-center">
-              <div>
-                <p className="eyebrow">Owned Equipment</p>
-                <p className="text-xs text-steel-grey mt-1">VisionLink fleet · engine hours + last check-in</p>
-              </div>
-              <span className="font-mono text-xs text-steel-grey">{enrichedAssets.length} assets</span>
+      {/* ── 2-COLUMN LAYOUT: OWNED (left) | RENTED (right) ─────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        {/* ════════ OWNED ASSETS ════════ */}
+        <section className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Owned Equipment</h2>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">VisionLink fleet · engine hours + last check-in</p>
             </div>
-            {enrichedAssets.length === 0 ? (
-              <div className="p-6">
-                <p className="text-sm text-steel-grey italic">No VisionLink data. The Apps Script populates the VisionLink_Live tab — run it or wait for the scheduled sync.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr>
-                      {['Asset', 'Hours', 'Last Reported', 'Status'].map(h => (
-                        <th key={h} className="table-header text-left px-4 py-3">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {enrichedAssets.map((a, i) => (
-                      <tr key={i} className="table-row-zebra border-b border-line-grey">
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-sm">{a.Asset_Name || a.Asset_ID || '—'}</p>
-                          <p className="text-xs text-steel-grey">{[a.Make, a.Model].filter(Boolean).join(' ') || a.Serial || ''}</p>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-sm">
-                          {a.Hours ? `${a.Hours.toLocaleString()}h` : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-steel-grey font-mono">
-                          {a.Last_Reported ? String(a.Last_Reported).split('T')[0] : '—'}
-                        </td>
-                        <td className="px-4 py-3 text-xs font-display tracking-wider" style={{ color: a.status.color }}>
-                          ● {a.status.label}
-                        </td>
-                      </tr>
+            <div className="text-right">
+              <p className="text-2xl font-black text-[#3C4043]">{enrichedAssets.length}</p>
+              <p className="text-[10px] text-[#757A7F]/70 font-bold uppercase">{ownedActiveCount} active</p>
+            </div>
+          </div>
+
+          {enrichedAssets.length === 0 ? (
+            <div className="p-6">
+              <p className="text-sm text-[#757A7F] italic">No VisionLink data yet. Apps Script <code className="font-mono text-[11px]">visionlink_aemp_sync.gs</code> will populate the <code className="font-mono text-[11px]">VisionLink_Live</code> sheet on its next run.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F1F3F4]">
+                  <tr>
+                    {['Asset', 'Hours', 'Last Reported', 'Status'].map(h => (
+                      <th key={h} className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section className="card overflow-hidden">
-            <div className="px-5 py-4 border-b border-line-grey flex justify-between items-center">
-              <div>
-                <p className="eyebrow">Active Rentals</p>
-                <p className="text-xs text-steel-grey mt-1">
-                  {formatDollars(totalDailyBurn)} / day burn
-                  {overdueCount === 0 && missingRateCount === 0 ? ' · all clean' : ''}
-                </p>
-              </div>
-              <span className="font-mono text-xs text-steel-grey">{rentals.length} on rent</span>
-            </div>
-
-            {rentals.length === 0 ? (
-              <div className="p-6">
-                <p className="text-sm text-steel-grey italic">No active rentals found. If you expected some, check that the Sunbelt/United Rentals Live tabs have rows.</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr>
-                      <th className="table-header text-left px-4 py-3">Equipment / Vendor</th>
-                      <th className="table-header text-left px-4 py-3">Job</th>
-                      <th className="table-header text-center px-4 py-3">Days</th>
-                      <th className="table-header text-right px-4 py-3">Day Rate</th>
-                      <th className="table-header text-right px-4 py-3">Burn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrichedAssets.map((a, i) => (
+                    <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
+                      <td className="px-4 py-3">
+                        <p className="text-xs font-bold text-[#3C4043]">{a.Asset_Name || a.Asset_ID || '—'}</p>
+                        <p className="text-[10px] text-[#757A7F] mt-0.5">{[a.Make, a.Model].filter(Boolean).join(' ') || a.Serial || ''}</p>
+                      </td>
+                      <td className="px-4 py-3 text-xs font-bold text-[#3C4043]">
+                        {a.Hours ? `${a.Hours.toLocaleString()}h` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-[#757A7F]">
+                        {a.Last_Reported ? a.Last_Reported.split('T')[0] : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-black" style={{ color: a.status.color }}>
+                        ● {a.status.label}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {rentals.map((r, i) => (
-                      <tr key={i} className={`table-row-zebra border-b border-line-grey ${r.isOverdue ? 'bg-danger-red-light/40' : r.rateMissing ? 'bg-alert-orange-light/40' : ''}`}>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* ════════ RENTED EQUIPMENT ════════ */}
+        <section className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">
+                Active Rentals {isLive && <span className="ml-1 text-[8px] px-1.5 py-0.5 bg-[#20BC64]/20 text-[#20BC64] rounded tracking-normal">LIVE</span>}
+              </h2>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">
+                ${totalDailyBurn.toLocaleString()} / day burn ·{' '}
+                {overdueCount > 0 && <span className="text-[#E04343] font-bold">{overdueCount} overdue</span>}
+                {overdueCount > 0 && missingRateCount > 0 && ' · '}
+                {missingRateCount > 0 && <span className="text-[#F5A623] font-bold">{missingRateCount} missing rate</span>}
+                {overdueCount === 0 && missingRateCount === 0 && <span className="text-[#20BC64]">all clean</span>}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-black text-[#3C4043]">{enrichedRentals.length}</p>
+              <p className="text-[10px] text-[#757A7F]/70 font-bold uppercase">on rent</p>
+            </div>
+          </div>
+
+          {enrichedRentals.length === 0 ? (
+            <div className="p-6">
+              <p className="text-sm text-[#757A7F] italic">No active rentals.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F1F3F4]">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Equipment / Vendor</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Job</th>
+                    <th className="text-center px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Days</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Daily Rate</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Burn</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enrichedRentals.map((r, i) => {
+                    const rowTone = r.isOverdue ? 'bg-[#E04343]/5' : r.rateMissing ? 'bg-[#F5A623]/5' : '';
+                    return (
+                      <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${rowTone}`}>
                         <td className="px-4 py-3">
-                          <p className="font-medium text-sm">{r.Equipment_Type || '—'}</p>
-                          <p className="text-xs text-steel-grey">{r.Vendor}</p>
-                          {r.Contract_Number && <p className="text-[10px] text-steel-grey font-mono mt-0.5">#{r.Contract_Number}</p>}
+                          <p className="text-xs font-bold text-[#3C4043]">{r.Equipment_Type || '—'}</p>
+                          <p className="text-[10px] text-[#757A7F] mt-0.5">{r.Vendor || ''}</p>
+                          {r.Contract_Number && (
+                            <p className="text-[9px] text-[#757A7F]/60 font-mono mt-0.5">#{r.Contract_Number}</p>
+                          )}
                         </td>
                         <td className="px-4 py-3">
-                          {r.Job_Number ? (
-                            <>
-                              <Link href={`/jobs/${encodeURIComponent(r.Job_Number)}`} className="text-sunbelt-green font-display tracking-wider hover:underline">{r.Job_Number}</Link>
-                              {r.Job_Name && <p className="text-[11px] text-steel-grey truncate max-w-[160px]">{r.Job_Name}</p>}
-                            </>
+                          {r.hasJobLink ? (
+                            <Link href={`/jobs/${encodeURIComponent(r.Job_Number.toString().trim())}`} className="text-xs font-bold text-[#20BC64] hover:underline">
+                              {r.Job_Number}
+                            </Link>
                           ) : (
-                            <p className="text-xs text-steel-grey italic">unmapped</p>
+                            <p className="text-xs font-bold text-[#757A7F] truncate max-w-[140px]" title={r.jobName}>{r.jobName !== 'Unassigned' ? r.jobName : '—'}</p>
+                          )}
+                          {r.hasJobLink && r.jobName && (
+                            <p className="text-[10px] text-[#757A7F] mt-0.5 truncate max-w-[140px]" title={r.jobName}>{r.jobName}</p>
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span className={r.isOverdue ? 'pill pill-danger' : 'pill pill-neutral'}>{r.days}d</span>
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black ${r.isOverdue ? 'bg-[#E04343]/15 text-[#E04343]' : 'bg-[#F1F3F4] text-[#3C4043]/70'}`}>
+                            {r.days}d
+                          </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs">
-                          {r.rateMissing ? <span className="text-alert-orange font-display tracking-wider">NO RATE</span> : formatDollars(r.rate)}
+                        <td className="px-4 py-3 text-right">
+                          {r.rateMissing ? (
+                            <span className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]" title="No daily rate on file — verify with vendor">
+                              MISSING
+                            </span>
+                          ) : (
+                            <p className="text-xs font-bold text-[#3C4043]">${r.rate.toLocaleString()}</p>
+                          )}
                         </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs" style={{ color: r.isOverdue ? '#D8392B' : undefined }}>
-                          {r.rateMissing ? '—' : formatDollars(r.totalBurn)}
+                        <td className="px-4 py-3 text-right">
+                          {r.rateMissing ? (
+                            <span className="text-xs text-[#757A7F]/40">—</span>
+                          ) : (
+                            <p className={`text-xs font-black ${r.isOverdue ? 'text-[#E04343]' : 'text-[#3C4043]'}`}>
+                              ${r.totalBurn.toLocaleString()}
+                            </p>
+                          )}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </div>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
       </div>
     </div>
   );

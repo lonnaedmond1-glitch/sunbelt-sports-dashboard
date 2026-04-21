@@ -83,18 +83,6 @@ async function getNearbyVehicles(lat: string, lng: string): Promise<any[]> {
   } catch { return []; }
 }
 
-// Map a free-form status string to a pill class + display label.
-function statusPill(status: string): { cls: string; label: string } {
-  const s = (status || '').toLowerCase();
-  if (!s) return { cls: 'pill pill-neutral', label: 'No status' };
-  if (s.includes('complete') || s.includes('done') || s.includes('closed')) return { cls: 'pill pill-success', label: status };
-  if (s.includes('hold') || s.includes('pause')) return { cls: 'pill pill-warning', label: status };
-  if (s.includes('risk') || s.includes('cancel') || s.includes('stop')) return { cls: 'pill pill-danger', label: status };
-  if (s.includes('active') || s.includes('progress') || s.includes('in-progress')) return { cls: 'pill pill-success', label: status };
-  if (s.includes('pending') || s.includes('upcoming') || s.includes('scheduled')) return { cls: 'pill pill-info', label: status };
-  return { cls: 'pill pill-neutral', label: status };
-}
-
 export default async function JobSnapshot({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const jobNumber = decodeURIComponent(id);
@@ -117,14 +105,11 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
 
   if (!job) {
     return (
-      <div className="min-h-screen bg-mist-grey flex items-center justify-center">
-        <div className="card card-padded text-center max-w-md">
-          <p className="eyebrow mb-3">Job Not Found</p>
-          <h1 className="font-display text-3xl text-iron-charcoal mb-2">Job {jobNumber}</h1>
-          <p className="text-steel-grey text-sm mb-4">We could not find this job in the index.</p>
-          <Link href="/dashboard" className="font-display tracking-widest uppercase text-sunbelt-green hover:underline">
-            Back to Dashboard
-          </Link>
+      <div className="min-h-screen bg-[#2A2D31] flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-white/40 text-6xl mb-4">🔍</p>
+          <p className="text-white font-bold text-xl">Job {jobNumber} not found</p>
+          <Link href="/dashboard" className="mt-4 inline-block text-[#20BC64] font-bold hover:underline">← Back to Dashboard</Link>
         </div>
       </div>
     );
@@ -140,43 +125,48 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
     fetchScheduleData(),
   ]);
 
-  // Only use live field reports -- CSV fallback removed to avoid showing placeholder zeros
+    // Only use live field reports -- CSV fallback removed to avoid showing placeholder zeros
   const report = liveReport || null;
 
   const asphaltCredit = prep?.Asphalt_Credit_Status || 'Unknown';
   const baseCredit = prep?.Base_Credit_Status || 'Unknown';
   const hasCreditFlag = asphaltCredit === 'Pending' || asphaltCredit === 'Missing' || baseCredit === 'Pending' || baseCredit === 'Missing';
 
-  const pill = statusPill(job.Status || '');
-
   return (
-    <div className="min-h-screen bg-mist-grey text-iron-charcoal font-body antialiased">
+    <div className="min-h-screen bg-[#2A2D31] text-white font-sans antialiased">
 
-      {/* ── Sticky Header (light theme) ──────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-safety-white border-b border-line-grey">
-        <div className="px-4 md:px-8 py-4">
-          <div className="flex items-start justify-between gap-4">
+      {/* ── Global Sticky Header ──────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 shadow-2xl">
+        {/* Top bar: nav + live indicator */}
+        <div className="px-4 md:px-8 py-3 bg-[#2A2D31] flex justify-between items-center border-b border-white/5">
+          <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+            <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-7 w-auto" style={{ filter: 'brightness(0) invert(1)' }} />
+            <span className="text-white/60 font-bold text-xs uppercase tracking-wide">← Dashboard</span>
+          </Link>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-black text-white/50 bg-white/5 px-3 py-1 rounded-full">{jobNumber}</span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-[#20BC64] animate-pulse"></div>
+              <span className="text-xs text-white/40 font-bold uppercase tracking-widest">Live</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Job title bar */}
+        <div className="bg-[#1e2023] px-4 md:px-8 py-3 border-b border-white/5">
+          <div className="flex justify-between items-center">
             <div className="flex-1 min-w-0">
-              <Link
-                href="/dashboard"
-                className="inline-block font-display tracking-widest uppercase text-xs text-sunbelt-green hover:text-sunbelt-green-hover transition-colors mb-2"
-              >
-                &larr; Dashboard
-              </Link>
-              <p className="eyebrow">Job · {jobNumber}</p>
-              <h1 className="font-display text-2xl md:text-3xl text-iron-charcoal mt-2 truncate">
-                {job.Job_Name}
-              </h1>
-              <p className="text-steel-grey text-sm mt-1">
-                {job.Project_Manager && <span>PM: {job.Project_Manager}</span>}
-                {job.Project_Manager && (job.General_Contractor || job.State) && <span className="mx-2">·</span>}
-                {job.General_Contractor && <span>GC: {job.General_Contractor}</span>}
-                {job.General_Contractor && job.State && <span className="mx-2">·</span>}
+              <h1 className="text-lg md:text-2xl font-black uppercase tracking-tight text-white truncate">{job.Job_Name}</h1>
+              <p className="text-white/40 text-xs mt-0.5">
+                {job.Project_Manager && <span className="mr-3">PM: {job.Project_Manager}</span>}
+                {job.General_Contractor && <span className="mr-3">GC: {job.General_Contractor}</span>}
                 {job.State && <span>{job.State}</span>}
               </p>
             </div>
-            <div className="shrink-0 pt-1">
-              <span className={pill.cls}>{pill.label}</span>
+            <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+              {job.Status && (
+                <span className="text-xs font-black px-2 py-1 rounded-full bg-white/5 text-white/50">{job.Status}</span>
+              )}
             </div>
           </div>
         </div>
