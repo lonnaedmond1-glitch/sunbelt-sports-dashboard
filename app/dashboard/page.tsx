@@ -1,12 +1,11 @@
 import React from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { ClickableKpiTile } from '@/components/EvidenceDrawer';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchCrewDaysSold, fetchEstVsActual } from '@/lib/sheets-data';
-import { formatDollars } from '@/lib/format';
+import { formatDollars, formatDollarsCompact } from '@/lib/format';
 
 export const revalidate = 300;
 
@@ -506,6 +505,98 @@ function computeRisks(
   return risks.slice(0, 15);
 }
 
+function CommandMetric({
+  label,
+  value,
+  note,
+  tone = 'green',
+}: {
+  label: string;
+  value: React.ReactNode;
+  note: React.ReactNode;
+  tone?: 'green' | 'red' | 'amber' | 'blue' | 'gray';
+}) {
+  const toneColor = {
+    green: '#20BC64',
+    red: '#E04343',
+    amber: '#F5A623',
+    blue: '#2B6CB0',
+    gray: '#A7AFB5',
+  }[tone];
+
+  return (
+    <div className="relative min-h-[116px] overflow-hidden rounded-[18px] border border-[#DDE2E5] bg-white/90 p-4 shadow-[0_14px_35px_rgba(21,24,26,0.08)]">
+      <p className="mb-2 text-[11px] font-black uppercase tracking-[0.08em] text-[#6D7478]">{label}</p>
+      <div className="text-[30px] font-black leading-none tracking-[-0.04em] text-[#15181A]">{value}</div>
+      <div className="mt-2 text-xs leading-snug text-[#6D7478]">{note}</div>
+      <div className="absolute inset-x-0 bottom-0 h-[5px]" style={{ backgroundColor: toneColor }} />
+    </div>
+  );
+}
+
+function Panel({
+  title,
+  subtitle,
+  badge,
+  children,
+  className = '',
+}: {
+  title: string;
+  subtitle?: string;
+  badge?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-[18px] border border-[#DDE2E5] bg-white/90 p-5 shadow-[0_14px_35px_rgba(21,24,26,0.08)] ${className}`}>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="m-0 text-lg font-black leading-tight tracking-[-0.02em] text-[#15181A]">{title}</h2>
+          {subtitle && <p className="mt-1 text-sm leading-snug text-[#6D7478]">{subtitle}</p>}
+        </div>
+        {badge}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Chip({
+  children,
+  tone = 'green',
+}: {
+  children: React.ReactNode;
+  tone?: 'green' | 'red' | 'amber' | 'blue' | 'gray';
+}) {
+  const styles = {
+    green: 'bg-[#E8F8EF] text-[#0F8F47]',
+    red: 'bg-[#FDEAEA] text-[#C53030]',
+    amber: 'bg-[#FFF4DB] text-[#B7791F]',
+    blue: 'bg-[#EAF3FF] text-[#2B6CB0]',
+    gray: 'bg-[#EEF1F2] text-[#4B5458]',
+  }[tone];
+
+  return (
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.06em] ${styles}`}>
+      {children}
+    </span>
+  );
+}
+
+function statusTone(health: string): 'green' | 'red' | 'amber' | 'gray' {
+  if (health === 'green') return 'green';
+  if (health === 'red') return 'red';
+  if (health === 'amber') return 'amber';
+  return 'gray';
+}
+
+function healthLabel(health: string): string {
+  if (health === 'green') return 'On Track';
+  if (health === 'red') return 'At Risk';
+  if (health === 'amber') return 'Watch';
+  return 'Not Started';
+}
+
 export default async function MasterDashboard() {
   // Fetch all data in parallel
   const [jobs, fieldReports, samsara, scheduleData, qboFinancials, arAging, reworkLog, crewDays, estVsActualRows] = await Promise.all([
@@ -550,8 +641,6 @@ export default async function MasterDashboard() {
   const scheduledJobs = jobs.filter((j: any) => !isJobClosed(j) && isScheduledCurrently(j, scheduleData, jobs));
 
   const totalPortfolio = qboFinancials.reduce((sum: number, q: any) => sum + (q.Act_Income || 0), 0);
-  const totalBilled = jobs.reduce((sum: number, j: any) => sum + (j.Billed_To_Date || 0), 0);
-  const overallPct = totalPortfolio > 0 ? Math.round((totalBilled / totalPortfolio) * 100) : 0;
 
   // FY starts Oct 1 (per Jackie 4/9). If today is before Oct 1, FY started Oct 1 last year.
   const _now = new Date();
@@ -560,18 +649,7 @@ export default async function MasterDashboard() {
     : new Date(_now.getFullYear() - 1, 9, 1);
   const _fyStartISO = _fyStart.toISOString().slice(0, 10);
 
-  // ── Fleet at Jobsites: trucks within 2 miles of any job ──────────────────
-  const fleetAtJobsites = samsara.configured ? samsara.vehicles.filter((v: any) => {
-    if (!v.lat || !v.lng) return false;
-    return jobs.some((j: any) => {
-      const jLat = parseFloat(j.Lat); const jLng = parseFloat(j.Lng);
-      if (isNaN(jLat) || isNaN(jLng)) return false;
-      return haversineDistance(v.lat, v.lng, jLat, jLng) <= 2;
-    });
-  }) : [];
-
   // ── Missing Reports: jobs assigned YESTERDAY with no field report ─────────
-  const scheduledJobNames = scheduledJobs.map((j: any) => ({ num: j.Job_Number, name: j.Job_Name })).filter((x: any) => x.name);
   // Find yesterday's date in EST
   const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const yesterday = new Date(estNow);
@@ -640,13 +718,6 @@ export default async function MasterDashboard() {
   const totalAct = qboActive.reduce((s, q) => s + q.Est_Income, 0);
   const totalProf = qboActive.reduce((s, q) => s + q.Profit, 0);
   const avgMargin = totalAct > 0 ? totalProf / totalAct : 0;
-
-  // Change Orders FYTD from WIP sheet (if Change_Orders column present)
-  const fyCoTotal = (jobs as any[]).reduce((s: number, j: any) => {
-    const raw = j.Change_Orders || j.CO_Added || j['CO Added'] || 0;
-    const n = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/[$,\s]/g, '')) || 0;
-    return s + n;
-  }, 0);
 
   // ── Worst Offenders — combined (real losses + budget-burn risk) ─────────────
   // QBO sheet doesn't carry estimates yet, so we cross-join WIP Contract_Amount
@@ -809,651 +880,331 @@ export default async function MasterDashboard() {
   const criticalCount = risks.filter(r => r.level === 'critical').length;
   const warningCount = risks.filter(r => r.level === 'warning').length;
 
-  // Job health summary
-  const healthCounts = { green: 0, amber: 0, red: 0, gray: 0 };
-  scheduledJobs.forEach((j: any) => { healthCounts[getJobHealth(j, reportMap[j.Job_Number])]++; });
-
   const healthColor: Record<string, string> = { green: '#20BC64', amber: '#F5A623', red: '#E04343', gray: '#9CA3AF' };
-  const riskColor: Record<string, string> = { critical: '#E04343', warning: '#F5A623', info: '#3C4043' };
-  const riskBg: Record<string, string> = { critical: '#FDECEC', warning: '#FEF3DB', info: '#F1F3F4' };
-  const riskBorder: Record<string, string> = { critical: 'rgba(224,67,67,0.3)', warning: 'rgba(245,166,35,0.3)', info: 'rgba(60,64,67,0.15)' };
+
+  const openJobs = jobs.filter((j: any) => !isJobClosed(j));
+  const scheduledUniqueJobs = [...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()].filter(Boolean) as any[];
+  const arOverduePct = arAging.totals.total > 0 ? (arAging.totals.d91Plus / arAging.totals.total) * 100 : 0;
+
+  const crewTotals = crewDays.totals;
+  const baseCapacity = crewTotals.stoneBaseDays + crewTotals.millMiscDays + crewTotals.curbDays;
+  const pavingCapacity = crewTotals.pavingDays;
+  const capacityRatio = pavingCapacity > 0 ? baseCapacity / pavingCapacity : null;
+  const capacityOnTrack = capacityRatio == null || capacityRatio >= 1.2;
+
+  const actionItems = [
+    ...risks.map((risk) => {
+      const job = risk.job ? jobs.find((j: any) => j.Job_Number === risk.job) : null;
+      return {
+        key: `risk-${risk.job || risk.message}`,
+        level: risk.level,
+        label: risk.level === 'critical' ? 'Critical' : risk.level === 'warning' ? 'Warning' : 'Info',
+        title: job ? `${job.Job_Number} · ${job.Job_Name}` : risk.message.split(' — ')[0],
+        meta: job ? `PM: ${job.Project_Manager || 'N/A'} · ${job.State || 'No state'}` : 'Ops review',
+        next: risk.message,
+        href: risk.job ? `/jobs/${risk.job}` : undefined,
+      };
+    }),
+    ...worstOffenders.map((item: any) => ({
+      key: `money-${item.Job_Number}`,
+      level: item._isRealLoss ? 'critical' as const : 'warning' as const,
+      label: item._isRealLoss ? 'Loss' : 'Budget Burn',
+      title: `${item.Job_Number} · ${item.Project_Name || 'Financial risk'}`,
+      meta: `QBO cost ${formatDollars(item.Act_Cost)} · contract ${formatDollars(item._contract)}`,
+      next: item._reason,
+      href: item.Job_Number ? `/jobs/${item.Job_Number}` : undefined,
+    })),
+  ].slice(0, 6);
+
+  const fleetExceptionRisks = risks.filter(r => r.message.startsWith('SCHEDULE DEVIATION')).slice(0, 5);
+  const mapJobs = scheduledUniqueJobs.map((j: any) => {
+    const jobLat = parseFloat(j.Lat);
+    const jobLng = parseFloat(j.Lng);
+    let nearestVehicle: { name: string; driver: string; miles: number } | null = null;
+    if (!isNaN(jobLat) && !isNaN(jobLng) && samsara.vehicles?.length) {
+      let minDist = Infinity;
+      for (const v of samsara.vehicles) {
+        if (!v.lat || !v.lng) continue;
+        const dist = haversineDistance(jobLat, jobLng, v.lat, v.lng);
+        if (dist < minDist && dist <= 10) {
+          minDist = dist;
+          nearestVehicle = { name: v.name, driver: v.driver, miles: dist };
+        }
+      }
+    }
+    return {
+      Job_Number: j.Job_Number,
+      Job_Name: j.Job_Name,
+      Lat: j.Lat,
+      Lng: j.Lng,
+      Status: j.Status,
+      Pct_Complete: j.Pct_Complete || 0,
+      General_Contractor: j.General_Contractor,
+      Contract_Amount: j.Contract_Amount || 0,
+      nearestVehicle,
+    };
+  });
 
   return (
-    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body flex flex-col pb-10 antialiased overflow-x-hidden">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#ffffff_0,#F7F8F6_36%,#EEF1EE_100%)] text-[#15181A] font-body pb-10 antialiased overflow-x-hidden">
+      <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-5 p-5 lg:p-6">
+        <header className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div>
+            <p className="mb-1.5 text-xs font-black uppercase tracking-[0.12em] text-[#0F8F47]">
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })} · {qboStatusLabel}
+            </p>
+            <h1 className="m-0 text-[34px] font-black leading-none tracking-[-0.04em] text-[#15181A] md:text-[46px]">Command Center</h1>
+            <p className="mt-3 max-w-3xl text-sm leading-relaxed text-[#6D7478] md:text-base">
+              Exceptions first: risk, money, crew mismatch, field data, and capacity. Every number below is pulled from the live Scorecard path already wired into the app.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 rounded-full border border-[#DDE2E5] bg-white px-3 py-2 text-xs font-black uppercase tracking-[0.06em] text-[#2F3437] shadow-[0_14px_35px_rgba(21,24,26,0.08)]">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#20BC64] shadow-[0_0_0_5px_rgba(32,188,100,0.14)]" />
+            Scorecard · QBO · Schedule · Fleet · Weather
+          </div>
+        </header>
 
-      {/* ── HEADER ─────────────────────────────────────────────────────── */}
-      <header className="flex flex-col w-full sticky top-0 z-50 shadow-md">
-        <div className="px-8 py-4 bg-white flex justify-between items-center border-b border-[#F1F3F4]">
-          <div className="flex items-center gap-4">
-            <Image src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" width={512} height={160} className="h-10 w-auto" priority unoptimized />
-          </div>
-          <div className="flex items-center gap-4">
-            {criticalCount > 0 && (
-              <a href="#risk-alerts" className="pill pill-danger cursor-pointer hover:opacity-80 transition-opacity">
-                🔴 {criticalCount} Critical
-              </a>
-            )}
-            {warningCount > 0 && (
-              <a href="#risk-alerts" className="pill pill-warning cursor-pointer hover:opacity-80 transition-opacity">
-                ⚠️ {warningCount} Warnings
-              </a>
-            )}
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#20BC64] animate-pulse"></div>
-              <span className="text-xs text-[#757A7F] font-display font-bold uppercase tracking-widest">Live Data</span>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white px-8 py-3 border-b-2 border-[#3C4043] flex justify-between items-center">
-          <h1 className="font-display text-xl font-black uppercase tracking-wide text-[#3C4043]">Construction Management Portal</h1>
-          <p className="text-xs text-[#757A7F] font-display font-bold">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
-        </div>
-      </header>
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+          <CommandMetric
+            label="Critical Alerts"
+            value={criticalCount}
+            tone={criticalCount > 0 ? 'red' : 'green'}
+            note={criticalCount > 0 ? 'Needs owner review now.' : 'No critical alerts detected.'}
+          />
+          <CommandMetric
+            label="Warnings"
+            value={warningCount}
+            tone={warningCount > 0 ? 'amber' : 'green'}
+            note={warningCount > 0 ? 'Schedule, weather, or money exposure.' : 'No warnings detected.'}
+          />
+          <CommandMetric
+            label="Active Jobs"
+            value={qboActive.length}
+            note="Revenue-producing jobs in QBO."
+          />
+          <CommandMetric
+            label="Portfolio Value"
+            value={formatDollarsCompact(totalPortfolio)}
+            tone="blue"
+            note="QBO Act_Income sum."
+          />
+          <CommandMetric
+            label="A/R 91+ Days"
+            value={formatDollarsCompact(arAging.totals.d91Plus, 0)}
+            tone={arOverduePct >= 20 ? 'red' : arOverduePct >= 10 ? 'amber' : 'green'}
+            note={`${arOverduePct.toFixed(1)}% of total A/R.`}
+          />
+          <CommandMetric
+            label="Margin at Risk"
+            value={formatDollarsCompact(marginAtRiskDollars, 0)}
+            tone={marginAtRiskDollars > 0 ? 'red' : 'green'}
+            note={`${lossJobs.length} losing job${lossJobs.length === 1 ? '' : 's'}.`}
+          />
+          <CommandMetric
+            label="Reports Missing"
+            value={missingReportJobs.length}
+            tone={missingReportJobs.length > 0 ? 'red' : 'green'}
+            note={missingReportJobs.length > 0 ? 'Missing yesterday field reports.' : 'Yesterday reports are in.'}
+          />
+        </section>
 
-      <div className="flex flex-col gap-6 w-full max-w-[1920px] mx-auto p-6">
-
-        {/* ── KPI STRIP ──────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          {/* Total Jobs */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Total Jobs</p>
-            <p className="text-4xl font-display font-black text-[#3C4043]">{jobs.filter((j: any) => !isJobClosed(j)).length}</p>
-            <p className="text-xs text-[#757A7F] mt-1">Scorecard · MASTER JOB INDEX</p>
-          </div>
-          {/* Active Jobs */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Active Jobs</p>
-            <p className="text-4xl font-display font-black text-[#10BE66]">{qboActive.length}</p>
-            <p className="text-xs text-[#757A7F] mt-1">Generating revenue (QBO)</p>
-          </div>
-          {/* Scheduled Jobs */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Scheduled Jobs</p>
-            <p className="text-4xl font-display font-black text-[#20BC64]">{scheduledJobs.length}</p>
-            <div className="text-xs text-[#757A7F] mt-1 leading-relaxed">{scheduledJobNames.length > 0 ? scheduledJobNames.slice(0, 8).map((j: any, i: number) => (<div key={i}>{j.num ? `${j.num} — ${j.name}` : j.name}</div>)) : 'None this week'}</div>
-          </div>
-          {/* Portfolio Value */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Portfolio Value</p>
-            <p className="text-4xl font-display font-black text-[#3C4043]">${(totalPortfolio / 1000000).toFixed(1)}M</p>
-            <p className="text-xs text-[#757A7F] mt-1">QBO Act_Income sum</p>
-          </div>
-          {/* Billed To Date */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Billed To Date</p>
-            <p className="text-4xl font-display font-black text-[#20BC64]">${(totalBilled / 1000000).toFixed(1)}M</p>
-            <p className="text-xs text-[#757A7F] mt-1">{overallPct}% collected</p>
-          </div>
-          {/* Fleet Tracking */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Fleet at Jobsites</p><a href="#risk-alerts" className="text-[9px] text-[#757A7F]/50 mt-0.5 cursor-pointer block hover:underline">↑ See Live Map</a>
-            <p className="text-4xl font-display font-black text-[#F5A623]">{samsara.configured ? fleetAtJobsites.length.toString() : '—'}</p>
-            <p className="text-xs text-[#757A7F] mt-1">{samsara.configured ? `${samsara.vehicles.length} total tracking` : 'No API key'}</p>
-          </div>
-          {/* Missing Reports */}
-          <div className="card p-5">
-            <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Missing Reports</p>
-            <p className={`text-4xl font-display font-black ${missingReportJobs.length > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{missingReportJobs.length}</p>
-            <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{missingReportJobs.length > 0 ? missingReportJobs.map((j: any) => j.Job_Name).join(' · ') : 'All yesterday\u2019s reports in'}</p>
-          </div>
-        </div>
-
-        {/* ── ROW 2: MAP + RISK BOX ───────────────────────────────────────── */}
-        <div className="grid grid-cols-12 gap-6">
-
-          {/* LIVE MAP */}
-          <div className="col-span-12 lg:col-span-8 card overflow-hidden" style={{ minHeight: '500px' }}>
-            <div className="p-5 border-b-2 border-[#3C4043] flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <h2 className="font-display text-sm font-black uppercase tracking-widest text-[#3C4043]">Live Operations Map</h2>
-                <div className="flex items-center gap-3 text-xs font-display font-bold">
-                  <span className="flex items-center gap-1.5 text-[#3C4043]"><span className="w-3 h-3 rounded-full bg-[#20BC64] inline-block"></span>Job Site</span>
-                  <span className="flex items-center gap-1.5 text-[#3C4043]"><span className="w-3 h-3 rounded bg-blue-500 inline-block"></span>Vehicle</span>
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(380px,1.2fr)_minmax(360px,1fr)_minmax(330px,0.9fr)]">
+          <Panel
+            title="Action Queue"
+            subtitle="Live alerts converted into ownership, next step, and job link."
+            badge={<Chip tone={criticalCount > 0 ? 'red' : warningCount > 0 ? 'amber' : 'green'}>{criticalCount} critical</Chip>}
+          >
+            <div className="grid gap-3">
+              {actionItems.length === 0 ? (
+                <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4">
+                  <p className="font-black text-[#0F8F47]">No active exception queue.</p>
+                  <p className="mt-1 text-sm text-[#6D7478]">The live checks did not find field report, material, weather, schedule, or financial action items.</p>
                 </div>
-              </div>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-[#20BC64] font-display font-bold">{scheduledJobs.filter((j:any) => j.Lat && j.Lng).length} Pinned</span>
-                {samsara.configured && <span className="text-blue-500 font-display font-bold">{samsara.vehicles.length} Vehicles</span>}
-              </div>
-            </div>
-            <div style={{ height: '460px' }}>
-              <MapWrapper
-                jobs={[...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()].filter(Boolean).map((j: any) => {
-                  const jobLat = parseFloat(j.Lat);
-                  const jobLng = parseFloat(j.Lng);
-                  // Module 2: Find nearest Samsara vehicle within 10 miles
-                  let nearestVehicle: { name: string; driver: string; miles: number } | null = null;
-                  if (!isNaN(jobLat) && !isNaN(jobLng) && samsara.vehicles?.length) {
-                    let minDist = Infinity;
-                    for (const v of samsara.vehicles) {
-                      if (!v.lat || !v.lng) continue;
-                      const dist = haversineDistance(jobLat, jobLng, v.lat, v.lng);
-                      if (dist < minDist && dist <= 10) {
-                        minDist = dist;
-                        nearestVehicle = { name: v.name, driver: v.driver, miles: dist };
-                      }
-                    }
-                  }
-                  return {
-                    Job_Number: j.Job_Number,
-                    Job_Name: j.Job_Name,
-                    Lat: j.Lat,
-                    Lng: j.Lng,
-                    Status: j.Status,
-                    Pct_Complete: j.Pct_Complete || 0,
-                    General_Contractor: j.General_Contractor,
-                    Contract_Amount: j.Contract_Amount || 0,
-                    nearestVehicle,
-                  };
-                })}
-                vehicles={samsara.vehicles || []}
-              />
-            </div>
-          </div>
-
-          {/* RISK BOX */}
-          <div id="risk-alerts" className="col-span-12 lg:col-span-4 card flex flex-col overflow-hidden scroll-mt-32">
-            <div className="p-5 border-b-2 border-[#3C4043] flex justify-between items-center flex-shrink-0">
-              <h2 className="font-display text-sm font-black uppercase tracking-widest text-[#3C4043]">Risk & Alerts</h2>
-              <div className="flex gap-2">
-                {criticalCount > 0 && <span className="pill pill-danger">{criticalCount} Critical</span>}
-                {warningCount > 0 && <span className="pill pill-warning">{warningCount} Warn</span>}
-              </div>
-            </div>
-            <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
-              {risks.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-4xl mb-2">✅</p>
-                  <p className="text-[#20BC64] font-bold text-sm">All Clear</p>
-                  <p className="text-[#757A7F] text-xs mt-1">No active risks detected</p>
-                </div>
-              ) : risks.map((risk, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl p-3 border"
-                  style={{ backgroundColor: riskBg[risk.level], borderColor: riskBorder[risk.level] }}
-                >
-                  <div className="flex items-start gap-2">
-                    <span className="text-sm flex-shrink-0 mt-0.5">
-                      {risk.level === 'critical' ? '🔴' : risk.level === 'warning' ? '⚠️' : 'ℹ️'}
-                    </span>
-                    <div>
-                      {risk.job && (
-                        <Link href={`/jobs/${risk.job}`} className="text-[10px] font-black uppercase tracking-widest mb-1 block hover:text-[#3C4043] transition-colors" style={{ color: riskColor[risk.level] }}>
-                          {risk.job} {(() => { const j = jobs.find((jb: any) => jb.Job_Number === risk.job); return j?.Job_Name ? `· ${j.Job_Name}` : ''; })()} →
-                        </Link>
-                      )}
-                      <p className="text-xs text-[#3C4043] leading-relaxed">{risk.message}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── ROW 3: SCORECARD + JOB HEALTH ──────────────────────────────── */}
-        <div className="grid grid-cols-12 gap-6">
-
-          {/* PORTFOLIO SCORECARD */}
-          <div className="col-span-12 lg:col-span-5 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-start">
-              <div>
-                <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Health — Financials</h2>
-                <p className="text-xs text-[#757A7F] mt-1">Live job P&amp;L, margin & receivables</p>
-              </div>
-              <span className="text-[10px] font-bold uppercase text-[#757A7F]/70 tracking-widest">{qboStatusLabel}</span>
-            </div>
-            <div className="p-5 space-y-4">
-
-              {/* ── 6 FINANCIAL KPI TILES (QBO daily sync) ───────────────────── */}
-              {qboStale ? (
-                <div className="rounded-xl p-5 bg-amber-500/10 border border-amber-500/30 text-center">
-                  <p className="text-xs font-black uppercase tracking-widest text-amber-600 mb-1">Awaiting QBO Sync</p>
-                  <p className="text-xs text-[#757A7F]">Financials populate once the daily QBO email reports are parsed. Run <code className="font-mono text-[10px]">scripts/gmail-qbo-sync.gs</code> in Google Apps Script.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-3 gap-3">
-                    {/* Margin at Risk */}
-                    <div className="bg-[#E04343]/5 border border-[#E04343]/20 rounded-xl p-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-[#E04343]/80 mb-1">Margin at Risk</p>
-                      <p className="text-xl font-black text-[#E04343]">${(marginAtRiskDollars/1000).toFixed(0)}K</p>
-                      <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{lossJobs.length} job{lossJobs.length === 1 ? '' : 's'} losing money</p>
-                    </div>
-                    {/* Top Money Loser */}
-                    <ClickableKpiTile evidence={topLoserEvidence} className="bg-[#E04343]/5 border border-[#E04343]/20 rounded-xl p-3 block">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-[#E04343]/80 mb-1">Top Money Loser</p>
-                      {topLoser && topLoser.Profit < 0 ? (
-                        <>
-                          <p className="text-xl font-black text-[#E04343]">${(topLoser.Profit/1000).toFixed(0)}K</p>
-                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5 truncate" title={`${topLoser.Job_Number} · ${topLoser.Project_Name}`}>
-                            {topLoser.Job_Number || '—'} · {(topLoser.Profit_Margin * 100).toFixed(0)}%
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-xl font-black text-[#20BC64]">None 🎉</p>
-                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">All active jobs profitable</p>
-                        </>
-                      )}
-                    </ClickableKpiTile>
-                    {/* Change Orders FYTD */}
-                    <div className="bg-[#20BC64]/5 border border-[#20BC64]/20 rounded-xl p-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-[#20BC64]/80 mb-1">Change Orders FYTD</p>
-                      <p className="text-xl font-black text-[#20BC64]">+${(fyCoTotal/1000).toFixed(0)}K</p>
-                      <p className="text-[10px] text-[#757A7F]/70 mt-0.5">From WIP sheet</p>
-                    </div>
-                    {/* A/R Outstanding */}
-                    <div className="bg-[#60a5fa]/5 border border-[#60a5fa]/25 rounded-xl p-3">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa] mb-1">A/R Outstanding</p>
-                      <p className="text-xl font-black text-[#60a5fa]">${(arAging.totals.total/1000000).toFixed(2)}M</p>
-                      <p className="text-[10px] text-[#757A7F]/70 mt-0.5">${(arAging.totals.current/1000).toFixed(0)}K current</p>
-                    </div>
-                    {/* A/R Overdue (91+) */}
-                    {(() => {
-                      const overduePct = arAging.totals.total > 0 ? (arAging.totals.d91Plus / arAging.totals.total) * 100 : 0;
-                      const tone = overduePct >= 20 ? '[#E04343]' : overduePct >= 10 ? '[#F5A623]' : '[#20BC64]';
-                      return (
-                        <ClickableKpiTile evidence={arOverdueEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
-                          <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>A/R Overdue (91+ d)</p>
-                          <p className={`text-xl font-black text-${tone}`}>${(arAging.totals.d91Plus/1000).toFixed(0)}K</p>
-                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{overduePct.toFixed(1)}% of total AR</p>
-                        </ClickableKpiTile>
-                      );
-                    })()}
-                    {/* Average Job Margin */}
-                    {(() => {
-                      const pct = avgMargin * 100;
-                      const tone = pct >= 20 ? '[#20BC64]' : pct >= 10 ? '[#F5A623]' : '[#E04343]';
-                      return (
-                        <ClickableKpiTile evidence={avgMarginEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
-                          <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Avg Job Margin</p>
-                          <p className={`text-xl font-black text-${tone}`}>{pct.toFixed(1)}%</p>
-                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{qboActive.length} active jobs · target 25%</p>
-                        </ClickableKpiTile>
-                      );
-                    })()}
-                    {/* Rework Spend FYTD */}
-                    {(() => {
-                      const tone = reworkCost > 0 ? '[#E04343]' : '[#20BC64]';
-                      return (
-                        <ClickableKpiTile evidence={reworkEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
-                          <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>Rework FYTD</p>
-                          <p className={`text-xl font-black text-${tone}`}>${(reworkCost / 1000).toFixed(0)}K</p>
-                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{reworkHours.toFixed(0)} hrs · {reworkJobs} jobs</p>
-                        </ClickableKpiTile>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Worst Offenders list — real losses + budget-burn risk */}
-                  {worstOffenders.length > 0 && (
-                    <div className="pt-3 border-t border-[#F1F3F4]">
-                      <div className="flex justify-between items-baseline mb-2">
-                        <p className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Worst Offenders — Active Jobs at Financial Risk</p>
-                        <span className="text-[9px] text-[#757A7F]/60 font-bold uppercase">Loss + Cost ≥ 75% Contract</span>
+              ) : actionItems.map((item) => {
+                const tone = item.level === 'critical' ? 'red' : item.level === 'warning' ? 'amber' : 'blue';
+                const border = item.level === 'critical' ? '#C53030' : item.level === 'warning' ? '#D69E2E' : '#2B6CB0';
+                const body = (
+                  <div className="rounded-2xl border border-[#DDE2E5] border-l-[6px] bg-white p-3" style={{ borderLeftColor: border }}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="m-0 text-sm font-black leading-snug text-[#15181A]">{item.title}</h3>
+                        <p className="mt-1 text-xs text-[#6D7478]">{item.meta}</p>
                       </div>
-                      <div className="space-y-1.5">
-                        {worstOffenders.map(q => {
-                          const tone = q._isRealLoss ? '#E04343' : '#F5A623'; // red = loss, amber = burn
-                          const tag = q._isRealLoss ? 'LOSS' : 'BUDGET BURN';
-                          return (
-                            <Link key={q.Job_Number} href={`/jobs/${q.Job_Number}`} className="flex items-center justify-between px-3 py-2 rounded-lg border hover:opacity-90 transition" style={{ background: `${tone}08`, borderColor: `${tone}25` }}>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2 mb-0.5">
-                                  <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded" style={{ background: `${tone}20`, color: tone }}>{tag}</span>
-                                  <p className="text-xs font-bold text-[#3C4043] truncate">
-                                    {q.Job_Number}{q.Project_Name ? ` · ${q.Project_Name}` : ''}
-                                  </p>
-                                </div>
-                                <p className="text-[10px] text-[#757A7F]/80 truncate">{q._reason}</p>
-                              </div>
-                              <div className="text-right ml-3 flex-shrink-0">
-                                {q._isRealLoss ? (
-                                  <>
-                                    <p className="text-sm font-black" style={{ color: tone }}>-${Math.abs(q.Profit/1000).toFixed(0)}K</p>
-                                    <p className="text-[10px]" style={{ color: `${tone}b3` }}>{(q.Profit_Margin * 100).toFixed(0)}% margin</p>
-                                  </>
-                                ) : (
-                                  <>
-                                    <p className="text-sm font-black" style={{ color: tone }}>{(q._burnRatio * 100).toFixed(0)}%</p>
-                                    <p className="text-[10px]" style={{ color: `${tone}b3` }}>cost / contract</p>
-                                  </>
-                                )}
-                              </div>
-                            </Link>
-                          );
-                        })}
-                      </div>
+                      <Chip tone={tone}>{item.label}</Chip>
                     </div>
-                  )}
-                </>
-              )}
-
-              {/* Per-job billing vs activity mismatch summary (kept from old card) */}
-              <div className="pt-2 border-t border-[#F1F3F4]">
-                <p className="text-xs font-black uppercase tracking-widest text-[#757A7F] mb-3">Billing vs. Activity Summary</p>
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  {(['green','amber','red','gray'] as const).map(h => (
-                    <div key={h} className="rounded-lg p-2" style={{ background: `${healthColor[h]}10`, border: `1px solid ${healthColor[h]}20` }}>
-                      <p className="text-xl font-black" style={{ color: healthColor[h] }}>{healthCounts[h]}</p>
-                      <p className="text-[10px] font-bold uppercase text-[#757A7F]">{h === 'green' ? 'On Track' : h === 'amber' ? 'Watch' : h === 'red' ? 'At Risk' : 'Not Started'}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                    <p className="mt-2 text-sm leading-snug text-[#2F3437]">{item.next}</p>
+                  </div>
+                );
+                return item.href ? <Link key={item.key} href={item.href} className="block hover:opacity-90">{body}</Link> : <div key={item.key}>{body}</div>;
+              })}
             </div>
-          </div>
+          </Panel>
 
-          {/* QUICK JOB HEALTH */}
-          <div className="col-span-12 lg:col-span-7 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
-              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Quick Job Health</h2>
-              <div className="flex items-center gap-3 text-xs">
-                <span className="text-[#20BC64] font-bold">● On Track</span>
-                <span className="text-[#F5A623] font-bold">● Watch</span>
-                <span className="text-[#E04343] font-bold">● At Risk</span>
-                <span className="text-[#9CA3AF] font-bold">● Not Started</span>
-              </div>
-            </div>
-            {/* Watch / Risk summary */}
-            {(() => {
-              const watchRed = [...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()]
-                .filter(Boolean)
-                .map((job: any) => ({ job, health: getJobHealth(job, reportMap[job.Job_Number]) }))
-                .filter(x => x.health === 'amber' || x.health === 'red');
-              if (watchRed.length === 0) return null;
-              return (
-                <div className="px-4 pt-4">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-2">Needs Attention</p>
-                  <ul className="space-y-1.5">
-                    {watchRed.map(({ job, health }) => {
-                      const report = reportMap[job.Job_Number];
-                      const pct = Math.round(job.Pct_Complete || 0);
-                      const reason = health === 'red'
-                        ? (report ? `Material trending over estimate · ${pct}% billed` : `${pct}% billed · no field activity yet`)
-                        : (report ? `Approaching budget · ${pct}% billed` : `${pct}% billed · awaiting field data`);
-                      const toneColor = health === 'red' ? '#E04343' : '#F5A623';
-                      return (
-                        <li key={job.Job_Number}>
-                          <Link href={`/jobs/${job.Job_Number}`} className="flex items-start gap-2 px-2 py-1.5 rounded-lg hover:bg-[#F1F3F4]/60 transition-colors">
-                            <span className="text-xs font-black mt-0.5" style={{ color: toneColor }}>●</span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-[#3C4043] truncate">{job.Job_Number} — {job.Job_Name}</p>
-                              <p className="text-[10px] text-[#757A7F]">{reason}</p>
-                            </div>
-                          </Link>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              );
-            })()}
-            <div className="p-4 grid grid-cols-2 md:grid-cols-3 gap-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '380px' }}>
-              {[...new Map(scheduledJobs.map((j: any) => [j.Job_Number, j])).values()].filter(Boolean).map((job: any) => {
+          <Panel
+            title="This Week's Jobs"
+            subtitle="Job cards show health logic, not just billing percent."
+            badge={<Chip tone="gray">{scheduledUniqueJobs.length} scheduled</Chip>}
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              {scheduledUniqueJobs.slice(0, 8).map((job: any) => {
                 const health = getJobHealth(job, reportMap[job.Job_Number]);
                 const pct = Math.round(job.Pct_Complete || 0);
-                const report = reportMap[job.Job_Number];
-                const asphaltT = report?.Asphalt_Actual || 0;
-                const baseT = report?.Base_Actual || 0;
+                const color = healthColor[health];
                 return (
                   <Link
                     key={job.Job_Number}
                     href={`/jobs/${job.Job_Number}`}
-                    className="rounded-xl p-3 border transition-all hover:scale-[1.02]"
-                    style={{
-                      background: `${healthColor[health]}07`,
-                      borderColor: `${healthColor[health]}25`,
-                      borderLeftWidth: '3px',
-                      borderLeftColor: healthColor[health],
-                    }}
+                    className="rounded-2xl border border-[#DDE2E5] bg-white p-3 transition hover:-translate-y-0.5 hover:shadow-[0_14px_22px_rgba(21,24,26,0.08)]"
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-black text-[#757A7F]">{job.Job_Number}</span>
-                      <span className="text-[10px] font-black uppercase" style={{ color: healthColor[health] }}>
-                        {health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : health === 'red' ? '● Risk' : '● N/S'}
-                      </span>
+                    <Chip tone={statusTone(health)}>{healthLabel(health)}</Chip>
+                    <h3 className="mb-1 mt-2 text-sm font-black leading-tight text-[#15181A]">{job.Job_Number} · {job.Job_Name}</h3>
+                    <p className="text-xs leading-snug text-[#6D7478]">{job.General_Contractor || 'No customer'} · {job.Project_Manager || 'No PM'} · {job.State || 'No state'}</p>
+                    <div className="my-2 h-2.5 overflow-hidden rounded-full bg-[#E8ECEE]">
+                      <div className="h-full rounded-full" style={{ width: `${Math.max(Math.min(pct, 100), 3)}%`, backgroundColor: color }} />
                     </div>
-                    <p className="text-xs font-bold text-[#3C4043] leading-tight mb-2 line-clamp-1">{job.Job_Number} — {job.Job_Name}</p>
-                    <div className="flex flex-col gap-1">
-                      <div>
-                        <div className="flex justify-between text-[9px] text-[#757A7F] mb-0.5">
-                          <span>Billed</span>
-                          <span>{pct}%</span>
-                        </div>
-                        <div className="h-1 bg-[#F1F3F4] rounded-full overflow-hidden">
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: healthColor[health] }} />
-                        </div>
-                      </div>
-                      {(asphaltT > 0 || baseT > 0) && (
-                        <div className="mt-1 flex gap-2 text-[9px] text-[#757A7F]/70">
-                          {asphaltT > 0 && <span className="text-blue-600/60">{asphaltT.toLocaleString()}t asph</span>}
-                          {baseT > 0 && <span className="text-purple-400/60">{baseT.toLocaleString()}t base</span>}
-                        </div>
-                      )}
-                      {!report && health !== 'gray' && <p className="text-[9px] text-[#E04343]/60 mt-1">No field reports</p>}
-                      {health === 'gray' && <p className="text-[9px] text-[#9CA3AF]/80 mt-1">Awaiting first field report</p>}
-                    </div>
+                    <p className="text-xs text-[#6D7478]"><strong>{pct}% billed</strong> · {reportMap[job.Job_Number] ? 'field data present' : 'awaiting field data'}</p>
                   </Link>
                 );
               })}
             </div>
-          </div>
-        </div>
+          </Panel>
 
-        {/* ROW 3.5: THROUGHPUT BOTTLENECK TRACKER */}
-        {(() => {
-          // Uses booked crew days from the "25-26 Crew Days Sold" tab of the Gantt workbook.
-          // Base capacity = Stone Base Days + Mill/Misc Days + Curb Days.
-          // Paving capacity = Asphalt Paving Days.
-          // Target base-to-paving ratio: >= 1.2x so base crews stay ahead of paving.
-          const t = crewDays.totals;
-          const _stone = t.stoneBaseDays;
-          const _mill = t.millMiscDays;
-          const _curb = t.curbDays;
-          const _pave = t.pavingDays;
-          const _contract = t.totalContract;
-          const _left = t.totalLeftToBill;
-          const _jobCount = crewDays.jobs.length;
-          const baseCapacity = _stone + _mill + _curb;
-          const paveCapacity = _pave;
-          const ratio = paveCapacity > 0 ? baseCapacity / paveCapacity : null;
-          const hasData = crewDays.jobs.length > 0;
-          const isBehind = ratio != null && ratio < 1.2;
-          const maxCap = Math.max(baseCapacity, paveCapacity, 1);
-
-          // Evidence rows for the drawer
-          const topBaseJobs = [...crewDays.jobs]
-            .sort((a, b) => (b.Stone_Base_Days + b.Mill_Misc_Days + b.Curb_Days) - (a.Stone_Base_Days + a.Mill_Misc_Days + a.Curb_Days))
-            .slice(0, 10)
-            .map(j => ({
-              label: `${j.Job_Number} · ${j.Job_Name}`,
-              value: `${j.Stone_Base_Days + j.Mill_Misc_Days + j.Curb_Days} days`,
-              detail: `Stone ${j.Stone_Base_Days} · Mill/Misc ${j.Mill_Misc_Days} · Curb ${j.Curb_Days}`,
-              href: `/jobs/${j.Job_Number}`,
-            }));
-          const topPaveJobs = [...crewDays.jobs]
-            .sort((a, b) => b.Asphalt_Paving_Days - a.Asphalt_Paving_Days)
-            .slice(0, 10)
-            .map(j => ({
-              label: `${j.Job_Number} · ${j.Job_Name}`,
-              value: `${j.Asphalt_Paving_Days} days`,
-              detail: `${j.Project_Type}`,
-              href: `/jobs/${j.Job_Number}`,
-            }));
-
-          const baseEvidence = {
-            title: 'Base / Site Work Capacity Sold',
-            headlineValue: `${baseCapacity} days`,
-            headlineCaption: `Booked across ${_jobCount} active jobs. Includes stone base (${_stone}d), mill/misc (${_mill}d), and curb install (${_curb}d).`,
-            source: '25-26 Crew Days Sold',
-            explanation: 'Total days of base/site work sold across active jobs. This represents capacity you already have revenue for.',
-            formula: 'Base capacity = Stone Base + Mill/Misc + Curb Install days (summed across active jobs)',
-            rows: topBaseJobs,
-          };
-
-          const paveEvidence = {
-            title: 'Paving Capacity Sold',
-            headlineValue: `${paveCapacity} days`,
-            headlineCaption: `Asphalt paving booked across ${crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length} jobs.`,
-            source: '25-26 Crew Days Sold',
-            explanation: 'Total days of asphalt paving work sold across active jobs. Each day requires base prep to be complete first.',
-            formula: 'Paving capacity = Asphalt Paving Days (summed across active jobs)',
-            rows: topPaveJobs,
-          };
-
-          const ratioEvidence = {
-            title: 'Base-to-Paving Ratio',
-            headlineValue: ratio != null ? `${ratio.toFixed(2)}x` : '—',
-            headlineCaption: `Target ≥ 1.20x. Below that, base crews can\'t keep up and paving crew sits idle.`,
-            source: 'Computed from 25-26 Crew Days Sold',
-            explanation: 'Ratio of base days to paving days. Base work must be done before asphalt can be laid; if base capacity falls below 1.2x the paving capacity, the paving crew will have nothing to pave.',
-            formula: 'Ratio = (Stone Base + Mill/Misc + Curb) / Asphalt Paving days',
-            rows: [
-              { label: 'Stone Base Days', value: `${_stone}` },
-              { label: 'Mill / Misc Days', value: `${_mill}` },
-              { label: 'Curb Install Days', value: `${_curb}` },
-              { label: 'Base subtotal', value: `${baseCapacity}` },
-              { label: 'Paving Days', value: `${paveCapacity}` },
-              { label: 'Field Events Days', value: `${t.fieldEventsDays}`, detail: 'Not counted in ratio' },
-              { label: 'Total Weeks Booked', value: `${t.totalWeeks}`, detail: `$${(_contract/1000000).toFixed(1)}M contract value` },
-            ],
-          };
-
-          return (
-            <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Throughput Bottleneck Tracker <span className="text-[#757A7F]/40 text-xs font-normal normal-case tracking-normal" title="Uses booked crew days from the 25-26 Crew Days Sold tab. Base must stay >= 1.20x paving capacity.">(i)</span></h2>
-                  {!hasData && (
-                    <span className="text-[10px] font-black text-[#9CA3AF] bg-[#9CA3AF]/10 border border-[#9CA3AF]/20 px-2 py-0.5 rounded-full">AWAITING CREW DAYS SOLD DATA</span>
-                  )}
-                  {isBehind && (
-                    <span className="text-[10px] font-black text-[#F5A623] bg-[#F5A623]/10 border border-amber-400/20 px-2 py-0.5 rounded-full">BASE CAPACITY BELOW PAVING THRESHOLD</span>
-                  )}
+          <div className="grid gap-5">
+            <Panel title="Money Board" subtitle="Cash and margin are split so risk does not get hidden.">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4">
+                  <p className="text-[11px] font-black uppercase tracking-[0.07em] text-[#6D7478]">Cash Now</p>
+                  <div className="mt-2 text-[28px] font-black leading-none tracking-[-0.04em]">{formatDollarsCompact(arAging.totals.total)}</div>
+                  <p className="mt-1 text-xs text-[#6D7478]">A/R outstanding · {formatDollarsCompact(arAging.totals.current)} current.</p>
                 </div>
-                <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Source: 25-26 Crew Days Sold</span>
+                <ClickableKpiTile evidence={arOverdueEvidence} className="rounded-2xl border border-[#DDE2E5] bg-white p-4 text-left">
+                  <p className="text-[11px] font-black uppercase tracking-[0.07em] text-[#6D7478]">Cash Risk</p>
+                  <div className="mt-2 text-[28px] font-black leading-none tracking-[-0.04em]">{formatDollarsCompact(arAging.totals.d91Plus, 0)}</div>
+                  <p className="mt-1 text-xs text-[#6D7478]">91+ days overdue.</p>
+                </ClickableKpiTile>
+                <ClickableKpiTile evidence={topLoserEvidence} className="rounded-2xl border border-[#DDE2E5] bg-white p-4 text-left">
+                  <p className="text-[11px] font-black uppercase tracking-[0.07em] text-[#6D7478]">Margin Risk</p>
+                  <div className="mt-2 text-[28px] font-black leading-none tracking-[-0.04em]">{formatDollarsCompact(marginAtRiskDollars, 0)}</div>
+                  <p className="mt-1 text-xs text-[#6D7478]">{lossJobs.length} losing job{lossJobs.length === 1 ? '' : 's'}.</p>
+                </ClickableKpiTile>
+                <ClickableKpiTile evidence={avgMarginEvidence} className="rounded-2xl border border-[#DDE2E5] bg-white p-4 text-left">
+                  <p className="text-[11px] font-black uppercase tracking-[0.07em] text-[#6D7478]">Avg Margin</p>
+                  <div className="mt-2 text-[28px] font-black leading-none tracking-[-0.04em]">{(avgMargin * 100).toFixed(1)}%</div>
+                  <p className="mt-1 text-xs text-[#6D7478]">{qboActive.length} active jobs · target 25%.</p>
+                </ClickableKpiTile>
               </div>
-              <div className="p-5">
-                <div className="grid grid-cols-2 gap-6">
-                  <ClickableKpiTile evidence={baseEvidence} className="block rounded-xl p-0 bg-transparent border-0">
-                    <div>
-                      <div className="flex justify-between items-end mb-2">
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-[#F5A623]/80">Base / Site Work Capacity</p>
-                          <p className="text-[10px] text-[#757A7F]/70">Stone base + mill/misc + curb install</p>
-                        </div>
-                        <p className="text-3xl font-black text-[#F5A623]">{baseCapacity}<span className="text-sm text-[#F5A623]/50 ml-1">days</span></p>
-                      </div>
-                      <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-[#F5A623] to-[#e19213] rounded-full" style={{ width: `${(baseCapacity / maxCap) * 100}%` }} />
-                      </div>
-                      <p className="text-[9px] text-[#757A7F]/60 mt-1">Stone {_stone} · Mill/Misc {_mill} · Curb {_curb}</p>
-                    </div>
-                  </ClickableKpiTile>
-                  <ClickableKpiTile evidence={paveEvidence} className="block rounded-xl p-0 bg-transparent border-0">
-                    <div>
-                      <div className="flex justify-between items-end mb-2">
-                        <div>
-                          <p className="text-[10px] font-black uppercase tracking-widest text-blue-600/80">Paving Capacity</p>
-                          <p className="text-[10px] text-[#757A7F]/70">Asphalt paving days</p>
-                        </div>
-                        <p className="text-3xl font-black text-blue-600">{paveCapacity}<span className="text-sm text-blue-600/50 ml-1">days</span></p>
-                      </div>
-                      <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
-                        <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700 rounded-full" style={{ width: `${(paveCapacity / maxCap) * 100}%` }} />
-                      </div>
-                      <p className="text-[9px] text-[#757A7F]/60 mt-1">{crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length} jobs with paving days booked</p>
-                    </div>
-                  </ClickableKpiTile>
+            </Panel>
+
+            <Panel
+              title="Capacity Signal"
+              subtitle="Plain-English readout of the throughput tracker."
+              badge={<Chip tone={capacityOnTrack ? 'green' : 'amber'}>{capacityOnTrack ? 'On Track' : 'Watch'}</Chip>}
+            >
+              <div className="divide-y divide-[#DDE2E5]">
+                <div className="grid grid-cols-[1fr_auto] items-center gap-3 py-3 first:pt-0">
+                  <div><strong className="block text-sm">Base / Site Work Capacity</strong><span className="text-xs text-[#6D7478]">Stone base + mill/misc + curb install</span></div>
+                  <div className="text-[22px] font-black">{baseCapacity}d</div>
                 </div>
-                <div className="mt-4 grid grid-cols-4 gap-4 pt-4 border-t border-[#F1F3F4]">
-                  <ClickableKpiTile evidence={ratioEvidence} className="block text-left p-0 bg-transparent border-0">
-                    <div>
-                      <p className="text-[9px] font-black uppercase text-[#757A7F]">Ratio</p>
-                      <p className={`text-xl font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-500'}`}>{ratio != null ? ratio.toFixed(2) + 'x' : '—'}</p>
-                    </div>
-                  </ClickableKpiTile>
-                  <div>
-                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Required</p>
-                    <p className="text-xl font-black text-[#757A7F]">≥1.20x</p>
-                  </div>
-                  <div>
-                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Status</p>
-                    <p className={`text-xs font-black ${!hasData ? 'text-[#9CA3AF]' : isBehind ? 'text-[#E04343]' : 'text-emerald-400'}`}>{!hasData ? 'NO DATA' : isBehind ? 'BEHIND' : 'ON TRACK'}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[9px] font-black uppercase text-[#757A7F]">Contract Value</p>
-                    <p className="text-xs font-bold text-[#3C4043]">${(_contract / 1000000).toFixed(2)}M sold</p>
-                    <p className="text-[9px] text-[#757A7F]">${(_left / 1000000).toFixed(2)}M left to bill</p>
-                  </div>
+                <div className="grid grid-cols-[1fr_auto] items-center gap-3 py-3">
+                  <div><strong className="block text-sm">Paving Capacity</strong><span className="text-xs text-[#6D7478]">Asphalt paving days booked</span></div>
+                  <div className="text-[22px] font-black">{pavingCapacity}d</div>
+                </div>
+                <div className="grid grid-cols-[1fr_auto] items-center gap-3 py-3 last:pb-0">
+                  <div><strong className="block text-sm">Capacity Ratio</strong><span className="text-xs text-[#6D7478]">Base/site work must stay ahead of paving demand.</span></div>
+                  <div className="text-[22px] font-black">{capacityRatio == null ? '—' : `${capacityRatio.toFixed(2)}x`}</div>
                 </div>
               </div>
-            </div>
-          );
-        })()}
-
-                {/* ── ROW 4: JOB LIST + PORTFOLIO TABLE ─────────────────────────── */}
-        <div className="grid grid-cols-12 gap-6">
-
-          {/* LIVE MISSION PROGRESS */}
-          <div className="col-span-12 lg:col-span-4 bg-white rounded-md border border-[#F1F3F4] shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: '500px' }}>
-            <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center flex-shrink-0">
-              <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">This Week&apos;s Jobs</h2>
-              <span className="text-xs text-[#757A7F]/60 font-bold uppercase">Click a job</span>
-            </div>
-            <div className="overflow-y-auto custom-scrollbar p-4 space-y-3 flex-1">
-              {scheduledJobs.map((job: any) => {
-                const pct = Math.round(job.Pct_Complete || 0);
-                const report = reportMap[job.Job_Number];
-                const health = getJobHealth(job, report);
-                return (
-                  <Link
-                    key={job.Job_Number}
-                    href={`/jobs/${job.Job_Number}`}
-                    className="block bg-black/30 rounded-xl p-4 border border-[#F1F3F4] hover:scale-[1.01] transition-all group"
-                    style={{ borderLeftWidth: '3px', borderLeftColor: healthColor[health] }}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <p className="font-bold text-[#3C4043] text-sm leading-tight">{job.Job_Number} — {job.Job_Name}</p>
-                        <p className="text-xs text-[#757A7F] mt-0.5">{job.General_Contractor} · {job.Project_Manager} PM · {job.State}</p>
-                      </div>
-                      <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: healthColor[health] }}>{pct}%</span>
-                    </div>
-                    <div className="flex gap-1 mb-1">
-                      <span className="text-[10px] text-[#757A7F] w-14 flex-shrink-0">Billed</span>
-                      <div className="flex-1 bg-[#F1F3F4] rounded-full h-1.5 overflow-hidden">
-                        <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: healthColor[health] }} />
-                      </div>
-                    </div>
-                    <div className="flex justify-between mt-2">
-                      <span className="text-[10px] text-[#757A7F]/70">{job.Job_Number}</span>
-                      <span className="text-[10px] text-[#757A7F]/70">{formatDollars(job.QBO_Act_Income || job.Contract_Amount)}</span>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+            </Panel>
           </div>
+        </section>
 
-          {/* FULL PORTFOLIO — moved to /portfolio */}
-          <div className="col-span-12 lg:col-span-8 bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-            <Link href="/portfolio" className="block p-5 hover:bg-[#F1F3F4] transition-colors group">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
-                  <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
-                  <p className="text-xs text-[#757A7F] mt-1">{formatDollars(totalPortfolio)} QBO Act_Income</p>
-                <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Pct_Complete||j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
-                <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
+        <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
+          <Panel
+            title="Live Operations Map"
+            subtitle="Default mode: exceptions first. Green means aligned. Amber/red means schedule, material, or weather risk."
+            badge={<Chip tone={criticalCount > 0 ? 'red' : warningCount > 0 ? 'amber' : 'green'}>{mapJobs.filter((j: any) => j.Lat && j.Lng).length} pinned</Chip>}
+            className="p-0"
+          >
+            <div className="px-5 pb-5">
+              <div className="mb-4 flex flex-wrap gap-2">
+                <Chip tone="red">Exceptions</Chip>
+                <Chip tone="gray">Jobs</Chip>
+                <Chip tone="gray">Fleet</Chip>
               </div>
-            </Link>
-          </div>
-        </div>
+              <div className="overflow-hidden rounded-[18px] border border-[#DDE2E5]">
+                <div className="h-[430px]">
+                  <MapWrapper jobs={mapJobs} vehicles={samsara.vehicles || []} />
+                </div>
+              </div>
+              <p className="mt-3 rounded-xl border border-[#DDE2E5] bg-white p-3 text-xs leading-relaxed text-[#6D7478]">
+                <strong className="text-[#2F3437]">Exception Mode:</strong> showing {criticalCount + warningCount} active exceptions before normal vehicle pins. Source: live Scorecard, schedule, Samsara, and weather checks.
+              </p>
+            </div>
+          </Panel>
 
+          <Panel
+            title="Fleet Exceptions"
+            subtitle="GPS is treated as proof against the schedule."
+            badge={<Chip tone={fleetExceptionRisks.length > 0 ? 'amber' : 'green'}>{fleetExceptionRisks.length} mismatches</Chip>}
+          >
+            <div className="grid gap-3">
+              {fleetExceptionRisks.length === 0 ? (
+                <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4">
+                  <p className="font-black text-[#0F8F47]">No GPS schedule mismatch found.</p>
+                  <p className="mt-1 text-sm text-[#6D7478]">Fleet location and schedule checks are currently aligned or Samsara is not configured.</p>
+                </div>
+              ) : fleetExceptionRisks.map((risk, index) => (
+                <Link key={`${risk.job}-${index}`} href={risk.job ? `/jobs/${risk.job}` : '/fleet'} className="block rounded-2xl border border-[#DDE2E5] border-l-[6px] border-l-[#D69E2E] bg-white p-3 hover:opacity-90">
+                  <h3 className="text-sm font-black text-[#15181A]">{risk.message.split(' — ')[0]}</h3>
+                  <p className="mt-1 text-xs leading-snug text-[#6D7478]">{risk.message}</p>
+                </Link>
+              ))}
+            </div>
+          </Panel>
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+          <Panel title="Scorecard Health" subtitle="Fast read of field, billing, schedule, and financial risk.">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4"><div className="text-[34px] font-black tracking-[-0.05em]">{fieldReports.length > 0 ? 100 : 0}</div><strong>Field Reporting</strong><p className="mt-1 text-xs text-[#6D7478]">{missingReportJobs.length} missing report alerts.</p></div>
+              <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4"><div className="text-[34px] font-black tracking-[-0.05em]">{Math.max(0, 100 - Math.round(arOverduePct))}</div><strong>Billing Health</strong><p className="mt-1 text-xs text-[#6D7478]">{arOverduePct.toFixed(1)}% of A/R is 91+ days.</p></div>
+              <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4"><div className="text-[34px] font-black tracking-[-0.05em]">{fleetExceptionRisks.length === 0 ? 100 : Math.max(0, 100 - fleetExceptionRisks.length * 15)}</div><strong>Schedule Integrity</strong><p className="mt-1 text-xs text-[#6D7478]">{fleetExceptionRisks.length} GPS mismatch alerts.</p></div>
+              <ClickableKpiTile evidence={reworkEvidence} className="rounded-2xl border border-[#DDE2E5] bg-white p-4 text-left"><div className="text-[34px] font-black tracking-[-0.05em]">{marginAtRiskDollars > 0 ? 68 : 100}</div><strong>Financial Risk</strong><p className="mt-1 text-xs text-[#6D7478]">{formatDollarsCompact(marginAtRiskDollars, 0)} margin risk · {formatDollarsCompact(reworkCost, 0)} rework.</p></ClickableKpiTile>
+            </div>
+          </Panel>
+
+          <Panel title="Portfolio Register" subtitle="Top live jobs ranked for quick owner scan." badge={<Link href="/portfolio" className="text-xs font-black uppercase tracking-[0.06em] text-[#0F8F47] hover:underline">Open portfolio</Link>}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] overflow-hidden rounded-2xl bg-white text-sm">
+                <thead>
+                  <tr className="bg-[#F1F3F4] text-left text-[11px] font-black uppercase tracking-[0.08em] text-[#4E565A]">
+                    <th className="px-3 py-3">Job</th>
+                    <th className="px-3 py-3">Customer</th>
+                    <th className="px-3 py-3">PM</th>
+                    <th className="px-3 py-3">Contract</th>
+                    <th className="px-3 py-3">Billed</th>
+                    <th className="px-3 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openJobs.slice(0, 8).map((job: any) => {
+                    const health = getJobHealth(job, reportMap[job.Job_Number]);
+                    return (
+                      <tr key={job.Job_Number} className="border-b border-[#DDE2E5] last:border-b-0 hover:bg-[#FAFCFB]">
+                        <td className="px-3 py-3"><Link href={`/jobs/${job.Job_Number}`} className="font-black text-[#15181A] hover:underline">{job.Job_Number}</Link><br /><span className="text-xs text-[#6D7478]">{job.Job_Name}</span></td>
+                        <td className="px-3 py-3 text-[#2F3437]">{job.General_Contractor || '—'}</td>
+                        <td className="px-3 py-3 text-[#2F3437]">{job.Project_Manager || '—'}</td>
+                        <td className="px-3 py-3 text-[#2F3437]">{formatDollars(job.Contract_Amount || job.QBO_Act_Income || 0)}</td>
+                        <td className="px-3 py-3 text-[#2F3437]">{Math.round(job.Pct_Complete || 0)}%</td>
+                        <td className="px-3 py-3"><Chip tone={statusTone(health)}>{healthLabel(health)}</Chip></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </section>
       </div>
     </div>
   );

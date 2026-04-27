@@ -5,53 +5,65 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/portfolio', label: 'Portfolio', icon: '📋' },
-  { href: '/schedule', label: 'Schedule', icon: '📅' },
-  { href: '/equipment', label: 'Equipment', icon: '🚜' },
-  { href: '/fleet', label: 'Fleet', icon: '🚚' },
-  { href: '/project-scorecard', label: 'Scorecard', icon: '🏆' },
-  { href: '/sales', label: 'Sales', icon: '💰' },
-  { href: '/marketing', label: 'Marketing', icon: '📣' },
+  { href: '/dashboard', label: 'Command Center', mark: 'CMD', pill: 'Live' },
+  { href: '/portfolio', label: 'Portfolio', mark: 'JOB', pill: 'Jobs' },
+  { href: '/schedule', label: 'Schedule', mark: 'SCH', pill: 'Week' },
+  { href: '/equipment', label: 'Equipment', mark: 'EQP', pill: 'Rent' },
+  { href: '/fleet', label: 'Fleet', mark: 'FLT', pill: 'GPS' },
+  { href: '/project-scorecard', label: 'Scorecard', mark: 'EOS', pill: 'EOS' },
+  { href: '/sales', label: 'Sales', mark: 'BID', pill: 'Pipe' },
+  { href: '/marketing', label: 'Marketing', mark: 'MKT', pill: 'Brand' },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-16 hover:w-52 bg-[#202325] z-[60] flex flex-col transition-all duration-300 group overflow-hidden shadow-xl bg-turf-lines">
-      {/* Logo */}
-      <div className="flex items-center justify-center px-4 py-5 border-b border-white/10 flex-shrink-0">
-        <Image src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" width={128} height={32} className="h-8 w-auto flex-shrink-0" style={{ filter: 'brightness(0) invert(1)' }} />
+    <aside className="relative z-[60] flex h-auto w-full flex-col overflow-hidden bg-[#171A1C] px-[18px] py-6 text-white shadow-xl md:fixed md:left-0 md:top-0 md:h-full md:w-[280px] md:overflow-y-auto">
+      <div className="mb-6 flex justify-center border-b border-white/10 pb-[18px]">
+        <Image
+          src="/sunbelt-sports-logo.png"
+          alt="Sunbelt Sports"
+          width={512}
+          height={160}
+          className="h-auto max-h-24 w-full max-w-[260px] object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.35)]"
+          style={{ filter: 'brightness(0) invert(1)' }}
+          priority
+          unoptimized
+        />
       </div>
 
-      {/* Nav Items */}
-      <nav className="flex flex-col gap-1 p-2 mt-2 flex-1">
+      <div className="mx-2 mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#879094]">Command</div>
+      <nav className="grid grid-cols-2 gap-1 md:grid-cols-1" aria-label="Dashboard navigation">
         {navItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-3 rounded transition-all text-sm font-display font-bold whitespace-nowrap
+              className={`flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-sm font-black transition-colors
                 ${isActive
-                  ? 'bg-[#20BC64]/15 text-[#20BC64] border-l-[3px] border-[#20BC64]'
-                  : 'text-white/50 hover:text-white/80 hover:bg-white/5 border-l-[3px] border-transparent'
+                  ? 'bg-[#20BC64]/20 text-white'
+                  : 'text-[#D9DFE1] hover:bg-[#20BC64]/15 hover:text-white'
                 }`}
             >
-              <span className="text-lg flex-shrink-0 w-6 text-center">{item.icon}</span>
-              <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">{item.label}</span>
+              <span className="flex items-center gap-3">
+                <span className={`grid h-7 w-9 place-items-center rounded-lg text-[10px] font-black tracking-tight ${isActive ? 'bg-[#20BC64] text-[#08120C]' : 'bg-white/10 text-[#C9D1D3]'}`}>
+                  {item.mark}
+                </span>
+                <span>{item.label}</span>
+              </span>
+              <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black text-[#C9D1D3]">{item.pill}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* Bottom */}
-      <div className="p-3 border-t border-white/10 flex-shrink-0">
-        <div className="flex items-center gap-2 px-2">
-          <div className="w-2 h-2 rounded-full bg-[#20BC64] animate-pulse flex-shrink-0"></div>
-          <span className="text-[10px] text-white/30 font-display font-bold uppercase tracking-widest whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">Live</span>
-        </div>
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.07] p-4">
+        <strong className="mb-1.5 block text-sm">Design Logic</strong>
+        <p className="m-0 text-xs leading-relaxed text-[#B9C0C3]">
+          Default view shows exceptions first: risk, money, crew mismatch, field data, and capacity.
+        </p>
       </div>
     </aside>
   );
