@@ -260,8 +260,8 @@ export default async function FleetPage() {
         </div>
       </div>
 
-      {/* 2-col: HOS Compliance (left) + DOT License/Medical (right) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      {/* HOS + DOT Compliance */}
+      <div className="grid grid-cols-1 gap-6 mb-8">
 
         {/* ═══ HOS Compliance — exempt drivers filtered out ═══ */}
         <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
@@ -289,7 +289,7 @@ export default async function FleetPage() {
                   return (
                     <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
                       <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
-                      <td className="px-3 py-2 text-xs text-[#757A7F]">{d.currentStatus || '—'}</td>
+                      <td className="px-3 py-2 text-xs text-[#757A7F]">{d.currentStatus || 'No HOS log'}</td>
                       <td className="px-3 py-2 text-xs font-black" style={{ color: dr.color }}>{fmt(d.drive)}</td>
                       <td className="px-3 py-2 text-xs font-black" style={{ color: sh.color }}>{fmt(d.shift)}</td>
                       <td className="px-3 py-2 text-xs font-black" style={{ color: cy.color }}>{fmt(d.cycle)}</td>
@@ -436,6 +436,10 @@ export default async function FleetPage() {
           const lowboyVehicle = samsara.configured
             ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('lowboy') || (v.name || '').toLowerCase().includes('hudson') || (v.name || '').toLowerCase().includes('david'))
             : null;
+          const lowboyCompliance = compliance.find((c: any) => {
+            const n = String(c.name || '').toLowerCase();
+            return n.includes('david') && n.includes('hudson');
+          });
 
           // Always render the card — show an 'awaiting Samsara' placeholder if not configured.
 
@@ -455,19 +459,19 @@ export default async function FleetPage() {
               {lowboyVehicle ? (
                 <div className="p-5">
                   <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Current Location</p>
                       <p className="text-xs font-bold text-[#3C4043] leading-relaxed">{lowboyVehicle.address || 'GPS Active'}</p>
                     </div>
-                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Speed</p>
-                      <p className="text-2xl font-black text-white">{Math.round(lowboyVehicle.speed)}<span className="text-sm text-[#757A7F] ml-1">mph</span></p>
+                      <p className="text-2xl font-black text-[#3C4043]">{Math.round(lowboyVehicle.speed)}<span className="text-sm text-[#757A7F] ml-1">mph</span></p>
                     </div>
-                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Heading</p>
                       <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}°</p>
                     </div>
-                    <div className="bg-black/20 rounded-xl p-4 border border-[#F1F3F4]">
+                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
                       <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
                       <p className="text-sm font-black text-[#3C4043]">David Hudson</p>
                     </div>
@@ -480,17 +484,14 @@ export default async function FleetPage() {
                       const n = (h.driverName || '').toLowerCase().trim();
                       return n === 'david hudson' || (n.includes('hudson') && n.includes('david'));
                     });
-                    // Hardcoded fallback from HOS Audit Report 4/16/2026
-                    // David started Off Duty 7:15, On Duty 8:08, Driving 8:18
-                    // Safety score 87, 56h35m drive time last 30d, cycle USA 60h/7d
                     if (!lowboyHos) {
                       lowboyHos = {
-                        driveRemainingHrs: 9.3,
-                        shiftRemainingHrs: 12.1,
-                        cycleRemainingHrs: 38.4,
+                        driveRemainingHrs: null,
+                        shiftRemainingHrs: null,
+                        cycleRemainingHrs: null,
                         cycleCapHrs: 60,
-                        logDate: '2026-04-16',
-                        currentStatus: 'On Duty',
+                        logDate: '',
+                        currentStatus: 'No HOS log',
                       };
                     }
                     const toneFor = (hrs: number | null, critical: number, warn: number) => {
@@ -536,17 +537,27 @@ export default async function FleetPage() {
                   {lowboyVehicle.speed > 2 && (
                     <div className="mt-3 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
                       <span className="text-emerald-400">🚛</span>
-                      <p className="text-xs text-emerald-300/70 font-bold">Lowboy is currently in transit at {Math.round(lowboyVehicle.speed)} mph. ETA to next staging site updating live via Samsara.</p>
+                      <p className="text-xs text-[#0F8F47] font-bold">Lowboy is currently in transit at {Math.round(lowboyVehicle.speed)} mph. ETA to next staging site is shown on the Schedule lowboy card.</p>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="p-5 text-center">
-                  <p className="text-[#757A7F] text-sm">
-                    {samsara.configured
-                      ? "Awaiting Samsara GPS signal for David Hudson's lowboy unit."
-                      : "Awaiting Samsara integration — set SAMSARA_API_KEY in your Vercel env vars to enable live GPS + DOT Hours of Service for David Hudson's lowboy."}
-                  </p>
+                <div className="p-5 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
+                    <p className="text-sm font-black text-[#3C4043]">David Hudson</p>
+                    <p className="mt-1 text-xs text-[#757A7F]">{lowboyCompliance?.cdlExpiration ? `CDL expires ${lowboyCompliance.cdlExpiration}` : 'CDL date not loaded'}</p>
+                  </div>
+                  <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">GPS</p>
+                    <p className="text-sm font-black text-[#F5A623]">{samsara.configured ? 'No lowboy signal' : 'Samsara not configured'}</p>
+                    <p className="mt-1 text-xs text-[#757A7F]">Card stays visible until the truck reports.</p>
+                  </div>
+                  <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">HOS</p>
+                    <p className="text-sm font-black text-[#9CA3AF]">No HOS log</p>
+                    <p className="mt-1 text-xs text-[#757A7F]">No made-up drive hours shown.</p>
+                  </div>
                 </div>
               )}
             </div>

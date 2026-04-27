@@ -917,7 +917,8 @@ export default async function MasterDashboard() {
   ].slice(0, 6);
 
   const fleetExceptionRisks = risks.filter(r => r.message.startsWith('SCHEDULE DEVIATION')).slice(0, 5);
-  const mapJobs = scheduledUniqueJobs.map((j: any) => {
+  const mapSourceJobs = [...new Map([...openJobs, ...scheduledUniqueJobs].map((j: any) => [j.Job_Number, j])).values()];
+  const mapJobs = mapSourceJobs.map((j: any) => {
     const jobLat = parseFloat(j.Lat);
     const jobLng = parseFloat(j.Lng);
     let nearestVehicle: { name: string; driver: string; miles: number } | null = null;
@@ -1121,7 +1122,7 @@ export default async function MasterDashboard() {
         <section className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
           <Panel
             title="Live Operations Map"
-            subtitle="Default mode: exceptions first. Green means aligned. Amber/red means schedule, material, or weather risk."
+            subtitle="All active jobs with live fleet pins. Green means aligned. Amber/red means schedule, material, or weather risk."
             badge={<Chip tone={criticalCount > 0 ? 'red' : warningCount > 0 ? 'amber' : 'green'}>{mapJobs.filter((j: any) => j.Lat && j.Lng).length} pinned</Chip>}
             className="p-0"
           >
@@ -1137,7 +1138,7 @@ export default async function MasterDashboard() {
                 </div>
               </div>
               <p className="mt-3 rounded-xl border border-[#DDE2E5] bg-white p-3 text-xs leading-relaxed text-[#6D7478]">
-                <strong className="text-[#2F3437]">Exception Mode:</strong> showing {criticalCount + warningCount} active exceptions before normal vehicle pins. Source: live Scorecard, schedule, Samsara, and weather checks.
+                <strong className="text-[#2F3437]">Map Mode:</strong> showing all active jobs with coordinates, plus fleet pins. Source: live Scorecard, schedule, Samsara, and weather checks.
               </p>
             </div>
           </Panel>

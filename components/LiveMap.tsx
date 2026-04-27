@@ -175,7 +175,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
           ? `<div style="margin-top:6px;padding:4px 8px;background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:6px;font-size:10px;color:#2563eb;">🚛 ${job.nearestVehicle.name} — ${job.nearestVehicle.miles.toFixed(1)} mi away</div>`
           : '';
 
-        const marker = L.marker([lat, lng], { icon: jobIcon(pct, job.Job_Name) }).addTo(map);
+        const marker = L.marker([lat, lng], { icon: jobIcon(pct, job.Job_Name), zIndexOffset: 1000 }).addTo(map);
         marker.bindPopup(`
           <div style="font-family:Montserrat,sans-serif;min-width:210px;background:#ffffff;color:#15181A;border-radius:10px;padding:14px;border:1px solid rgba(21,24,26,0.14);box-shadow:0 10px 28px rgba(0,0,0,0.18);">
             <p style="font-size:10px;color:#20BC64;font-weight:900;text-transform:uppercase;margin:0 0 3px 0;letter-spacing:1px;">${job.Job_Number}</p>
@@ -190,7 +190,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
       // ── Plot vehicle pins (with overlap jitter) ──────────────────────────
       const spreadVehicles = jitterOverlaps(vehicles.filter(v => v.lat && v.lng));
       spreadVehicles.forEach((v) => {
-        const marker = L.marker([v.lat, v.lng], { icon: vehicleIcon(v.name, v.speed, v.status) }).addTo(map);
+        const marker = L.marker([v.lat, v.lng], { icon: vehicleIcon(v.name, v.speed, v.status), zIndexOffset: 800 }).addTo(map);
         const isRental = v.status === 'rental';
         const isAsset = v.status === 'asset';
         const popupLabel = isRental ? 'RENTAL EQUIPMENT' : isAsset ? 'VISIONLINK · ASSET' : 'SAMSARA · LIVE';

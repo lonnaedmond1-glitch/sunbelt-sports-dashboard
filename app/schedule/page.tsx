@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchLiveRentals } from '@/lib/sheets-data';
 import { getGlobalWeather } from '@/app/api/weather/route';
+import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
 export const revalidate = 300;
 
@@ -35,10 +36,29 @@ const crewColors: Record<string, string> = {
 const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3', 'Cesar'];
 // SUPPORT_CREWS removed — the schedule page now shows primary crews + Lowboy card only
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const LOWBOY_PLANNING_MPH = 45;
+
+function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const radius = 3958.8;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatEta(miles: number, speedMph: number): string {
+  if (!isFinite(miles) || miles <= 0) return 'On site';
+  const minutes = Math.max(1, Math.round((miles / Math.max(speedMph, 1)) * 60));
+  if (minutes < 60) return `${minutes} min`;
+  const hrs = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem ? `${hrs}h ${rem}m` : `${hrs}h`;
+}
 
 export default async function SchedulePage() {
-  const [schedule, weather, jobs, level10, liveRentals] = await Promise.all([
-    getScheduleData(), getWeatherData(), getJobsData(), getLevel10Data(), fetchLiveRentals()
+  const [schedule, weather, jobs, level10, liveRentals, samsara] = await Promise.all([
+    getScheduleData(), getWeatherData(), getJobsData(), getLevel10Data(), fetchLiveRentals(), getGlobalSamsara()
   ]);
 
   const weatherAlerts = (weather.alerts || []).slice(0, 8);
@@ -370,73 +390,131 @@ export default async function SchedulePage() {
           </div>
         )}
 
-        {/* LOWBOY MOVES — this week only, simple 7-day calendar view */}
+        {/* LOWBOY MOVES — one driver, optimized as next move + queue */}
         {(() => {
           const days = schedule.currentWeek?.days || [];
-          const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-          const byDay: Record<string, Array<{ crew: string; jobRef: string; activity: string; state: string; linkJobId: string }>> = {};
-          dayNames.forEach(d => { byDay[d] = []; });
-
+          const lowboyVehicle = (samsara.vehicles || []).find((v: any) => {
+            const name = String(v.name || '').toLowerCase();
+            const driver = String(v.driver || '').toLowerCase();
+            return name.includes('lowboy') || name.includes('hudson') || driver.includes('david hudson');
+          });
+          const moves: Array<{
+            date: string;
+            dayName: string;
+            jobRef: string;
+            activity: string;
+            state: string;
+            linkJobId: string;
+            job: any;
+            miles: number | null;
+            eta: string;
+            origin: string;
+          }> = [];
+          let origin = lowboyVehicle?.lat && lowboyVehicle?.lng
+            ? { lat: lowboyVehicle.lat, lng: lowboyVehicle.lng, label: lowboyVehicle.address || 'Current lowboy GPS' }
+            : null;
           for (const day of days) {
             for (const a of (day.assignments || [])) {
               if (!(a.crew === 'Lowboy 1' || a.crew === 'Lowboy 2' || a.crew === 'David - Lowboy' || (a.crewType === 'logistics'))) continue;
               if (a.decoded?.isOff) continue;
-              const key = (day.dayOfWeek || '').slice(0, 3).toUpperCase();
-              if (!byDay[key]) continue;
-              byDay[key].push({
-                crew: a.crew,
+              const linkJobId = resolveJobLink(a) || '';
+              const job = linkJobId ? jobs.find((j: any) => j.Job_Number === linkJobId) : null;
+              const lat = job?.Lat ? parseFloat(job.Lat) : NaN;
+              const lng = job?.Lng ? parseFloat(job.Lng) : NaN;
+              const miles = origin && !isNaN(lat) && !isNaN(lng)
+                ? distanceMiles(origin.lat, origin.lng, lat, lng)
+                : null;
+              const speed = lowboyVehicle?.speed && lowboyVehicle.speed > 10 ? lowboyVehicle.speed : LOWBOY_PLANNING_MPH;
+              moves.push({
+                date: day.dateDisplay || day.date || '',
+                dayName: day.dayOfWeek || '',
                 jobRef: a.decoded?.jobRef || a.job || '',
                 activity: a.decoded?.activity || '',
                 state: a.decoded?.state || '',
-                linkJobId: resolveJobLink(a) || '',
+                linkJobId,
+                job,
+                miles,
+                eta: miles == null ? 'Needs job GPS' : formatEta(miles, speed),
+                origin: origin?.label || 'Previous move',
               });
+              if (!isNaN(lat) && !isNaN(lng)) {
+                origin = { lat, lng, label: job ? `${job.Job_Number} · ${job.Job_Name}` : a.decoded?.jobRef || a.job || 'Previous move' };
+              }
             }
           }
-
-          const total = Object.values(byDay).reduce((s2, arr) => s2 + arr.length, 0);
+          const nextMove = moves[0] || null;
+          const queuedMoves = moves.slice(1);
 
           return (
-            <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
-                <div>
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Upcoming Lowboy Moves</h2>
-                  <p className="text-[10px] text-[#757A7F] mt-0.5">Moves that need to happen this week. Driver: David Hudson.</p>
+            <div className="grid gap-4">
+              <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+                  <div>
+                    <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Next Lowboy Move</h2>
+                    <p className="text-[10px] text-[#757A7F] mt-0.5">Driver: David Hudson. Distance is calculated from live lowboy GPS when available.</p>
+                  </div>
+                  <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{moves.length} move{moves.length === 1 ? '' : 's'} this week</span>
                 </div>
-                <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{total} move{total === 1 ? '' : 's'} this week</span>
-              </div>
-              <div className="grid grid-cols-7">
-                {dayNames.map((d, i) => {
-                  const dayData = days.find((x: any) => (x.dayOfWeek || '').slice(0, 3).toUpperCase() === d);
-                  const isToday = !!dayData?.isToday;
-                  const moves = byDay[d] || [];
-                  return (
-                    <div key={d} className={`px-3 py-3 border-r border-[#F1F3F4] last:border-r-0 ${isToday ? 'bg-[#20BC64]/5' : ''} ${i >= 5 ? 'bg-[#F1F3F4]/30' : ''}`} style={{ minHeight: '120px' }}>
-                      <div className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isToday ? 'text-[#20BC64]' : 'text-[#757A7F]'}`}>{d}</div>
-                      <div className="text-[9px] text-[#757A7F]/60 mb-2">{dayData?.dateDisplay?.replace(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s*/i, '') || ''}</div>
-                      {moves.length === 0 ? (
-                        <div className="text-sm text-[#757A7F]/30">—</div>
+                {nextMove ? (
+                  <div className="p-5 grid gap-4 lg:grid-cols-[1fr_auto_auto] lg:items-center">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#E04343]">{nextMove.dayName} · {nextMove.date}</p>
+                      {nextMove.linkJobId ? (
+                        <Link href={`/jobs/${encodeURIComponent(nextMove.linkJobId.trim())}`} className="mt-1 block text-lg font-black text-[#3C4043] hover:underline">
+                          {nextMove.linkJobId} · {nextMove.job?.Job_Name || nextMove.jobRef}
+                        </Link>
                       ) : (
-                        <div className="space-y-1.5">
-                          {moves.map((m, idx) => {
-                            const unitColor = '#ef4444'; // single lowboy driver
-                            const body = (
-                              <div className="rounded px-2 py-1.5 border" style={{ borderColor: `${unitColor}30`, backgroundColor: `${unitColor}08` }}>
-                                <div className="text-[9px] font-black uppercase" style={{ color: unitColor }}>{m.crew}</div>
-                                <div className="text-xs font-bold text-[#3C4043] truncate" title={m.jobRef}>{m.jobRef}</div>
-                                {m.activity && <div className="text-[9px] text-[#757A7F] truncate">{m.activity}{m.state ? ` · ${m.state}` : ''}</div>}
-                              </div>
-                            );
-                            return m.linkJobId ? (
-                              <Link key={idx} href={`/jobs/${encodeURIComponent(m.linkJobId.trim())}`} className="block hover:opacity-80">{body}</Link>
-                            ) : (
-                              <div key={idx}>{body}</div>
-                            );
-                          })}
-                        </div>
+                        <p className="mt-1 text-lg font-black text-[#3C4043]">{nextMove.jobRef || 'Move needs job match'}</p>
                       )}
+                      <p className="mt-1 text-sm text-[#757A7F]">{nextMove.activity || 'Move'}{nextMove.state ? ` · ${nextMove.state}` : ''}</p>
+                      <p className="mt-2 text-xs text-[#757A7F]">From: {nextMove.origin}</p>
                     </div>
-                  );
-                })}
+                    <div className="rounded-xl border border-[#DDE2E5] bg-[#FAFCFB] px-5 py-3 text-right">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Distance</p>
+                      <p className="text-2xl font-black text-[#3C4043]">{nextMove.miles == null ? '—' : `${nextMove.miles.toFixed(1)} mi`}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#20BC64]/25 bg-[#20BC64]/5 px-5 py-3 text-right">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#0F8F47]">ETA</p>
+                      <p className="text-2xl font-black text-[#0F8F47]">{nextMove.eta}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-5">
+                    <p className="text-sm font-bold text-[#3C4043]">No lowboy moves are scheduled this week.</p>
+                    <p className="mt-1 text-xs text-[#757A7F]">This card stays visible so the lowboy plan is never blank.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
+                <div>
+                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Lowboy Queue</h2>
+                  <p className="text-[10px] text-[#757A7F] mt-0.5">Each row is matched to the actual job when the schedule text can be resolved.</p>
+                </div>
+                <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">{queuedMoves.length} after next</span>
+                </div>
+                <div className="divide-y divide-[#F1F3F4]">
+                  {queuedMoves.length === 0 ? (
+                    <div className="p-5 text-sm text-[#757A7F]">No other lowboy moves queued this week.</div>
+                  ) : queuedMoves.map((m, idx) => (
+                    <div key={`${m.date}-${idx}`} className="grid gap-3 px-5 py-4 lg:grid-cols-[1fr_140px_120px] lg:items-center">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{m.dayName} · {m.date}</p>
+                        {m.linkJobId ? (
+                          <Link href={`/jobs/${encodeURIComponent(m.linkJobId.trim())}`} className="font-black text-[#3C4043] hover:underline">
+                            {m.linkJobId} · {m.job?.Job_Name || m.jobRef}
+                          </Link>
+                        ) : (
+                          <p className="font-black text-[#3C4043]">{m.jobRef || 'Move needs job match'}</p>
+                        )}
+                        <p className="text-xs text-[#757A7F]">{m.activity || 'Move'}{m.state ? ` · ${m.state}` : ''}</p>
+                      </div>
+                      <div className="text-sm font-black text-[#3C4043]">{m.miles == null ? 'Needs GPS' : `${m.miles.toFixed(1)} mi`}</div>
+                      <div className="text-sm font-black text-[#0F8F47]">{m.eta}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           );
