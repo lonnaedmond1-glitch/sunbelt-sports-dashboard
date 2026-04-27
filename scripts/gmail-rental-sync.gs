@@ -91,12 +91,25 @@ function syncSunbeltRentals(ss) {
     'Vendor', 'Contract_Number', 'Branch', 'Job_Name', 'Job_Location', 
     'Job_City', 'State', 'Ordered_By', 'Equipment_Type', 'Class_Name',
     'Day_Rate', 'Week_Rate', 'FourWeek_Rate', 'Date_Rented', 
-    'Days_On_Rent', 'Pickup_Date', 'Email_Date', 'Synced_At'
+    'Days_On_Rent', 'Pickup_Date', 'Accrued_Amount', 'Email_Date', 'Synced_At'
   ];
   sheet.getRange(1, 1, 1, header.length).setValues([header]);
   sheet.getRange(1, 1, 1, header.length).setFontWeight('bold');
   
   // Write data rows (skip header row from CSV)
+  const sourceHeader = rows[0].map(h => String(h || '').toLowerCase().replace(/[^a-z0-9]+/g, ''));
+  const col = (...names) => {
+    for (const name of names) {
+      const idx = sourceHeader.indexOf(String(name).toLowerCase().replace(/[^a-z0-9]+/g, ''));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+  const get = (row, fallbackIndex, ...names) => {
+    const idx = col(...names);
+    const value = idx >= 0 ? row[idx] : row[fallbackIndex];
+    return (value || '').trim();
+  };
   const dataRows = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -105,21 +118,22 @@ function syncSunbeltRentals(ss) {
     
     dataRows.push([
       'Sunbelt Rentals',
-      (r[0] || '').trim(),   // Contract #
-      (r[1] || '').trim(),   // Branch #
-      (r[2] || '').trim(),   // Job Name
-      (r[3] || '').trim(),   // Job Location
-      (r[4] || '').trim(),   // Job City
-      (r[5] || '').trim(),   // Ordered State
-      (r[6] || '').trim(),   // Ordered By
-      (r[7] || '').trim(),   // Equipment Type
-      (r[8] || '').trim(),   // Class Name
-      (r[9] || '').trim(),   // Day Rate
-      (r[10] || '').trim(),  // Week Rate
-      (r[11] || '').trim(),  // 4 Week Rate
-      (r[12] || '').trim(),  // Date Rented
-      (r[13] || '').trim(),  // Days on Rent
-      (r[14] || '').trim(),  // Pickup Date
+      get(r, 0, 'ContractNumber', 'Contract Number', 'Contract #'),
+      get(r, 1, 'Branch', 'Branch Number'),
+      get(r, 2, 'JobName', 'Job Name'),
+      get(r, 3, 'JobLocation', 'Job Location'),
+      get(r, 4, 'JobCity', 'Job City'),
+      get(r, 5, 'State', 'JobState', 'Job State'),
+      get(r, 6, 'OrderedBy', 'Ordered By'),
+      get(r, 7, 'EquipmentType', 'Equipment Type', 'EquipmentModel', 'Equipment Model'),
+      get(r, 8, 'ClassName', 'Class Name', 'EquipmentClass', 'Equipment Class'),
+      get(r, 9, 'DayRate', 'Day Rate', 'DailyRate', 'Daily Rate'),
+      get(r, 10, 'WeekRate', 'Week Rate', 'WeeklyRate', 'Weekly Rate'),
+      get(r, 11, 'FourWeekRate', 'Four Week Rate', 'MonthlyRate', 'Monthly Rate'),
+      get(r, 12, 'DateRented', 'Date Rented', 'DateOut', 'Date Out'),
+      get(r, 13, 'DaysOnRent', 'Days on Rent'),
+      get(r, 14, 'PickupDate', 'Pickup Date'),
+      get(r, 15, 'AccruedAmount', 'Accrued Amount', 'TotalAmountBilled', 'Total Amount Billed'),
       Utilities.formatDate(emailDate, 'America/New_York', 'yyyy-MM-dd'),
       Utilities.formatDate(new Date(), 'America/New_York', 'yyyy-MM-dd HH:mm'),
     ]);

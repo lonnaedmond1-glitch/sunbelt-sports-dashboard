@@ -135,10 +135,11 @@ export function fetchLiveJobs() {
   return cached('liveJobs', 5 * 60 * 1000, async () => {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${JOB_LIST_SHEET_ID}/export?format=csv&gid=${JOB_LIST_GID}`;
-    const [response, masterJobs, qboFinancials] = await Promise.all([
+    const [response, masterJobs, qboFinancials, crewDays] = await Promise.all([
       fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } }).catch(() => null),
       fetchMasterJobIndex(),
       fetchQboFinancials(),
+      fetchCrewDaysSold(),
     ]);
 
     let legacyJobs: any[] = [];
@@ -209,12 +210,14 @@ export function fetchLiveJobs() {
     const legacyByJob = new Map<string, any>(legacyJobs.map(j => [j.Job_Number, j]));
     const masterByJob = new Map<string, MasterJobIndexRow>(masterJobs.map(j => [j.Job_Number, j]));
     const qboByJob = new Map<string, QboJobFinancials>(qboFinancials.filter(q => q.Job_Number).map(q => [q.Job_Number, q]));
+    const crewDaysByJob = new Map<string, CrewDaysJob>(crewDays.jobs.map(j => [j.Job_Number, j]));
     const jobNumbers = new Set<string>([...legacyByJob.keys(), ...masterByJob.keys()]);
 
     return Array.from(jobNumbers).map(jobNumber => {
       const legacy = legacyByJob.get(jobNumber) || {};
       const master = masterByJob.get(jobNumber);
       const qbo = qboByJob.get(jobNumber);
+      const crewDayJob = crewDaysByJob.get(jobNumber);
       const scorecardContract = master?.Contract_Amount || 0;
       const qboIncome = qbo?.Act_Income || 0;
       const contractAmount = scorecardContract > 0 ? scorecardContract : (qboIncome > 0 ? qboIncome : (legacy.Contract_Amount || 0));
@@ -228,6 +231,7 @@ export function fetchLiveJobs() {
         Job_Number: jobNumber,
         Job_Name: master?.Job_Name || legacy.Job_Name || qbo?.Project_Name || '',
         Status: master?.Job_Status || legacy.Status || 'Pending',
+        General_Contractor: crewDayJob?.Contractor || legacy.General_Contractor || '',
         Project_Manager: master?.PM || legacy.Project_Manager || '',
         Contract_Amount: contractAmount,
         Billed_To_Date: billedToDate,
@@ -342,7 +346,7 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
     const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 86400 },
+      next: { revalidate: 300 },
     });
     if (!res.ok) return [];
     const text = await res.text();
@@ -351,7 +355,7 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
 }
 
 export function fetchLiveRentals() {
-  return cached('liveRentals', 24 * 60 * 60 * 1000, async () => {
+  return cached('liveRentals', 5 * 60 * 1000, async () => {
     try {
       const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
       const [sunbeltRows, unitedRows] = await Promise.all([
@@ -379,15 +383,19 @@ export function fetchLiveRentals() {
             jobName: getCol('job_name'),
             jobLocation: getCol('job_location'),
             jobCity: getCol('job_city'),
+            orderedBy: getCol('ordered_by'),
             equipmentType: equipType,
             className: getCol('class_name'),
             dayRate: parseMoney(getCol('day_rate')),
             weekRate: parseMoney(getCol('week_rate')),
             fourWeekRate: parseMoney(getCol('fourweek_rate')),
+            accruedAmount: parseMoney(getCol('accrued_amount') || getCol('total_amount_billed')) || ((parseInt(getCol('days_on_rent')) || 0) * parseMoney(getCol('day_rate'))),
             dateRented: getCol('date_rented'),
             daysOnRent: parseInt(getCol('days_on_rent')) || 0,
             pickupDate: getCol('pickup_date'),
             emailDate: getCol('email_date'),
+            syncedAt: getCol('synced_at'),
+            salesRepEmail: getCol('sales_rep_email') || getCol('rep_email'),
           });
         }
       }
@@ -410,15 +418,19 @@ export function fetchLiveRentals() {
             jobName: getCol('job') || getCol('site') || '',
             jobLocation: getCol('location') || getCol('address') || '',
             jobCity: '',
+            orderedBy: getCol('ordered') || '',
             equipmentType: equipType,
             className: '',
             dayRate: parseMoney(getCol('daily') || getCol('day_rate') || getCol('rate') || ''),
             weekRate: parseMoney(getCol('weekly') || getCol('week_rate') || ''),
             fourWeekRate: parseMoney(getCol('monthly') || getCol('4_week') || ''),
+            accruedAmount: parseMoney(getCol('accrued') || getCol('billed') || getCol('amount') || ''),
             dateRented: getCol('start') || getCol('rent_date') || getCol('date') || '',
             daysOnRent: parseInt(getCol('days')) || 0,
             pickupDate: '',
             emailDate: getCol('email_date') || '',
+            syncedAt: getCol('synced_at') || '',
+            salesRepEmail: getCol('sales_rep_email') || getCol('rep_email') || '',
           });
         }
       }
@@ -452,15 +464,19 @@ export function fetchLiveRentals() {
                   jobName: g(col('jobname')) || g(col('job_name')),
                   jobLocation: `${g(col('jobcity'))}, ${g(col('jobstate'))}`.replace(/^, |, $/g, ''),
                   jobCity: g(col('jobcity')),
+                  orderedBy: g(col('orderedby')) || g(col('ordered_by')),
                   equipmentType: equipModel || equipClass,
                   className: equipClass,
                   dayRate: parseMoney(g(col('dailyrate')) || g(col('daily'))),
                   weekRate: parseMoney(g(col('weeklyrate')) || g(col('weekly'))),
                   fourWeekRate: parseMoney(g(col('monthlyrate')) || g(col('monthly'))),
+                  accruedAmount: parseMoney(g(col('accruedamount')) || g(col('accrued')) || g(col('totalamountbilled'))),
                   dateRented: g(col('dateout')) || g(col('date_out')),
                   daysOnRent: parseInt(g(col('days_on_rent')) || g(col('days'))) || 0,
                   pickupDate: g(col('pickupdate')) || g(col('pickup')),
                   emailDate: '',
+                  syncedAt: '',
+                  salesRepEmail: g(col('salesrepemail')) || g(col('repemail')),
                 });
               }
             }
@@ -488,15 +504,19 @@ export function fetchLiveRentals() {
                     jobName: '',
                     jobLocation: '',
                     jobCity: '',
+                    orderedBy: '',
                     equipmentType: equipType,
                     className: '',
                     dayRate: parseMoney(r[5] || ''),
                     weekRate: 0,
                     fourWeekRate: 0,
+                    accruedAmount: (parseInt(r[3] || '') || 0) * parseMoney(r[5] || ''),
                     dateRented: '',
                     daysOnRent: parseInt(r[3] || '') || 0,
                     pickupDate: (r[4] || '').trim(),
                     emailDate: '',
+                    syncedAt: '',
+                    salesRepEmail: '',
                   });
                 }
               }
@@ -1919,6 +1939,7 @@ export interface CrewDaysJob {
   Job_Name: string;
   State: string;
   Project_Type: string;
+  Contractor: string;
   Contract_Amount: number;
   Actual_To_Date: number;
   Left_To_Bill: number;
@@ -1988,6 +2009,7 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
     const iName = findCol('JOB NAME and MAP', 'Job Name');
     const iState = findCol('State');
     const iType = findCol('Project type');
+    const iContractor = findCol('Contractor', 'General Contractor');
     const iContract = findCol('CONTRACT AMOUNT', 'Contract Amount');
     const iActual = findCol('Actual To Date');
     const iLeft = findCol('LEFT TO BILL', 'Left To Bill');
@@ -2007,6 +2029,7 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
         Job_Name: (cells[iName] || '').trim(),
         State: (cells[iState] || '').trim(),
         Project_Type: (cells[iType] || '').trim(),
+        Contractor: (cells[iContractor] || '').trim(),
         Contract_Amount: n(cells[iContract]),
         Actual_To_Date: n(cells[iActual]),
         Left_To_Bill: n(cells[iLeft]),

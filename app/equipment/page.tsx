@@ -4,6 +4,55 @@ import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveRentals, fetchVisionLinkAssets } from '@/lib/sheets-data';
 
+function money(value: number): string {
+  return `$${Math.round(value || 0).toLocaleString()}`;
+}
+
+function parseRentalDate(value: string): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getRentalRepEmail(rental: any): string {
+  if (rental.salesRepEmail) return String(rental.salesRepEmail).trim();
+  let map: Record<string, string> = {};
+  try {
+    map = process.env.RENTAL_SALES_REP_EMAILS ? JSON.parse(process.env.RENTAL_SALES_REP_EMAILS) : {};
+  } catch {
+    map = {};
+  }
+  const vendor = String(rental.Vendor || rental.vendor || '').toLowerCase().trim();
+  const branch = String(rental.Branch || rental.branch || '').toLowerCase().trim();
+  const vendorKey = vendor.replace(/\s+/g, '_');
+  const branchKey = branch ? `${vendorKey}:${branch}` : '';
+  return (
+    (branchKey && map[branchKey]) ||
+    map[vendorKey] ||
+    map[vendor] ||
+    (vendor.includes('sunbelt') ? process.env.SUNBELT_RENTAL_SALES_REP_EMAIL : '') ||
+    (vendor.includes('united') ? process.env.UNITED_RENTAL_SALES_REP_EMAIL : '') ||
+    process.env.RENTAL_DEFAULT_SALES_REP_EMAIL ||
+    ''
+  ).trim();
+}
+
+function callOffHref(rental: any, repEmail: string): string {
+  const subject = `Call off rental ${rental.Contract_Number || rental.contractNumber || ''} - ${rental.Equipment_Type || rental.equipmentType || 'equipment'}`;
+  const body = [
+    'Please call off this rental.',
+    '',
+    `Vendor: ${rental.Vendor || rental.vendor || ''}`,
+    `Contract: ${rental.Contract_Number || rental.contractNumber || ''}`,
+    `Equipment: ${rental.Equipment_Type || rental.equipmentType || ''}`,
+    `Job: ${rental.jobName || rental.Job_Name_Raw || rental.Job_Number || ''}`,
+    `Pickup date on file: ${rental.Target_Off_Rent || rental.pickupDate || ''}`,
+    '',
+    'Confirm off-rent date and pickup status.',
+  ].join('\n');
+  return `mailto:${encodeURIComponent(repEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
 export default async function EquipmentPage() {
   const csvRentals = getAllRentals();
   const jobs = await fetchLiveJobs();
@@ -32,10 +81,15 @@ export default async function EquipmentPage() {
       Job_Name_Raw: rawName,
       Equipment_Type: r.equipmentType,
       Vendor: r.vendor,
+      Branch: r.branch || '',
       Days_On_Site: r.daysOnRent.toString(),
       Target_Off_Rent: r.pickupDate || '',
       Daily_Rate: r.dayRate.toString(),
+      Accrued_Amount: String(r.accruedAmount || 0),
       Contract_Number: r.contractNumber,
+      Email_Date: r.emailDate || '',
+      Synced_At: r.syncedAt || '',
+      salesRepEmail: r.salesRepEmail || '',
       isLive: true,
     };
   }) : csvRentals.map(r => ({ ...r, Job_Name_Raw: '', isLive: false }));
@@ -55,16 +109,19 @@ export default async function EquipmentPage() {
   });
 
   let totalDailyBurn = 0;
+  let totalAccruedBurn = 0;
   let overdueCount = 0;
   let missingRateCount = 0;
 
   const enrichedRentals = dedupedRentals.map((r: any) => {
     const days = parseInt(r.Days_On_Site) || 0;
     const rate = parseFloat(r.Daily_Rate) || 0;
+    const accrued = parseFloat(r.Accrued_Amount) || (days * rate);
     const isOverdue = days > 30;
     const rateMissing = rate <= 0;
 
     totalDailyBurn += rate;
+    totalAccruedBurn += accrued;
     if (isOverdue) overdueCount++;
     if (rateMissing) missingRateCount++;
 
@@ -77,13 +134,22 @@ export default async function EquipmentPage() {
       ...r,
       days,
       rate,
+      accrued,
       rateMissing,
       totalBurn: days * rate,
       isOverdue,
       jobName: displayName || 'Unassigned',
       hasJobLink: !!(r.Job_Number && r.Job_Number.toString().trim()),
+      dataDate: r.Synced_At || r.Email_Date || '',
     };
   }).sort((a: any, b: any) => b.totalBurn - a.totalBurn);
+
+  const latestRentalDate = enrichedRentals
+    .map((r: any) => parseRentalDate(r.dataDate))
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => b.getTime() - a.getTime())[0] || null;
+  const rentalAge = latestRentalDate ? Math.floor((Date.now() - latestRentalDate.getTime()) / (1000 * 60 * 60 * 24)) : null;
+  const rentalDataFresh = isLive && rentalAge != null && rentalAge <= 2;
 
   // ── OWNED (VisionLink) ──────────────────────────────────────────────────
   const enrichedAssets = vlAssets.map((a: any) => {
@@ -182,10 +248,12 @@ export default async function EquipmentPage() {
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">
-                Active Rentals {isLive && <span className="ml-1 text-[8px] px-1.5 py-0.5 bg-[#20BC64]/20 text-[#20BC64] rounded tracking-normal">LIVE</span>}
+                Active Rentals {isLive && <span className={`ml-1 text-[8px] px-1.5 py-0.5 rounded tracking-normal ${rentalDataFresh ? 'bg-[#20BC64]/20 text-[#20BC64]' : 'bg-[#F5A623]/15 text-[#B7791F]'}`}>{rentalDataFresh ? 'LIVE' : 'STALE'}</span>}
               </h2>
               <p className="text-[10px] text-[#757A7F] mt-0.5">
-                ${totalDailyBurn.toLocaleString()} / day burn ·{' '}
+                {money(totalDailyBurn)} / day burn · {money(totalAccruedBurn)} accumulated
+                {rentalAge != null && <span> · updated {rentalAge === 0 ? 'today' : `${rentalAge}d ago`}</span>}
+                {' · '}
                 {overdueCount > 0 && <span className="text-[#E04343] font-bold">{overdueCount} overdue</span>}
                 {overdueCount > 0 && missingRateCount > 0 && ' · '}
                 {missingRateCount > 0 && <span className="text-[#F5A623] font-bold">{missingRateCount} missing rate</span>}
@@ -212,11 +280,13 @@ export default async function EquipmentPage() {
                     <th className="text-center px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Days</th>
                     <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Daily Rate</th>
                     <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Burn</th>
+                    <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {enrichedRentals.map((r, i) => {
                     const rowTone = r.isOverdue ? 'bg-[#E04343]/5' : r.rateMissing ? 'bg-[#F5A623]/5' : '';
+                    const repEmail = getRentalRepEmail(r);
                     return (
                       <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${rowTone}`}>
                         <td className="px-4 py-3">
@@ -257,8 +327,19 @@ export default async function EquipmentPage() {
                             <span className="text-xs text-[#757A7F]/40">—</span>
                           ) : (
                             <p className={`text-xs font-black ${r.isOverdue ? 'text-[#E04343]' : 'text-[#3C4043]'}`}>
-                              ${r.totalBurn.toLocaleString()}
+                              {money(r.accrued || r.totalBurn)}
                             </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {repEmail ? (
+                            <a href={callOffHref(r, repEmail)} className="inline-flex rounded-full bg-[#20BC64] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#16a558]">
+                              Call Off
+                            </a>
+                          ) : (
+                            <span className="inline-flex rounded-full bg-[#F1F3F4] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#9CA3AF]" title="Set a sales rep email in the rental sheet or Vercel env vars.">
+                              No Rep
+                            </span>
                           )}
                         </td>
                       </tr>

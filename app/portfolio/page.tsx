@@ -14,7 +14,20 @@ function getJobHealth(job: any, report: any): 'green' | 'amber' | 'red' | 'gray'
   return 'green';
 }
 
-const healthColor: Record<string, string> = { green: '#20BC64', amber: '#fb923c', red: '#ef4444', gray: '#9CA3AF' };
+const healthColor: Record<string, string> = { green: '#20BC64', amber: '#fb923c', red: '#ef4444', gray: '#9CA3AF', notApplicable: '#6D7478' };
+
+function cleanCell(value: unknown, fallback = 'Missing'): string {
+  const text = String(value || '').trim();
+  return text || fallback;
+}
+
+function healthLabel(health: string): string {
+  if (health === 'green') return 'OK';
+  if (health === 'amber') return 'Watch';
+  if (health === 'red') return 'Risk';
+  if (health === 'gray') return 'Not Started';
+  return 'Not Active';
+}
 
 function isJobClosed(job: any): boolean {
   const s = String(job?.Status || '').trim().toLowerCase();
@@ -145,17 +158,17 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
             <tbody>
               {jobs.filter((j: any) => (!filterStatus || j.Status === filterStatus) && (!filterState || j.State === filterState)).map((job: any, i: number) => {
                 const pct = Math.round(job.Pct_Complete || 0);
-                const health = ['Signed','Pending','Bid'].includes(job.Status) ? '\u2014' : getJobHealth(job, reportMap[job.Job_Number]);
+                const health = ['Signed','Pending','Bid'].includes(job.Status) ? 'notApplicable' : getJobHealth(job, reportMap[job.Job_Number]);
                 const statusColor = job.Status === 'Executed' ? '#20BC64' : job.Status === 'Signed' ? '#60a5fa' : job.Status === 'Received' ? '#fb923c' : '#9ca3af';
                 return (
                   <tr key={job.Job_Number} className={`border-b border-[#F1F3F4] hover:bg-[#F1F3F4] transition-colors ${i % 2 === 0 ? 'bg-transparent' : 'bg-[#F1F3F4]/50'}`}>
                     <td className="px-4 py-3">
                       <Link href={`/jobs/${job.Job_Number}`} className="text-[#20BC64] font-bold hover:text-white transition-colors text-xs">{job.Job_Number}</Link>
                     </td>
-                    <td className="px-4 py-3 font-medium text-[#3C4043] max-w-[200px] truncate text-xs">{job.Job_Name}</td>
-                    <td className="px-4 py-3 text-[#757A7F] text-xs truncate max-w-[140px]">{job.General_Contractor}</td>
-                    <td className="px-4 py-3 text-[#757A7F] text-xs">{job.Project_Manager}</td>
-                    <td className="px-4 py-3"><span className="text-xs bg-[#F1F3F4] rounded px-2 py-0.5 text-[#757A7F]">{job.State}</span></td>
+                    <td className="px-4 py-3 font-medium text-[#3C4043] max-w-[200px] truncate text-xs">{cleanCell(job.Job_Name)}</td>
+                    <td className="px-4 py-3 text-[#757A7F] text-xs truncate max-w-[160px]" title={cleanCell(job.General_Contractor)}>{cleanCell(job.General_Contractor)}</td>
+                    <td className="px-4 py-3 text-[#757A7F] text-xs">{cleanCell(job.Project_Manager)}</td>
+                    <td className="px-4 py-3"><span className="text-xs bg-[#F1F3F4] rounded px-2 py-0.5 text-[#757A7F]">{cleanCell(job.State)}</span></td>
                     <td className="px-4 py-3"><span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: statusColor, backgroundColor: `${statusColor}15` }}>{job.Status}</span></td>
                     <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">{formatDollars(job.Contract_Amount)}</td>
                     <td className="px-4 py-3 text-[#3C4043]/70 text-xs font-mono whitespace-nowrap">{formatDollars(job.Billed_To_Date)}</td>
@@ -169,7 +182,7 @@ export default async function PortfolioPage({ searchParams }: { searchParams: Pr
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-xs font-black" style={{ color: healthColor[health as keyof typeof healthColor] }}>
-                        {health === '—' ? '—' : health === 'green' ? '● OK' : health === 'amber' ? '● Watch' : health === 'red' ? '● Risk' : '● N/S'}
+                        {health === 'notApplicable' ? healthLabel(health) : `● ${healthLabel(health)}`}
                       </span>
                     </td>
                   </tr>
