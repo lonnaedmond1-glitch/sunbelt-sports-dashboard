@@ -5,10 +5,10 @@ import { ClickableKpiTile } from '@/components/EvidenceDrawer';
 import fs from 'fs';
 import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
-import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchProjectScorecards, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchGanttSchedule, fetchCrewDaysSold } from '@/lib/sheets-data';
+import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchCrewDaysSold, fetchEstVsActual } from '@/lib/sheets-data';
 import { formatDollars } from '@/lib/format';
 
-export const revalidate = 86400; // Daily ISR
+export const revalidate = 300;
 
 const getBaseUrl = () => {
   if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
@@ -17,27 +17,6 @@ const getBaseUrl = () => {
 
 const getLiveJobs = fetchLiveJobs;
 const getLiveFieldReports = fetchLiveFieldReports;
-
-// ─── Load Project Scorecards for est/actual comparison ───────────────────────
-function loadScorecardEstimates(): Record<string, { estTons: number; estDays: number }> {
-  try {
-    const filePath = path.join(process.cwd(), 'data', 'Project_Scorecards.csv');
-    const text = fs.readFileSync(filePath, 'utf-8');
-    const lines = text.trim().split('\n');
-    const result: Record<string, { estTons: number; estDays: number }> = {};
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',');
-      const jobNum = cols[0]?.trim();
-      if (!jobNum) continue;
-      const estBinder = parseFloat(cols[5] || '0') || 0;
-      const estTopping = parseFloat(cols[7] || '0') || 0;
-      const estStone = parseFloat(cols[3] || '0') || 0;
-      const estDays = parseFloat(cols[9] || '0') || 0;
-      result[jobNum] = { estTons: estBinder + estTopping + estStone, estDays };
-    }
-    return result;
-  } catch { return {}; }
-}
 
 // ─── Haversine distance (miles) ───────────────────────────────────────────────
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -368,6 +347,48 @@ function isJobClosed(job: any): boolean {
   return s === 'complete' || s === 'closed';
 }
 
+function parseSheetDate(value: string): Date | null {
+  if (!value) return null;
+  const serial = Number(value);
+  if (Number.isFinite(serial) && serial > 30000) {
+    return new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function latestSheetDate(values: string[]): Date | null {
+  return values
+    .map(parseSheetDate)
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => b.getTime() - a.getTime())[0] || null;
+}
+
+function formatSheetDate(date: Date | null): string {
+  if (!date) return 'no timestamp';
+  return date.toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function materialOverrun(row: any): { label: string; estimated: number; actual: number; pctOver: number } | null {
+  const candidates = [
+    { label: 'GAB', estimated: row.Estimated_GAB_Tons || 0, actual: row.Actual_GAB_Tons || 0 },
+    { label: 'Binder', estimated: row.Estimated_Binder_Tons || 0, actual: row.Actual_Binder_Tons || 0 },
+    { label: 'Topping', estimated: row.Estimated_Topping_Tons || 0, actual: row.Actual_Topping_Tons || 0 },
+    { label: 'Asphalt', estimated: row.Estimated_Asphalt_Tons || 0, actual: row.Actual_Asphalt_Tons || 0 },
+  ].filter(c => c.estimated > 0 && c.actual > c.estimated)
+   .map(c => ({ ...c, pctOver: ((c.actual - c.estimated) / c.estimated) * 100 }))
+   .sort((a, b) => (b.actual - b.estimated) - (a.actual - a.estimated));
+
+  return candidates[0] || null;
+}
+
 function isJobScheduled(job: any): boolean {
   const start = parseJobDate(job.Start_Date);
   if (!start) return false;
@@ -400,7 +421,7 @@ function computeRisks(
   reportMap: Record<string, any>,
   scheduleData: any,
   weatherAlerts: any[],
-  scorecardEstimates: Record<string, { estTons: number; estDays: number }>,
+  estVsActualByJob: Map<string, any>,
   prepBoard: any[],
   scheduledJobs: any[],
   vehicles: any[]
@@ -445,30 +466,22 @@ function computeRisks(
   }
 
   // ── CONDITION 2: Material Overrun ─────────────────────────────────────────
-  // Cumulative field report tonnage > estimated tonnage from Project Scorecards
-  for (const [jobNum, report] of Object.entries(reportMap)) {
-    const est = scorecardEstimates[jobNum];
-    if (!est || est.estTons === 0) continue;
-    const actualTons = (report.GAB_Tonnage || 0) + (report.Binder_Tonnage || 0) + (report.Topping_Tonnage || 0);
-    if (actualTons > est.estTons) {
-      const pctOver = Math.round(((actualTons - est.estTons) / est.estTons) * 100);
-      const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `MATERIAL OVERRUN — ${job.Job_Number} · ${job.Job_Name}: ${actualTons.toLocaleString()}t used / ${est.estTons.toLocaleString()}t budgeted (${pctOver}% over). PM: ${job.Project_Manager || 'N/A'}.` });
+  // Uses the live Scorecard "Est vs Actual" tab.
+  for (const [jobNum, row] of estVsActualByJob.entries()) {
+    const overrun = materialOverrun(row);
+    if (!overrun) continue;
+    const job = jobs.find(j => j.Job_Number === jobNum);
+    if (job) {
+      risks.push({
+        level: 'warning',
+        job: jobNum,
+        message: `MATERIAL OVERRUN — ${job.Job_Number} · ${job.Job_Name}: ${overrun.label} ${overrun.actual.toLocaleString()}t actual / ${overrun.estimated.toLocaleString()}t estimated (${overrun.pctOver.toFixed(2)}% over). PM: ${job.Project_Manager || 'N/A'}.`,
+      });
     }
   }
 
   // ── CONDITION 3: Days on Site Overrun ────────────────────────────────────
-  // Field report day count > allotted days from Project Scorecards
-  for (const [jobNum, report] of Object.entries(reportMap)) {
-    const est = scorecardEstimates[jobNum];
-    if (!est || est.estDays === 0) continue;
-    const actualDays = report.Days_Active || 0;
-    if (actualDays > est.estDays) {
-      const daysOver = actualDays - est.estDays;
-      const job = jobs.find(j => j.Job_Number === jobNum);
-      if (job) risks.push({ level: 'warning', job: jobNum, message: `DAYS OVERRUN — ${job.Job_Number} · ${job.Job_Name}: ${actualDays}d on site / ${est.estDays}d budgeted (${daysOver}d over). PM: ${job.Project_Manager || 'N/A'}.` });
-    }
-  }
+  // No live estimated-days column exists in the exported Scorecard tabs now.
 
   // ── CONDITION 4: Weather Risk (≥40% rain during working hours) ───────────
   // Look back 1 day (today in EST may already be tomorrow in UTC) and forward 3 days
@@ -551,17 +564,16 @@ function computeRisks(
 
 export default async function MasterDashboard() {
   // Fetch all data in parallel
-  const [jobs, fieldReports, samsara, scheduleData, projectScorecards, qboFinancials, arAging, reworkLog, ganttRows, crewDays] = await Promise.all([
+  const [jobs, fieldReports, samsara, scheduleData, qboFinancials, arAging, reworkLog, crewDays, estVsActualRows] = await Promise.all([
     getLiveJobs(),
     getLiveFieldReports(),
     getSamsaraData(),
     fetchScheduleData(),
-    fetchProjectScorecards(),
     fetchQboFinancials(),
     fetchArAging(),
     fetchReworkLog(),
-    fetchGanttSchedule(),
     fetchCrewDaysSold(),
+    fetchEstVsActual(),
   ]);
 
   // Build report map first — needed by both crossCheck and weather
@@ -574,16 +586,7 @@ export default async function MasterDashboard() {
     Promise.resolve(computeCrossCheck(samsara.vehicles || [], jobs, reportMap)),
   ]);
 
-  // Live scorecard throughput from API (replaces CSV fallback)
-  const liveActiveJobs = (projectScorecards as any[]).map((sc: any) => ({
-    actStone: parseFloat(sc.Act_Stone_Tons || '0') || 0,
-    actBinder: parseFloat(sc.Act_Binder_Tons || '0') || 0,
-    actTopping: parseFloat(sc.Act_Topping_Tons || '0') || 0,
-    actDays: parseFloat(sc.Act_Days_On_Site || '0') || 0,
-  })).filter((sc: any) => sc.actDays > 0);
-
-  // Load local estimates for risk engine
-  const scorecardEstimates = loadScorecardEstimates();
+  const estVsActualByJob = new Map(estVsActualRows.map(row => [row.Job_Number, row]));
 
   // Load prep board for vendor credit status
   let prepBoard: any[] = [];
@@ -614,7 +617,7 @@ export default async function MasterDashboard() {
   const upcomingJobs = jobs.filter((j: any) => !isJobClosed(j) && !isScheduledCurrently(j, scheduleData, jobs));
 
 
-  const totalPortfolio = jobs.reduce((sum: number, j: any) => sum + (j.Contract_Amount || 0), 0);
+  const totalPortfolio = qboFinancials.reduce((sum: number, q: any) => sum + (q.Act_Income || 0), 0);
   const totalBilled = jobs.reduce((sum: number, j: any) => sum + (j.Billed_To_Date || 0), 0);
   const overallPct = totalPortfolio > 0 ? Math.round((totalBilled / totalPortfolio) * 100) : 0;
 
@@ -790,7 +793,9 @@ export default async function MasterDashboard() {
   const reworkJobs = new Set(reworkFytd.map(r => r.Job_Number).filter(Boolean)).size;
 
 
-  const qboStale = qboFinancials.length === 0 || !qboFinancials[0]?.Updated_At;
+  const qboUpdatedAt = latestSheetDate([...qboFinancials.map(q => q.Updated_At), ...arAging.rows.map(r => r.Updated_At)]);
+  const qboStale = qboFinancials.length === 0 || !qboUpdatedAt || (Date.now() - qboUpdatedAt.getTime()) > 36 * 60 * 60 * 1000;
+  const qboStatusLabel = qboStale ? `QBO stale — ${formatSheetDate(qboUpdatedAt)}` : `QBO synced — ${formatSheetDate(qboUpdatedAt)}`;
 
   // ── Evidence payloads for ClickableKpiTile drawers ──────────
   const _qboUpdated = qboFinancials[0]?.Updated_At || '';
@@ -911,7 +916,7 @@ export default async function MasterDashboard() {
   const arOverdueEvidence = {
     title: 'A/R Overdue (91+ days)',
     headlineValue: `$${(arAging.totals.d91Plus / 1000).toFixed(0)}K`,
-    headlineCaption: `${arAging.totals.total > 0 ? ((arAging.totals.d91Plus / arAging.totals.total) * 100).toFixed(0) : 0}% of total A/R is past 90 days — chase these.`,
+    headlineCaption: `${arAging.totals.total > 0 ? ((arAging.totals.d91Plus / arAging.totals.total) * 100).toFixed(1) : '0.0'}% of total A/R is past 90 days — chase these.`,
     source: 'QBO A/R Aging daily email',
     sourceUpdatedAt: _arUpdated,
     explanation: 'Invoices past 90 days without payment. Anything here is a collection-risk item — money on the books but not in the bank. Orange tone kicks in above 10%, red above 20% of total A/R.',
@@ -941,7 +946,7 @@ export default async function MasterDashboard() {
   };
 
 
-  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, scorecardEstimates, prepBoard, scheduledJobs, samsara.vehicles || []);
+  const risks = computeRisks(jobs, reportMap, scheduleData, weatherAlerts, estVsActualByJob, prepBoard, scheduledJobs, samsara.vehicles || []);
 
 
   const criticalCount = risks.filter(r => r.level === 'critical').length;
@@ -996,7 +1001,7 @@ export default async function MasterDashboard() {
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Total Jobs</p>
             <p className="text-4xl font-display font-black text-[#3C4043]">{jobs.filter((j: any) => !isJobClosed(j)).length}</p>
-            <p className="text-xs text-[#757A7F] mt-1">Live — WIP sheet</p>
+            <p className="text-xs text-[#757A7F] mt-1">Scorecard · MASTER JOB INDEX</p>
           </div>
           {/* Active Jobs */}
           <div className="card p-5">
@@ -1014,7 +1019,7 @@ export default async function MasterDashboard() {
           <div className="card p-5">
             <p className="text-[10px] font-display font-bold uppercase tracking-widest text-[#757A7F] mb-2">Portfolio Value</p>
             <p className="text-4xl font-display font-black text-[#3C4043]">${(totalPortfolio / 1000000).toFixed(1)}M</p>
-            <p className="text-xs text-[#757A7F] mt-1">Total contract value</p>
+            <p className="text-xs text-[#757A7F] mt-1">QBO Act_Income sum</p>
           </div>
           {/* Billed To Date */}
           <div className="card p-5">
@@ -1140,7 +1145,7 @@ export default async function MasterDashboard() {
                 <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Portfolio Health — Financials</h2>
                 <p className="text-xs text-[#757A7F] mt-1">Live job P&amp;L, margin & receivables</p>
               </div>
-              <span className="text-[10px] font-bold uppercase text-[#757A7F]/70 tracking-widest">{qboStale ? 'Awaiting QBO Sync' : 'QBO Daily Sync'}</span>
+              <span className="text-[10px] font-bold uppercase text-[#757A7F]/70 tracking-widest">{qboStatusLabel}</span>
             </div>
             <div className="p-5 space-y-4">
 
@@ -1196,7 +1201,7 @@ export default async function MasterDashboard() {
                         <ClickableKpiTile evidence={arOverdueEvidence} className={`bg-${tone}/5 border border-${tone}/25 rounded-xl p-3 block`}>
                           <p className={`text-[10px] font-black uppercase tracking-widest text-${tone}/80 mb-1`}>A/R Overdue (91+ d)</p>
                           <p className={`text-xl font-black text-${tone}`}>${(arAging.totals.d91Plus/1000).toFixed(0)}K</p>
-                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{overduePct.toFixed(0)}% of total AR</p>
+                          <p className="text-[10px] text-[#757A7F]/70 mt-0.5">{overduePct.toFixed(1)}% of total AR</p>
                         </ClickableKpiTile>
                       );
                     })()}
@@ -1388,18 +1393,17 @@ export default async function MasterDashboard() {
           // Paving capacity = Asphalt Paving Days.
           // Target base-to-paving ratio: >= 1.2x so base crews stay ahead of paving.
           const t = crewDays.totals;
-          // If crew days fetch returned 0, use hardcoded values from the 12/10/25 Crew Days Sold export
-          const _stone = t.stoneBaseDays || 205;
-          const _mill = t.millMiscDays || 30;
-          const _curb = t.curbDays || 64;
-          const _pave = t.pavingDays || 62;
-          const _contract = t.totalContract || 10182590;
-          const _left = t.totalLeftToBill || 10182590;
-          const _jobCount = crewDays.jobs.length || 27;
+          const _stone = t.stoneBaseDays;
+          const _mill = t.millMiscDays;
+          const _curb = t.curbDays;
+          const _pave = t.pavingDays;
+          const _contract = t.totalContract;
+          const _left = t.totalLeftToBill;
+          const _jobCount = crewDays.jobs.length;
           const baseCapacity = _stone + _mill + _curb;
           const paveCapacity = _pave;
           const ratio = paveCapacity > 0 ? baseCapacity / paveCapacity : null;
-          const hasData = true; // hardcoded fallback guarantees data
+          const hasData = crewDays.jobs.length > 0;
           const isBehind = ratio != null && ratio < 1.2;
           const maxCap = Math.max(baseCapacity, paveCapacity, 1);
 
@@ -1436,7 +1440,7 @@ export default async function MasterDashboard() {
           const paveEvidence = {
             title: 'Paving Capacity Sold',
             headlineValue: `${paveCapacity} days`,
-            headlineCaption: `Asphalt paving booked across ${(crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length || 15)} jobs.`,
+            headlineCaption: `Asphalt paving booked across ${crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length} jobs.`,
             source: '25-26 Crew Days Sold',
             explanation: 'Total days of asphalt paving work sold across active jobs. Each day requires base prep to be complete first.',
             formula: 'Paving capacity = Asphalt Paving Days (summed across active jobs)',
@@ -1504,7 +1508,7 @@ export default async function MasterDashboard() {
                       <div className="h-3 bg-[#F1F3F4] rounded-full overflow-hidden">
                         <div className="h-full bg-gradient-to-r from-blue-500 to-blue-700 rounded-full" style={{ width: `${(paveCapacity / maxCap) * 100}%` }} />
                       </div>
-                      <p className="text-[9px] text-[#757A7F]/60 mt-1">{(crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length || 15)} jobs with paving days booked</p>
+                      <p className="text-[9px] text-[#757A7F]/60 mt-1">{crewDays.jobs.filter(j => j.Asphalt_Paving_Days > 0).length} jobs with paving days booked</p>
                     </div>
                   </ClickableKpiTile>
                 </div>
@@ -1570,7 +1574,7 @@ export default async function MasterDashboard() {
                     </div>
                     <div className="flex justify-between mt-2">
                       <span className="text-[10px] text-[#757A7F]/70">{job.Job_Number}</span>
-                      <span className="text-[10px] text-[#757A7F]/70">{formatDollars(job.Contract_Amount)}</span>
+                      <span className="text-[10px] text-[#757A7F]/70">{formatDollars(job.QBO_Act_Income || job.Contract_Amount)}</span>
                     </div>
                   </Link>
                 );
@@ -1585,7 +1589,7 @@ export default async function MasterDashboard() {
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70 mb-2">Full Portfolio</h2>
                   <p className="text-3xl font-black text-[#20BC64]">{jobs.length} Jobs</p>
-                  <p className="text-xs text-[#757A7F] mt-1">{formatDollars(jobs.reduce((s: number, j: any) => s + (j.Contract_Amount || 0), 0))} total contract value</p>
+                  <p className="text-xs text-[#757A7F] mt-1">{formatDollars(totalPortfolio)} QBO Act_Income</p>
                 <div className="grid grid-cols-3 gap-4 mt-3 pt-3 border-t border-[#F1F3F4]"><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Active</p><p className="text-lg font-black text-[#20BC64]">{scheduledJobs.length}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">States</p><p className="text-lg font-black text-[#3C4043]">{new Set(scheduledJobs.map((j: any)=>j.State)).size}</p></div><div><p className="text-[10px] font-bold uppercase text-[#757A7F]">Avg Billed</p><p className="text-lg font-black text-blue-500">{scheduledJobs.length ? Math.round(scheduledJobs.reduce((a: any,j: any)=>a+(parseFloat(String(j.Pct_Complete||j.Billed_Pct||0))),0)/scheduledJobs.length) : 0}%</p></div></div></div>
                 <span className="text-2xl text-[#757A7F]/60 group-hover:text-[#757A7F] transition-colors">→</span>
               </div>

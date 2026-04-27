@@ -132,78 +132,120 @@ export function fetchLevel10Meeting() {
 }
 
 export function fetchLiveJobs() {
-  return cached('liveJobs', 24 * 60 * 60 * 1000, async () => {
+  return cached('liveJobs', 5 * 60 * 1000, async () => {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${JOB_LIST_SHEET_ID}/export?format=csv&gid=${JOB_LIST_GID}`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
-    if (!response.ok) return [];
-    const csvText = await response.text();
-    const lines = csvText.split('\r\n').filter(l => l.trim());
-    if (lines.length < 2) return [];
+    const [response, masterJobs, qboFinancials] = await Promise.all([
+      fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } }).catch(() => null),
+      fetchMasterJobIndex(),
+      fetchQboFinancials(),
+    ]);
 
-    // Header-based column lookup (resilient to column reordering)
-    const headerCols = parseCSVLine(lines[0]);
-    const hdr: Record<string, number> = {};
-    headerCols.forEach((h, i) => {
-      const clean = h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-      hdr[clean] = i;
-    });
+    let legacyJobs: any[] = [];
+    if (response?.ok) {
+      const csvText = await response.text();
+      const lines = csvText.split(/\r\n|\n|\r/).filter(l => l.trim());
+      if (lines.length >= 2) {
+        const headerCols = parseCSVLine(lines[0]);
+        const hdr: Record<string, number> = {};
+        headerCols.forEach((h, i) => {
+          const clean = h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+          hdr[clean] = i;
+        });
 
-    // Find column indices by header name (case-insensitive, flexible matching)
-    const col = (name: string): number => {
-      // Exact match first
-      if (hdr[name.toLowerCase()] !== undefined) return hdr[name.toLowerCase()];
-      // Partial match
-      const key = Object.keys(hdr).find(k => k.includes(name.toLowerCase()));
-      return key !== undefined ? hdr[key] : -1;
-    };
+        const col = (name: string): number => {
+          if (hdr[name.toLowerCase()] !== undefined) return hdr[name.toLowerCase()];
+          const key = Object.keys(hdr).find(k => k.includes(name.toLowerCase()));
+          return key !== undefined ? hdr[key] : -1;
+        };
 
-    let iJobNum = col('job number');
-    if (iJobNum < 0) iJobNum = col('job #');
-    if (iJobNum < 0) iJobNum = 0; // Fallback: job numbers are always in column 0
-    const iCoords = col('coordinates');
-    const iState = col('state');
-    const iStatus = col('contract status');
-    const iStart = col('pending start');
-    const iFinish = col('finish');
-    const iGC = col('contractor');
-    const iContact = col('contractor scheduling');
-    const iPM = col('pm');
-    const iAmount = col('contract amount');
-    const iBilled = col('actual to date');
-    const iPct = col('% complete');
-    const iField = col('field events');
-    const iTrack = col('track surface');
-    const iMicromill = col('micromill');
+        let iJobNum = col('job number');
+        if (iJobNum < 0) iJobNum = col('job #');
+        if (iJobNum < 0) iJobNum = 0;
+        const iCoords = col('coordinates');
+        const iState = col('state');
+        const iStatus = col('contract status');
+        const iStart = col('pending start');
+        const iFinish = col('finish');
+        const iGC = col('contractor');
+        const iContact = col('contractor scheduling');
+        const iPM = col('pm');
+        const iAmount = col('contract amount');
+        const iBilled = col('actual to date');
+        const iPct = col('% complete');
+        const iField = col('field events');
+        const iTrack = col('track surface');
+        const iMicromill = col('micromill');
 
-    // Job Name: check "job name" first, then "unhide", then fallback to col 1
-    let iName = col('job name');
-    if (iName < 0) iName = col('unhide');
-    if (iName < 0) iName = 2; // last resort
+        let iName = col('job name');
+        if (iName < 0) iName = col('unhide');
+        if (iName < 0) iName = 2;
 
-    const g = (cols: string[], idx: number): string => (idx >= 0 && idx < cols.length) ? (cols[idx]?.trim() || '') : '';
+        const g = (cols: string[], idx: number): string => (idx >= 0 && idx < cols.length) ? (cols[idx]?.trim() || '') : '';
 
-    return lines.slice(2).map(line => {
-      const cols = parseCSVLine(line);
-      const jobNumber = g(cols, iJobNum);
-      if (!jobNumber || !jobNumber.match(/^\d{2}-\d{3}/)) return null;
-      const coordsRaw = g(cols, iCoords).replace(/"/g, '');
-      let lat = '', lng = '';
-      if (coordsRaw) { const parts = coordsRaw.split(','); lat = parts[0]?.trim() || ''; lng = parts[1]?.trim() || ''; }
+        legacyJobs = lines.slice(2).map(line => {
+          const cols = parseCSVLine(line);
+          const jobNumber = g(cols, iJobNum);
+          if (!jobNumber || !jobNumber.match(/^\d{2,3}-\d{3}/)) return null;
+          const coordsRaw = g(cols, iCoords).replace(/"/g, '');
+          let lat = '', lng = '';
+          if (coordsRaw) { const parts = coordsRaw.split(','); lat = parts[0]?.trim() || ''; lng = parts[1]?.trim() || ''; }
+          return {
+            Job_Number: jobNumber, Job_Name: g(cols, iName), Lat: lat, Lng: lng,
+            State: g(cols, iState), Status: g(cols, iStatus) || 'Pending',
+            Start_Date: g(cols, iStart), Finish_Date: g(cols, iFinish),
+            General_Contractor: g(cols, iGC), Point_Of_Contact: g(cols, iContact),
+            Project_Manager: g(cols, iPM),
+            Contract_Amount: parseFloat((g(cols, iAmount) || '0').replace(/[$,\s]/g, '')) || 0,
+            Billed_To_Date: parseFloat((g(cols, iBilled) || '0').replace(/[$,\s]/g, '')) || 0,
+            Pct_Complete: parseFloat((g(cols, iPct) || '0%').replace('%', '').trim()) || 0,
+            Location: g(cols, iState),
+            Field_Events: g(cols, iField), Track_Surface: g(cols, iTrack), Micromill: g(cols, iMicromill),
+          };
+        }).filter(Boolean);
+      }
+    }
+
+    const legacyByJob = new Map<string, any>(legacyJobs.map(j => [j.Job_Number, j]));
+    const masterByJob = new Map<string, MasterJobIndexRow>(masterJobs.map(j => [j.Job_Number, j]));
+    const qboByJob = new Map<string, QboJobFinancials>(qboFinancials.filter(q => q.Job_Number).map(q => [q.Job_Number, q]));
+    const jobNumbers = new Set<string>([...legacyByJob.keys(), ...masterByJob.keys()]);
+
+    return Array.from(jobNumbers).map(jobNumber => {
+      const legacy = legacyByJob.get(jobNumber) || {};
+      const master = masterByJob.get(jobNumber);
+      const qbo = qboByJob.get(jobNumber);
+      const scorecardContract = master?.Contract_Amount || 0;
+      const qboIncome = qbo?.Act_Income || 0;
+      const contractAmount = scorecardContract > 0 ? scorecardContract : (qboIncome > 0 ? qboIncome : (legacy.Contract_Amount || 0));
+      const billedToDate = qboIncome > 0 ? qboIncome : (legacy.Billed_To_Date || 0);
+      const pctComplete = contractAmount > 0 && billedToDate > 0
+        ? Math.round((billedToDate / contractAmount) * 1000) / 10
+        : (legacy.Pct_Complete || 0);
+
       return {
-        Job_Number: jobNumber, Job_Name: g(cols, iName), Lat: lat, Lng: lng,
-        State: g(cols, iState), Status: g(cols, iStatus) || 'Pending',
-        Start_Date: g(cols, iStart), Finish_Date: g(cols, iFinish),
-        General_Contractor: g(cols, iGC), Point_Of_Contact: g(cols, iContact),
-        Project_Manager: g(cols, iPM),
-        Contract_Amount: parseFloat((g(cols, iAmount) || '0').replace(/[$,\s]/g, '')) || 0,
-        Billed_To_Date: parseFloat((g(cols, iBilled) || '0').replace(/[$,\s]/g, '')) || 0,
-        Pct_Complete: parseFloat((g(cols, iPct) || '0%').replace('%', '').trim()) || 0,
-        Location: g(cols, iState),
-        Field_Events: g(cols, iField), Track_Surface: g(cols, iTrack), Micromill: g(cols, iMicromill),
+        ...legacy,
+        Job_Number: jobNumber,
+        Job_Name: master?.Job_Name || legacy.Job_Name || qbo?.Project_Name || '',
+        Status: master?.Job_Status || legacy.Status || 'Pending',
+        Project_Manager: master?.PM || legacy.Project_Manager || '',
+        Contract_Amount: contractAmount,
+        Billed_To_Date: billedToDate,
+        Pct_Complete: pctComplete,
+        Location: legacy.Location || legacy.State || '',
+        Estimated_GAB_Tons: master?.Estimated_GAB_Tons || 0,
+        Estimated_Binder_Tons: master?.Estimated_Binder_Tons || 0,
+        Estimated_Topping_Tons: master?.Estimated_Topping_Tons || 0,
+        Estimated_Asphalt_Tons: master?.Estimated_Asphalt_Tons || 0,
+        QBO_Act_Cost: qbo?.Act_Cost || 0,
+        QBO_Act_Income: qboIncome,
+        QBO_Updated_At: qbo?.Updated_At || '',
       };
-    }).filter(Boolean);
-  } catch { return []; }
+    });
+  } catch (error) {
+    console.error('[fetchLiveJobs] failed:', error);
+    return [];
+  }
   });
 }
 
@@ -1381,7 +1423,7 @@ export interface QboArSummary {
 
 async function fetchScorecardTabCsv(tabName: string): Promise<string[][]> {
   const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`;
-  const res = await fetch(url, { next: { revalidate: 86400 } });
+  const res = await fetch(url, { next: { revalidate: 300 } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const text = await res.text();
   return text
@@ -1395,6 +1437,91 @@ function n(v: string | undefined): number {
   const s = String(v).replace(/[$,\s"]/g, '').replace(/%$/, '');
   const x = parseFloat(s);
   return isNaN(x) ? 0 : x;
+}
+
+export interface MasterJobIndexRow {
+  Job_Number: string;
+  Job_Name: string;
+  Job_Status: string;
+  Contract_Amount: number;
+  Estimated_GAB_Tons: number;
+  Estimated_Binder_Tons: number;
+  Estimated_Topping_Tons: number;
+  Estimated_Asphalt_Tons: number;
+  PM: string;
+  PM_Email: string;
+}
+
+export interface EstVsActualRow {
+  Job_Number: string;
+  Job_Name: string;
+  PM: string;
+  Estimated_GAB_Tons: number;
+  Actual_GAB_Tons: number;
+  Estimated_Binder_Tons: number;
+  Actual_Binder_Tons: number;
+  Estimated_Topping_Tons: number;
+  Actual_Topping_Tons: number;
+  Estimated_Asphalt_Tons: number;
+  Actual_Asphalt_Tons: number;
+  Man_Hours: number;
+  Status: string;
+}
+
+function idxByHeader(headers: string[], name: string): number {
+  const target = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return headers.findIndex(h => h.toLowerCase().replace(/[^a-z0-9]+/g, '') === target);
+}
+
+export async function fetchMasterJobIndex(): Promise<MasterJobIndexRow[]> {
+  try {
+    const rows = await fetchScorecardTabCsv('MASTER JOB INDEX');
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const get = (r: string[], name: string) => r[idxByHeader(hdr, name)] || '';
+    return rows.slice(1).map(r => ({
+      Job_Number: get(r, 'Job #').trim(),
+      Job_Name: get(r, 'Job Name').trim(),
+      Job_Status: get(r, 'Job Status').trim(),
+      Contract_Amount: n(get(r, 'Contract Amount')),
+      Estimated_GAB_Tons: n(get(r, 'Estimated GAB Tons')),
+      Estimated_Binder_Tons: n(get(r, 'Estimated Binder Tons')),
+      Estimated_Topping_Tons: n(get(r, 'Estimated Topping Tons')),
+      Estimated_Asphalt_Tons: n(get(r, 'Estimated Asphalt Tons')),
+      PM: get(r, 'PM').trim(),
+      PM_Email: get(r, 'PM Email').trim(),
+    })).filter(r => /^\d{2,3}-\d{3}/.test(r.Job_Number));
+  } catch (error) {
+    console.error('[fetchMasterJobIndex] failed:', error);
+    return [];
+  }
+}
+
+export async function fetchEstVsActual(): Promise<EstVsActualRow[]> {
+  try {
+    const rows = await fetchScorecardTabCsv('Est vs Actual');
+    if (rows.length < 2) return [];
+    const hdr = rows[0].map(c => c.trim());
+    const get = (r: string[], name: string) => r[idxByHeader(hdr, name)] || '';
+    return rows.slice(1).map(r => ({
+      Job_Number: get(r, 'Job #').trim(),
+      Job_Name: get(r, 'Job Name').trim(),
+      PM: get(r, 'PM').trim(),
+      Estimated_GAB_Tons: n(get(r, 'Estimated GAB Tons')),
+      Actual_GAB_Tons: n(get(r, 'Actual GAB Tons')),
+      Estimated_Binder_Tons: n(get(r, 'Estimated Binder Tons')),
+      Actual_Binder_Tons: n(get(r, 'Actual Binder Tons')),
+      Estimated_Topping_Tons: n(get(r, 'Estimated Topping Tons')),
+      Actual_Topping_Tons: n(get(r, 'Actual Topping Tons')),
+      Estimated_Asphalt_Tons: n(get(r, 'Estimated Asphalt Tons')),
+      Actual_Asphalt_Tons: n(get(r, 'Actual Asphalt Tons')),
+      Man_Hours: n(get(r, 'Man Hours')),
+      Status: get(r, 'Status').trim(),
+    })).filter(r => /^\d{2,3}-\d{3}/.test(r.Job_Number));
+  } catch (error) {
+    console.error('[fetchEstVsActual] failed:', error);
+    return [];
+  }
 }
 
 export async function fetchQboFinancials(): Promise<QboJobFinancials[]> {
@@ -1459,22 +1586,7 @@ export async function fetchArAging(): Promise<QboArSummary> {
       Updated_At: (r[iUpd] || '').trim(),
     }));
 
-    const totalRow = parsed.find(r => r.Job_Number === '__TOTAL__');
     const lines = parsed.filter(r => r.Job_Number !== '__TOTAL__');
-    if (totalRow) {
-      return {
-        rows: lines,
-        totals: {
-          current: totalRow.Current,
-          d1_30: totalRow.Days_1_30,
-          d31_60: totalRow.Days_31_60,
-          d61_90: totalRow.Days_61_90,
-          d91Plus: totalRow.Days_91_Plus,
-          total: totalRow.Total,
-        },
-      };
-    }
-    // No synthetic total row — recompute
     const totals = lines.reduce(
       (acc, r) => ({
         current: acc.current + r.Current,
@@ -1839,19 +1951,9 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
     totals: { millMiscDays: 0, curbDays: 0, stoneBaseDays: 0, pavingDays: 0, fieldEventsDays: 0, totalWeeks: 0, totalContract: 0, totalBilled: 0, totalLeftToBill: 0 },
   };
   try {
-    // Read local CSV FIRST (guaranteed to work on Vercel), then try sheet as override
-    const fs5 = await import('fs'); const path5 = await import('path');
-    let text = '';
-    const csvPath = path5.join(process.cwd(), 'data', 'crew_days_sold.csv');
-    if (fs5.existsSync(csvPath)) {
-      text = fs5.readFileSync(csvPath, 'utf-8');
-    }
-    // If no local CSV, try sheet
-    if (!text) {
-      const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
-      const res = await fetch(url, { next: { revalidate: 86400 } }).catch(() => null);
-      if (res && res.ok) text = await res.text();
-    }
+    const url = `https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('25-26 Crew Days Sold')}`;
+    const res = await fetch(url, { next: { revalidate: 300 } }).catch(() => null);
+    const text = res && res.ok ? await res.text() : '';
     if (!text || text.includes('<!DOCTYPE')) return empty;
 
     const lines = text.split(/\r\n|\n|\r/).filter(l => l.trim());
