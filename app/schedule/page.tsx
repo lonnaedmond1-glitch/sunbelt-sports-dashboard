@@ -1,16 +1,9 @@
 import React from 'react';
 import Link from 'next/link';
-import MapWrapper from '@/components/MapWrapper';
-import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchVisionLinkAssets, fetchLiveRentals } from '@/lib/sheets-data';
+import { fetchScheduleData, fetchLiveJobs, fetchLevel10Meeting, fetchLiveRentals } from '@/lib/sheets-data';
 import { getGlobalWeather } from '@/app/api/weather/route';
-import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 
-export const revalidate = 86400; // Daily ISR
-
-const getBaseUrl = () => {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-};
+export const revalidate = 300;
 
 async function getScheduleData() {
   return fetchScheduleData();
@@ -18,10 +11,6 @@ async function getScheduleData() {
 
 async function getWeatherData() {
   return getGlobalWeather();
-}
-
-async function getSamsaraData() {
-  return getGlobalSamsara();
 }
 
 async function getJobsData() {
@@ -48,36 +37,11 @@ const PRIMARY_CREWS = ['Rosendo / P1', 'Julio / B1', 'Martin / B2', 'Juan / B3',
 const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default async function SchedulePage() {
-  const [schedule, weather, samsara, jobs, level10, vlAssets, liveRentals] = await Promise.all([
-    getScheduleData(), getWeatherData(), getSamsaraData(), getJobsData(), getLevel10Data(), fetchVisionLinkAssets(), fetchLiveRentals()
+  const [schedule, weather, jobs, level10, liveRentals] = await Promise.all([
+    getScheduleData(), getWeatherData(), getJobsData(), getLevel10Data(), fetchLiveRentals()
   ]);
 
   const weatherAlerts = (weather.alerts || []).slice(0, 8);
-  const vehicles = samsara.vehicles || [];
-
-  // Build set of scheduled job names from current + next week
-  const scheduledJobRefs = new Set<string>();
-  [...(schedule.currentWeek?.days || []), ...(schedule.nextWeek?.days || [])].forEach((d: any) =>
-    (d.assignments || []).forEach((a: any) => {
-      if (!a.decoded?.isOff && a.decoded?.jobRef) scheduledJobRefs.add(a.decoded.jobRef.toLowerCase());
-    })
-  );
-
-  // Build weather by date lookup
-  const weatherByDate: Record<string, any[]> = {};
-  for (const loc of (weather.locations || [])) {
-    for (const f of (loc.forecasts || [])) {
-      if (!weatherByDate[f.date]) weatherByDate[f.date] = [];
-      weatherByDate[f.date].push({ ...f, jobs: loc.jobs });
-    }
-  }
-
-  // Get worst weather per day (highest precip prob)
-  const getDayWeather = (dateStr: string) => {
-    const forecasts = weatherByDate[dateStr] || [];
-    if (forecasts.length === 0) return null;
-    return forecasts.reduce((worst: any, f: any) => (!worst || f.precipProb > worst.precipProb) ? f : worst, null);
-  };
 
   // Per-job weather icon lookup — always shows weather when data available
   // Weather API returns loc.jobs as array of Job_Number strings (e.g. ["26-040", "25-300"])
@@ -115,11 +79,6 @@ export default async function SchedulePage() {
     return null;
   };
 
-  // Job locations for map
-  const jobLocations = jobs.filter((j: any) => j.Lat && j.Lng).map((j: any) => ({
-    jobNumber: j.Job_Number, name: j.Job_Name, lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
-  }));
-
   // Rental equipment from live Google Sheets (Sunbelt + United)
   const rentalEquipment = (liveRentals || []).map((r: any) => ({
     jobName: r.jobName || '',
@@ -136,20 +95,6 @@ export default async function SchedulePage() {
     if (!equipByJob[key]) equipByJob[key] = { jobName: key, items: [] };
     equipByJob[key].items.push(eq);
   }
-
-  // Map Make/Model to readable equipment type
-  const getEquipType = (make: string, model: string) => {
-    const m = make.toUpperCase();
-    const mod = model.toUpperCase();
-    if (m === 'BOBCAT' && (mod.startsWith('T') || mod.startsWith('S7'))) return 'Skid Steer';
-    if (m === 'BOBCAT' && mod.startsWith('E')) return 'Mini Excavator';
-    if (m === 'DYNAPAC' || m === 'SAKAI') return 'Roller';
-    if (m === 'LEEBOY' && mod.includes('SCREEN')) return 'Screening Plant';
-    if (m === 'LEEBOY') return 'Paver';
-    if (m === 'BASIC') return 'Tack Truck';
-    if (m === 'INTERNATIONAL') return 'Service Truck';
-    return `${make} ${model}`;
-  };
 
   // Build equipment map pins by matching rental job names to jobs with coordinates
   const equipmentMapPins: { name: string; lat: number; lng: number; address: string }[] = [];
@@ -171,15 +116,6 @@ export default async function SchedulePage() {
       });
     }
   }
-
-  // Filter job locations to only scheduled jobs
-  const scheduledJobLocations = jobLocations.filter((j: any) => {
-    const name = j.name.toLowerCase();
-    return Array.from(scheduledJobRefs).some(ref => {
-      const refWord = ref.split(' ')[0];
-      return refWord.length > 3 && name.includes(refWord);
-    });
-  });
 
   // Resolve Job Links even when Gantt matching fails
   // Use jobRef (just the job name portion) for name matching to avoid vendor false matches
@@ -274,7 +210,6 @@ export default async function SchedulePage() {
                         const hasDetail = !!(assignment.decoded.activity || assignment.decoded.state || assignment.decoded.supplier);
                         if (isLoneName && !hasDetail) assignment = undefined;
                       }
-                      const decoded = assignment?.decoded;
                       return (
                         <td key={day} className={`px-2 py-1.5 border-r border-[#F1F3F4] align-top ${dayData?.isToday ? 'bg-[#20BC64]/5' : ''}`}>
                           {assignment ? (() => {

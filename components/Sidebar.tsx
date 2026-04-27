@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const navItems = [
@@ -21,7 +22,7 @@ export default function Sidebar() {
     <aside className="fixed left-0 top-0 h-full w-16 hover:w-52 bg-[#202325] z-[60] flex flex-col transition-all duration-300 group overflow-hidden shadow-xl bg-turf-lines">
       {/* Logo */}
       <div className="flex items-center justify-center px-4 py-5 border-b border-white/10 flex-shrink-0">
-        <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-8 w-auto flex-shrink-0" style={{ filter: 'brightness(0) invert(1)' }} />
+        <Image src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" width={128} height={32} className="h-8 w-auto flex-shrink-0" style={{ filter: 'brightness(0) invert(1)' }} />
       </div>
 
       {/* Nav Items */}

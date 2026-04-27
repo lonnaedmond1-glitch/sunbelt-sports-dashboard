@@ -86,8 +86,8 @@ export function fetchLevel10Meeting() {
       const csvText = await response.text();
       const lines = csvText.split('\r\n');
       
-      let screaming: string[] = [];
-      let looseEnds: { task: string, who: string, details: string }[] = [];
+      const screaming: string[] = [];
+      const looseEnds: { task: string, who: string, details: string }[] = [];
       
       let inScreaming = false;
       let inLooseEnds = false;
@@ -425,8 +425,8 @@ export function fetchLiveRentals() {
 
       // ── CSV FALLBACK: if Google Sheet returned nothing, read local CSVs ──
       if (rentals.length === 0) {
-        const fs = require('fs');
-        const path = require('path');
+        const fs = await import('fs');
+        const path = await import('path');
         const dataDir = path.join(process.cwd(), 'data');
 
         // Equipment_On_Rent_Latest.csv — Sunbelt Rentals detailed export

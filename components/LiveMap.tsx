@@ -240,7 +240,7 @@ export default function LiveMap({ jobs, vehicles }: Props) {
     return () => {
       if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
     };
-  }, []);
+  }, [jobs, vehicles]);
 
   return (
     <>

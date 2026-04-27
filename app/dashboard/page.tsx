@@ -10,11 +10,6 @@ import { formatDollars } from '@/lib/format';
 
 export const revalidate = 300;
 
-const getBaseUrl = () => {
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return 'http://localhost:3000';
-};
-
 const getLiveJobs = fetchLiveJobs;
 const getLiveFieldReports = fetchLiveFieldReports;
 
@@ -108,7 +103,7 @@ async function getSamsaraData() {
       }
       return 60;
     };
-    let hosParsed: any[] = [];
+    const hosParsed: any[] = [];
     if (hosRes.ok) {
       const rawJson = await hosRes.json();
       const rawRows: any[] = rawJson?.data || [];
@@ -164,52 +159,6 @@ async function getSamsaraData() {
   } catch { return { vehicles: [], crews: [], hos: [], configured: false }; }
 }
 
-
-// Cross-check is now inlined — no more self-referencing fetch
-function computeCrossCheck(vehicles: any[], jobs: any[], reportMap: Record<string, any>) {
-  const PROXIMITY_MILES = 0.5;
-  const geoJobs = jobs
-    .filter((j: any) => j.Lat && j.Lng && !isNaN(parseFloat(j.Lat)))
-    .map((j: any) => ({
-      Job_Number: j.Job_Number, Job_Name: j.Job_Name,
-      lat: parseFloat(j.Lat), lng: parseFloat(j.Lng),
-      PM: j.Project_Manager, Status: j.Status,
-      Pct_Complete: j.Pct_Complete || 0, Start_Date: j.Start_Date,
-      hasReport: !!reportMap[j.Job_Number],
-    }));
-
-  const vehiclesOnSite: any[] = [];
-  const onSiteNoReport: any[] = [];
-  const scheduledNoActivity: any[] = [];
-
-  for (const vehicle of vehicles) {
-    if (!vehicle.lat || !vehicle.lng) continue;
-    for (const job of geoJobs) {
-      const dist = haversineDistance(vehicle.lat, vehicle.lng, job.lat, job.lng);
-      if (dist <= PROXIMITY_MILES) {
-        const match = { vehicle: vehicle.name, vehicleAddress: vehicle.address, job: job.Job_Number, jobName: job.Job_Name, pm: job.PM, distance: Math.round(dist * 5280), hasReport: job.hasReport };
-        vehiclesOnSite.push(match);
-        if (!job.hasReport) onSiteNoReport.push(match);
-      }
-    }
-  }
-
-  const today = new Date();
-  for (const job of geoJobs) {
-    if (!job.Start_Date) continue;
-    const parts = job.Start_Date.split('/');
-    if (parts.length < 3) continue;
-    let year = parseInt(parts[2]); if (year < 100) year += 2000;
-    const startDate = new Date(year, parseInt(parts[0]) - 1, parseInt(parts[1]));
-    if (isNaN(startDate.getTime()) || startDate > today) continue;
-    const hasVehicle = vehiclesOnSite.some(v => v.job === job.Job_Number);
-    if (!hasVehicle && !job.hasReport) {
-      scheduledNoActivity.push({ job: job.Job_Number, jobName: job.Job_Name, pm: job.PM });
-    }
-  }
-
-  return { vehiclesOnSite, onSiteNoReport, scheduledNoActivity, configured: vehicles.length > 0 };
-}
 
 async function getWeatherAlerts(jobsPreloaded: any[]) {
   const THRESHOLD = 40;
@@ -434,11 +383,6 @@ function computeRisks(
   const now = new Date();
   // Use Eastern time — UTC can flip to next day after 8PM EDT
   const eastNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const todayISO = `${eastNow.getFullYear()}-${String(eastNow.getMonth()+1).padStart(2,'0')}-${String(eastNow.getDate()).padStart(2,'0')}`;
-
-  const estHour = eastNow.getHours();
-  const estMinute = eastNow.getMinutes();
-  const timeStr12 = `${estHour > 12 ? estHour - 12 : estHour || 12}:${estMinute.toString().padStart(2, '0')} ${estHour >= 12 ? 'PM' : 'AM'}`;
 
   // ── CONDITION 1: Missing Field Report from YESTERDAY's schedule ─────────
   const yesterdayDate = new Date(eastNow);
@@ -576,15 +520,12 @@ export default async function MasterDashboard() {
     fetchEstVsActual(),
   ]);
 
-  // Build report map first — needed by both crossCheck and weather
+  // Build report map first — needed by weather/risk checks
   const reportMap: Record<string, any> = {};
   for (const r of fieldReports) reportMap[r.Job_Number] = r;
 
-  // Run weather + cross-check with pre-loaded data (eliminates 4+ duplicate fetches)
-  const [weatherAlerts, crossCheck] = await Promise.all([
-    getWeatherAlerts(jobs),
-    Promise.resolve(computeCrossCheck(samsara.vehicles || [], jobs, reportMap)),
-  ]);
+  // Run weather with pre-loaded data (eliminates duplicate job fetches)
+  const weatherAlerts = await getWeatherAlerts(jobs);
 
   const estVsActualByJob = new Map(estVsActualRows.map(row => [row.Job_Number, row]));
 
@@ -608,34 +549,16 @@ export default async function MasterDashboard() {
   // ScheduledStatus = TRUE: appears on master schedule within ±7 days of today
   const scheduledJobs = jobs.filter((j: any) => !isJobClosed(j) && isScheduledCurrently(j, scheduleData, jobs));
 
-  // On schedule this week but no field report yet
-  const scheduledNotMobilized = jobs.filter((j: any) =>
-    !isJobClosed(j) && isScheduledCurrently(j, scheduleData, jobs) && !reportMap[j.Job_Number]
-  );
-
-  // Not on current schedule window
-  const upcomingJobs = jobs.filter((j: any) => !isJobClosed(j) && !isScheduledCurrently(j, scheduleData, jobs));
-
-
   const totalPortfolio = qboFinancials.reduce((sum: number, q: any) => sum + (q.Act_Income || 0), 0);
   const totalBilled = jobs.reduce((sum: number, j: any) => sum + (j.Billed_To_Date || 0), 0);
   const overallPct = totalPortfolio > 0 ? Math.round((totalBilled / totalPortfolio) * 100) : 0;
 
-  // Scorecard aggregates
-  const totalAsphaltLogged = fieldReports.reduce((s: number, r: any) => s + (r.Asphalt_Actual || 0), 0);
-  const totalBaseLogged = fieldReports.reduce((s: number, r: any) => s + (r.Base_Actual || 0), 0);
-  // FYTD man-hours: FY starts Oct 1 (per Jackie 4/9). If today is before Oct 1, FY started Oct 1 last year.
+  // FY starts Oct 1 (per Jackie 4/9). If today is before Oct 1, FY started Oct 1 last year.
   const _now = new Date();
   const _fyStart = _now.getMonth() >= 9 /* Oct=9 */
     ? new Date(_now.getFullYear(), 9, 1)
     : new Date(_now.getFullYear() - 1, 9, 1);
   const _fyStartISO = _fyStart.toISOString().slice(0, 10);
-  const totalManHours = fieldReports.reduce((s: number, r: any) => {
-    const lastDate = (r.Last_Report_Date || '').slice(0, 10);
-    if (lastDate && lastDate >= _fyStartISO) return s + (r.Total_Man_Hours || 0);
-    return s;
-  }, 0);
-  const totalCrew = fieldReports.reduce((s: number, r: any) => s + (r.Crew_Count || 0), 0);
 
   // ── Fleet at Jobsites: trucks within 2 miles of any job ──────────────────
   const fleetAtJobsites = samsara.configured ? samsara.vehicles.filter((v: any) => {
@@ -705,12 +628,8 @@ export default async function MasterDashboard() {
         _contract: contract,
       };
     });
-  const qboOverhead = qboFinancials.filter(q => !q.Job_Number || !wipJobNums.has(q.Job_Number));
-
-  // Margin at Risk: sum of negative profits + jobs under 15% margin
-  const UNDER_MARGIN = 0.15;
+  // Margin at Risk: sum of negative profits
   const lossJobs = qboWip.filter(q => q.Profit < 0);
-  const underMarginJobs = qboWip.filter(q => q.Est_Income > 0 && q.Profit_Margin < UNDER_MARGIN);
   const marginAtRiskDollars = lossJobs.reduce((s, q) => s + Math.abs(q.Profit), 0);
 
   // Top money loser (worst single job by dollar loss)
@@ -794,21 +713,14 @@ export default async function MasterDashboard() {
 
 
   const qboUpdatedAt = latestSheetDate([...qboFinancials.map(q => q.Updated_At), ...arAging.rows.map(r => r.Updated_At)]);
+  // Server-rendered status needs request time, but the React purity rule cannot tell this is a Server Component.
+  // eslint-disable-next-line react-hooks/purity
   const qboStale = qboFinancials.length === 0 || !qboUpdatedAt || (Date.now() - qboUpdatedAt.getTime()) > 36 * 60 * 60 * 1000;
   const qboStatusLabel = qboStale ? `QBO stale — ${formatSheetDate(qboUpdatedAt)}` : `QBO synced — ${formatSheetDate(qboUpdatedAt)}`;
 
   // ── Evidence payloads for ClickableKpiTile drawers ──────────
   const _qboUpdated = qboFinancials[0]?.Updated_At || '';
   const _arUpdated = arAging.rows[0]?.Updated_At || '';
-
-  const _marginAtRiskRows = lossJobs
-    .sort((a, b) => a.Profit - b.Profit)
-    .map(q => ({
-      label: `${q.Job_Number}${q.Project_Name ? ' · ' + q.Project_Name : ''}`,
-      value: `-$${Math.abs(q.Profit / 1000).toFixed(0)}K`,
-      detail: `${(q.Profit_Margin * 100).toFixed(0)}% margin · $${(q.Act_Cost / 1000).toFixed(0)}K cost on $${(q.Act_Income / 1000).toFixed(0)}K revenue`,
-      href: q.Job_Number ? `/jobs/${q.Job_Number}` : undefined,
-    }));
 
   const _topLoserRows = topLoser ? [{
     label: `${topLoser.Job_Number}${topLoser.Project_Name ? ' · ' + topLoser.Project_Name : ''}`,
@@ -824,15 +736,6 @@ export default async function MasterDashboard() {
       label: `${r.Job_Number || r.Project_Name}${r.Customer ? ' · ' + r.Customer : ''}`,
       value: `$${(r.Days_91_Plus / 1000).toFixed(1)}K`,
       detail: r.Project_Name && r.Project_Name !== r.Job_Number ? r.Project_Name : '',
-      href: r.Job_Number && /^\d{2,3}-\d{3}/.test(r.Job_Number) ? `/jobs/${r.Job_Number}` : undefined,
-    }));
-
-  const _arAllRows = arAging.rows
-    .sort((a, b) => b.Total - a.Total)
-    .map(r => ({
-      label: `${r.Job_Number || r.Project_Name}${r.Customer ? ' · ' + r.Customer : ''}`,
-      value: `$${(r.Total / 1000).toFixed(1)}K`,
-      detail: `Current $${(r.Current / 1000).toFixed(1)}K · 1–30d $${(r.Days_1_30 / 1000).toFixed(1)}K · 31–60d $${(r.Days_31_60 / 1000).toFixed(1)}K · 61–90d $${(r.Days_61_90 / 1000).toFixed(1)}K · 91+d $${(r.Days_91_Plus / 1000).toFixed(1)}K`,
       href: r.Job_Number && /^\d{2,3}-\d{3}/.test(r.Job_Number) ? `/jobs/${r.Job_Number}` : undefined,
     }));
 
@@ -854,31 +757,6 @@ export default async function MasterDashboard() {
       href: r.Job_Number ? `/jobs/${r.Job_Number}` : undefined,
     }));
 
-  const _coRows = (jobs as any[])
-    .map((j: any) => ({ job: j, co: (() => {
-      const raw = j.Change_Orders || j.CO_Added || j['CO Added'] || 0;
-      return typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/[$,\s]/g, '')) || 0;
-    })() }))
-    .filter(x => x.co > 0)
-    .sort((a, b) => b.co - a.co)
-    .map(x => ({
-      label: `${x.job.Job_Number}${x.job.Job_Name ? ' · ' + x.job.Job_Name : ''}`,
-      value: `+$${(x.co / 1000).toFixed(1)}K`,
-      detail: `PM ${x.job.Project_Manager || 'N/A'} · ${x.job.State || ''}`,
-      href: `/jobs/${x.job.Job_Number}`,
-    }));
-
-  const marginAtRiskEvidence = {
-    title: 'Margin at Risk',
-    headlineValue: `$${(marginAtRiskDollars / 1000).toFixed(0)}K`,
-    headlineCaption: `${lossJobs.length} active job${lossJobs.length === 1 ? '' : 's'} currently losing money (actual cost exceeds actual revenue).`,
-    source: 'QBO Est vs Actuals daily email',
-    sourceUpdatedAt: _qboUpdated,
-    explanation: 'Sum of the absolute loss from every job where actual profit is negative in QBO. A job counts as "losing money" when booked costs have already exceeded booked revenue. Admin/overhead jobs are included if billed as a project in QBO.',
-    formula: 'marginAtRisk = sum( abs(Profit) ) for each job where Profit < 0',
-    rows: _marginAtRiskRows,
-  };
-
   const topLoserEvidence = {
     title: 'Top Money Loser',
     headlineValue: topLoser && topLoser.Profit < 0 ? `$${(topLoser.Profit / 1000).toFixed(0)}K` : 'None',
@@ -890,27 +768,6 @@ export default async function MasterDashboard() {
     explanation: 'The single active job with the most negative actual profit in QBO today. Click through to the job detail page for the full breakdown. The goal is always to have this tile read "None".',
     formula: 'topLoser = min( Profit ) across active WIP jobs',
     rows: _topLoserRows,
-  };
-
-  const coEvidence = {
-    title: 'Change Orders FYTD',
-    headlineValue: `+$${(fyCoTotal / 1000).toFixed(0)}K`,
-    headlineCaption: `Incremental revenue captured through approved change orders since Oct 1, ${_fyStart.getFullYear()}.`,
-    source: 'WIP sheet · Change_Orders column',
-    explanation: 'Sum of the Change_Orders column across the WIP sheet. Populate this column in your WIP as change orders get approved. Value flows in on the next ISR refresh.',
-    formula: 'FYTD CO = sum( Change_Orders ) across all active jobs',
-    rows: _coRows,
-  };
-
-  const arOutstandingEvidence = {
-    title: 'A/R Outstanding',
-    headlineValue: `$${(arAging.totals.total / 1000000).toFixed(2)}M`,
-    headlineCaption: 'Total outstanding receivables per QBO A/R Aging Summary.',
-    source: 'QBO A/R Aging daily email',
-    sourceUpdatedAt: _arUpdated,
-    explanation: 'Sum of every outstanding invoice across all customers, broken into aging buckets (Current / 1–30 / 31–60 / 61–90 / 91+ days). Click a row to go to that job\'s detail page if it\'s in the WIP.',
-    formula: 'A/R = sum( Current + 1-30 + 31-60 + 61-90 + 91+ ) across all customers',
-    rows: _arAllRows,
   };
 
   const arOverdueEvidence = {

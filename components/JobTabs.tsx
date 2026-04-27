@@ -62,31 +62,10 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// Extract Google Drive folder ID from URL
-function extractDriveFolderId(url: string): string | null {
-  if (!url) return null;
-  // folders/FOLDER_ID
-  const folderMatch = url.match(/folders\/([a-zA-Z0-9_-]+)/);
-  if (folderMatch) return folderMatch[1];
-  return null;
-}
-
-// Extract Google Drive file ID from URL for iframe embeds
-function extractDriveFileId(url: string): string | null {
-  if (!url) return null;
-  // /file/d/FILE_ID/
-  const fileMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-  if (fileMatch) return fileMatch[1];
-  // /open?id=FILE_ID
-  const openMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-  if (openMatch) return openMatch[1];
-  return null;
-}
-
 export default function JobTabs({
   jobNumber, job, report, prep, rentals, changeOrders, scorecard,
   jobFolder, vehicles, weatherDays, asphaltCredit, baseCredit, hasCreditFlag,
-  fieldReportFeed, vlAssets, fleetAssets, liveRentals, scheduleData,
+  fieldReportFeed, fleetAssets, liveRentals, scheduleData,
 }: JobTabsProps) {
   const [activeTab, setActiveTab] = useState('overview');
   const [qcDone, setQcDone] = useState<Record<string, boolean>>({});
@@ -109,19 +88,6 @@ export default function JobTabs({
     { id: 'compaction', label: 'Compaction Test', icon: '🔵', desc: 'Nuclear gauge or sand cone results' },
     { id: 'laser', label: 'Laser Grade Verification', icon: '📏', desc: 'Grade rod reads at 25ft grid' },
     { id: 'straightedge', label: '10-ft Straightedge', icon: '📐', desc: 'Smoothness check before pave' },
-  ];
-
-  const hasVisionLinkData = vlAssets && vlAssets.length > 0;
-
-  // Google Drive folder ID for embeds
-  const driveFolderId = jobFolder?.Job_Folder_Link ? extractDriveFolderId(jobFolder.Job_Folder_Link) : null;
-
-  // Check for individual file links
-  const docLinks = [
-    { label: 'Contract', link: jobFolder?.Contract_Link, icon: '📄', color: '#20BC64' },
-    { label: 'Work Order', link: jobFolder?.Work_Order_Link, icon: '📋', color: '#60a5fa' },
-    { label: 'Plans', link: jobFolder?.Plans_Link, icon: '📐', color: '#a78bfa' },
-    { label: 'Materials', link: jobFolder?.Material_Resources_Link, icon: '🏗️', color: '#fb923c' },
   ];
 
   return (
@@ -762,7 +728,6 @@ export default function JobTabs({
             {(() => {
               // Phase detection from production data
               const stoneActual = scorecard ? parseFloat(scorecard.Act_Stone_Tons) || 0 : (report?.GAB_Tonnage || 0);
-              const stoneEst = scorecard ? parseFloat(scorecard.Est_Stone_Tons) || 0 : 0;
               const binderActual = scorecard ? parseFloat(scorecard.Act_Binder_Tons) || 0 : (report?.Binder_Tonnage || 0);
               const toppingActual = scorecard ? parseFloat(scorecard.Act_Topping_Tons) || 0 : (report?.Topping_Tonnage || 0);
               const toppingEst = scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0;
@@ -894,8 +859,6 @@ export default function JobTabs({
             {/* ── 🔒 SURFACE READY QC GATE ─────────────────────────────────── */}
             {(() => {
               // Re-detect phase for gate rendering
-              const stoneAct2 = scorecard ? parseFloat(scorecard.Act_Stone_Tons) || 0 : (report?.GAB_Tonnage || 0);
-              const binderAct2 = scorecard ? parseFloat(scorecard.Act_Binder_Tons) || 0 : (report?.Binder_Tonnage || 0);
               const toppingAct2 = scorecard ? parseFloat(scorecard.Act_Topping_Tons) || 0 : (report?.Topping_Tonnage || 0);
               const toppingEst2 = scorecard ? parseFloat(scorecard.Est_Topping_Tons) || 0 : 0;
               const isPostAsphalt = pct >= 85 && toppingAct2 > 0 && toppingEst2 > 0 && toppingAct2 >= toppingEst2 * 0.8;

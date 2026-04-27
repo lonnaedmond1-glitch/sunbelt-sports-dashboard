@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
-import { getPrepForJob, getRentalsForJob, getFieldReportForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
+import Image from 'next/image';
+import { getPrepForJob, getRentalsForJob, getJobByNumber, getChangeOrdersForJob, getScorecardForJob, getJobFolder } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchFieldReportFeed, fetchVisionLinkAssets, fetchFleetAssets, fetchLiveRentals, fetchScheduleData } from '@/lib/sheets-data';
 import JobTabs from '@/components/JobTabs';
 
@@ -91,7 +92,6 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
   const csvJob = getJobByNumber(jobNumber);
   const prep = getPrepForJob(jobNumber);
   const rentals = getRentalsForJob(jobNumber);
-  const csvReport = getFieldReportForJob(jobNumber);
   const changeOrders = getChangeOrdersForJob(jobNumber);
   const scorecard = getScorecardForJob(jobNumber);
   const jobFolder = getJobFolder(jobNumber);
@@ -140,7 +140,7 @@ export default async function JobSnapshot({ params }: { params: Promise<{ id: st
         {/* Top bar: nav + live indicator */}
         <div className="px-4 md:px-8 py-3 bg-[#2A2D31] flex justify-between items-center border-b border-white/5">
           <Link href="/dashboard" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-            <img src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" className="h-7 w-auto" style={{ filter: 'brightness(0) invert(1)' }} />
+            <Image src="/sunbelt-sports-logo.png" alt="Sunbelt Sports" width={128} height={28} className="h-7 w-auto" style={{ filter: 'brightness(0) invert(1)' }} />
             <span className="text-white/60 font-bold text-xs uppercase tracking-wide">← Dashboard</span>
           </Link>
           <div className="flex items-center gap-3">
