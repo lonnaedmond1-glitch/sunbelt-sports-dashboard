@@ -572,53 +572,103 @@ export async function fetchVisionLinkAssets(): Promise<VisionLinkAsset[]> {
 // Both sources are fetched in parallel and merged by job number.
 // For overlapping jobs, totals are combined (tonnage, days active, etc.)
 
-// ── Jotform (Legacy/Historical) ──────────────────────────────────────────────
-const JOTFORM_API_KEY = process.env.JOTFORM_API_KEY || 'c02f5c097f06c28304f3a766d48f51e6';
-const FORM_ID = process.env.JOTFORM_FORM_ID || '240915802348154';
-
-interface JotformSubmission {
-  id: string; created_at: string;
-  answers: Record<string, { name: string; text: string; answer: string | Record<string, string> }>;
-}
-
-function getAnswer(submission: JotformSubmission, questionName: string): string {
-  const entry = Object.values(submission.answers).find(a => a.name === questionName);
-  if (!entry) return '';
-  if (typeof entry.answer === 'object') return Object.values(entry.answer).join(', ');
-  return String(entry.answer || '');
-}
+// ── Jotform (Legacy/Historical sheet data only) ──────────────────────────────
+const JOTFORM_LEGACY_TAB = 'JOTFORM_FIELD_RAW';
 
 function safeNum(val: string): number { const n = parseFloat(val?.replace(/[^0-9.-]/g, '') || '0'); return isNaN(n) ? 0 : n; }
 
+async function fetchJotformLegacyRows(): Promise<string[][]> {
+  return fetchSheetByName(FIELD_REPORT_SHEET_ID, JOTFORM_LEGACY_TAB);
+}
+
+function newerDate(current: string, candidate: string): string {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  const currentTime = Date.parse(current);
+  const candidateTime = Date.parse(candidate);
+  if (!isNaN(currentTime) && !isNaN(candidateTime)) {
+    return candidateTime > currentTime ? candidate : current;
+  }
+  return candidate > current ? candidate : current;
+}
+
 async function fetchJotformReports(): Promise<Record<string, any>> {
   try {
-    const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return {};
-    const json = await res.json();
-    const submissions: JotformSubmission[] = json.content || [];
+    const rows = await fetchJotformLegacyRows();
+    if (rows.length < 2) return {};
+    const headers = rows[0].map(h => h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
+    const iDate = findFormCol(headers, 'date of activity');
+    const iForeman = findFormCol(headers, 'foreman name');
+    const iJobName = findFormCol(headers, 'job name');
+    const iJobNumber = findFormCol(headers, 'job number');
+    const iActivity = findFormCol(headers, 'production activity');
+    const iCrew = findFormCol(headers, 'number of crew members');
+    const iManHours = findFormCol(headers, 'total man hours');
+    const iTrucks = findFormCol(headers, 'how many trucks');
+    const iSoil = findFormCol(headers, 'soil cement tonnage');
+    const iGAB = findFormCol(headers, 'gab tonnage');
+    const iBinder = findFormCol(headers, 'binder tonnage');
+    const iTopping = findFormCol(headers, 'topping tonnage');
+    const iPatch = findFormCol(headers, 'patching tonnage');
+    const iMilling = findFormCol(headers, 'milling sy');
+    const iCurb = findFormCol(headers, 'concrete curb lf');
+    const iConcrete = findFormCol(headers, 'concrete cy');
+    const iSummary = findFormCol(headers, 'job summary');
+    const iDifficulty = findFormCol(headers, 'how difficult was the job');
+    const g = (row: string[], idx: number): string => (idx >= 0 && idx < row.length) ? (row[idx]?.trim() || '') : '';
     const jobTotals: Record<string, any> = {};
-    for (const sub of submissions) {
-      const jobWidget = getAnswer(sub, 'typeA56');
-      let jobNum = '', jobName = '';
-      if (jobWidget && jobWidget !== 'Job Name Not Listed') { const parts = jobWidget.split('\t'); jobNum = parts[0]?.trim() || ''; jobName = parts.slice(1).join(' ').trim(); }
-      if (!jobNum) jobNum = getAnswer(sub, 'jobNumber').trim();
-      if (!jobNum) { const subName = getAnswer(sub, 'sjhb').trim(); if (subName && subName !== 'Job Name Not Listed') { const parts = subName.split('\t'); jobNum = parts[0]?.trim() || ''; jobName = parts.slice(1).join(' ').trim(); } }
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      let jobNum = g(row, iJobNumber);
+      const jobLabel = g(row, iJobName);
+      if (!jobNum && jobLabel) jobNum = extractJobNum(jobLabel);
       if (!jobNum || jobNum === 'Job Name Not Listed') continue;
-      jobNum = jobNum.trim();
-      if (!jobTotals[jobNum]) { jobTotals[jobNum] = { Job_Number: jobNum, Job_Name: jobName, GAB_Tonnage: 0, Binder_Tonnage: 0, Topping_Tonnage: 0, Concrete_CY: 0, Concrete_Curb_LF: 0, Milling_SY: 0, Total_Man_Hours: 0, Crew_Count: 0, Truck_Count: 0, Last_Report_Date: sub.created_at, Latest_Summary: '', Job_Difficulty: '', Days_Active: 0 }; }
+      const jobName = extractJobName(jobLabel) || jobLabel;
+      const reportDate = g(row, iDate);
+      if (!jobTotals[jobNum]) {
+        jobTotals[jobNum] = {
+          Job_Number: jobNum,
+          Job_Name: jobName,
+          GAB_Tonnage: 0,
+          Soil_Tonnage: 0,
+          Binder_Tonnage: 0,
+          Topping_Tonnage: 0,
+          Patch_Tonnage: 0,
+          Concrete_CY: 0,
+          Concrete_Curb_LF: 0,
+          Milling_SY: 0,
+          Total_Man_Hours: 0,
+          Crew_Count: 0,
+          Truck_Count: 0,
+          Last_Report_Date: reportDate,
+          Latest_Summary: '',
+          Job_Difficulty: '',
+          Days_Active: 0,
+          Foreman: '',
+          Activity: '',
+        };
+      }
       const entry = jobTotals[jobNum];
-      entry.GAB_Tonnage += safeNum(getAnswer(sub, 'gabTonnage'));
-      entry.Binder_Tonnage += safeNum(getAnswer(sub, 'tonnage27'));
-      entry.Topping_Tonnage += safeNum(getAnswer(sub, 'tonnage28'));
-      entry.Concrete_CY += safeNum(getAnswer(sub, 'concreteCy'));
-      entry.Total_Man_Hours += safeNum(getAnswer(sub, 'totalMan'));
-      entry.Truck_Count = Math.max(entry.Truck_Count, safeNum(getAnswer(sub, 'howMany')));
-      entry.Crew_Count = Math.max(entry.Crew_Count, safeNum(getAnswer(sub, 'numberOf')));
-      const summary = getAnswer(sub, 'jobSummary');
+      entry.GAB_Tonnage += safeNum(g(row, iGAB));
+      entry.Soil_Tonnage += safeNum(g(row, iSoil));
+      entry.Binder_Tonnage += safeNum(g(row, iBinder));
+      entry.Topping_Tonnage += safeNum(g(row, iTopping));
+      entry.Patch_Tonnage += safeNum(g(row, iPatch));
+      entry.Concrete_CY += safeNum(g(row, iConcrete));
+      entry.Concrete_Curb_LF += safeNum(g(row, iCurb));
+      entry.Milling_SY += safeNum(g(row, iMilling));
+      entry.Total_Man_Hours += safeNum(g(row, iManHours));
+      entry.Truck_Count = Math.max(entry.Truck_Count, safeNum(g(row, iTrucks)));
+      entry.Crew_Count = Math.max(entry.Crew_Count, safeNum(g(row, iCrew)));
+      const summary = g(row, iSummary);
       if (summary && summary !== 'no' && !entry.Latest_Summary) entry.Latest_Summary = summary;
-      const diff = getAnswer(sub, 'howDifficult');
+      const diff = g(row, iDifficulty);
       if (diff && !entry.Job_Difficulty) entry.Job_Difficulty = diff;
+      const foreman = g(row, iForeman);
+      if (foreman && !entry.Foreman) entry.Foreman = foreman;
+      const activity = g(row, iActivity);
+      if (activity && !entry.Activity) entry.Activity = activity;
+      entry.Last_Report_Date = newerDate(entry.Last_Report_Date, reportDate);
       entry.Days_Active++;
     }
     return jobTotals;
@@ -627,30 +677,55 @@ async function fetchJotformReports(): Promise<Record<string, any>> {
 
 async function fetchJotformFeed(jobNumber: string): Promise<any[]> {
   try {
-    const url = `https://api.jotform.com/form/${FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}&limit=200&orderby=created_at,DESC`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const submissions: JotformSubmission[] = json.content || [];
+    const rows = await fetchJotformLegacyRows();
+    if (rows.length < 2) return [];
+    const headers = rows[0].map(h => h.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim());
+    const iDate = findFormCol(headers, 'date of activity');
+    const iForeman = findFormCol(headers, 'foreman name');
+    const iJobName = findFormCol(headers, 'job name');
+    const iJobNumber = findFormCol(headers, 'job number');
+    const iActivity = findFormCol(headers, 'production activity');
+    const iCrew = findFormCol(headers, 'number of crew members');
+    const iManHours = findFormCol(headers, 'total man hours');
+    const iTrucks = findFormCol(headers, 'how many trucks');
+    const iSoil = findFormCol(headers, 'soil cement tonnage');
+    const iGAB = findFormCol(headers, 'gab tonnage');
+    const iBinder = findFormCol(headers, 'binder tonnage');
+    const iTopping = findFormCol(headers, 'topping tonnage');
+    const iPatch = findFormCol(headers, 'patching tonnage');
+    const iMilling = findFormCol(headers, 'milling sy');
+    const iCurb = findFormCol(headers, 'concrete curb lf');
+    const iConcrete = findFormCol(headers, 'concrete cy');
+    const iSummary = findFormCol(headers, 'job summary');
+    const iDifficulty = findFormCol(headers, 'how difficult was the job');
+    const iSubmissionId = findFormCol(headers, 'submission id');
+    const g = (row: string[], idx: number): string => (idx >= 0 && idx < row.length) ? (row[idx]?.trim() || '') : '';
     const feed: any[] = [];
-    for (const sub of submissions) {
-      const jobWidget = getAnswer(sub, 'typeA56');
-      let jobNum = '';
-      if (jobWidget && jobWidget !== 'Job Name Not Listed') { jobNum = jobWidget.split('\t')[0]?.trim() || ''; }
-      if (!jobNum) jobNum = getAnswer(sub, 'jobNumber').trim();
-      if (!jobNum) { const subName = getAnswer(sub, 'sjhb').trim(); if (subName && subName !== 'Job Name Not Listed') { jobNum = subName.split('\t')[0]?.trim() || ''; } }
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      let jobNum = g(row, iJobNumber);
+      const jobLabel = g(row, iJobName);
+      if (!jobNum && jobLabel) jobNum = extractJobNum(jobLabel);
       if (!jobNum || jobNum.trim() !== jobNumber.trim()) continue;
       feed.push({
-        id: sub.id, date: sub.created_at, source: 'jotform',
-        gabTons: safeNum(getAnswer(sub, 'gabTonnage')),
-        binderTons: safeNum(getAnswer(sub, 'tonnage27')),
-        toppingTons: safeNum(getAnswer(sub, 'tonnage28')),
-        concreteCY: safeNum(getAnswer(sub, 'concreteCy')),
-        crewCount: safeNum(getAnswer(sub, 'numberOf')),
-        truckCount: safeNum(getAnswer(sub, 'howMany')),
-        manHours: safeNum(getAnswer(sub, 'totalMan')),
-        summary: getAnswer(sub, 'jobSummary') || '',
-        difficulty: getAnswer(sub, 'howDifficult') || '',
+        id: g(row, iSubmissionId) || `jf-${i}`,
+        date: g(row, iDate),
+        source: 'jotform-legacy-sheet',
+        foreman: g(row, iForeman),
+        activity: g(row, iActivity),
+        gabTons: safeNum(g(row, iGAB)),
+        soilTons: safeNum(g(row, iSoil)),
+        binderTons: safeNum(g(row, iBinder)),
+        toppingTons: safeNum(g(row, iTopping)),
+        patchTons: safeNum(g(row, iPatch)),
+        millingSY: safeNum(g(row, iMilling)),
+        concreteCurbLF: safeNum(g(row, iCurb)),
+        concreteCY: safeNum(g(row, iConcrete)),
+        crewCount: safeNum(g(row, iCrew)),
+        truckCount: safeNum(g(row, iTrucks)),
+        manHours: safeNum(g(row, iManHours)),
+        summary: g(row, iSummary) || '',
+        difficulty: g(row, iDifficulty) || '',
       });
     }
     return feed;
@@ -798,9 +873,13 @@ function mergeJobTotals(jotform: Record<string, any>, gforms: Record<string, any
     } else {
       const m = merged[jobNum];
       m.GAB_Tonnage += (gf.GAB_Tonnage || 0);
+      m.Soil_Tonnage = (m.Soil_Tonnage || 0) + (gf.Soil_Tonnage || 0);
       m.Binder_Tonnage += (gf.Binder_Tonnage || 0);
       m.Topping_Tonnage += (gf.Topping_Tonnage || 0);
+      m.Patch_Tonnage = (m.Patch_Tonnage || 0) + (gf.Patch_Tonnage || 0);
       m.Concrete_CY += (gf.Concrete_CY || 0);
+      m.Concrete_Curb_LF = (m.Concrete_Curb_LF || 0) + (gf.Concrete_Curb_LF || 0);
+      m.Milling_SY = (m.Milling_SY || 0) + (gf.Milling_SY || 0);
       m.Total_Man_Hours += (gf.Total_Man_Hours || 0);
       m.Crew_Count = Math.max(m.Crew_Count || 0, gf.Crew_Count || 0);
       m.Truck_Count = Math.max(m.Truck_Count || 0, gf.Truck_Count || 0);
@@ -1853,4 +1932,3 @@ export async function fetchCrewDaysSold(): Promise<CrewDaysSummary> {
     return { jobs, totals };
   } catch { return empty; }
 }
-
