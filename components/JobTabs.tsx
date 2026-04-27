@@ -560,11 +560,11 @@ export default function JobTabs({
 
             {/* Scorecard */}
             {scorecard && (
-              <div className="bg-[#1e2023] rounded-xl border border-white/5 p-5">
+              <div className="bg-white rounded-xl border border-[#DDE2E5] p-5">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xs font-black uppercase tracking-widest text-white/40">Est vs Actual Scorecard</h2>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-[#757A7F]">Est vs Actual Scorecard</h2>
                   {parseInt(scorecard.Weather_Days) > 0 && (
-                    <span className="text-xs font-black px-3 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span className="text-xs font-black px-3 py-1 rounded-full bg-[#F5A623]/10 text-[#B7791F] border border-[#F5A623]/20">
                       ☁️ {scorecard.Weather_Days} Weather Days
                     </span>
                   )}
@@ -580,14 +580,14 @@ export default function JobTabs({
                     const pctVal = m.est > 0 ? Math.round((m.act / m.est) * 100) : 0;
                     const isOver = m.act > m.est * 1.05;
                     return (
-                      <div key={m.label} className="bg-black/20 rounded-xl p-4 border border-white/5">
+                      <div key={m.label} className="bg-[#FAFCFB] rounded-xl p-4 border border-[#DDE2E5]">
                         <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: m.color }}>{m.label}</p>
                         <p className="text-xl font-black mb-0.5" style={{ color: isOver ? '#ef4444' : m.color }}>{m.act.toLocaleString()}</p>
-                        <p className="text-xs text-white/30">est: {m.est.toLocaleString()} {m.unit}</p>
-                        <div className="w-full bg-white/5 rounded-full h-1.5 mt-2 overflow-hidden">
+                        <p className="text-xs text-[#757A7F]">est: {m.est.toLocaleString()} {m.unit}</p>
+                        <div className="w-full bg-[#E8ECEE] rounded-full h-1.5 mt-2 overflow-hidden">
                           <div className="h-full rounded-full" style={{ width: `${Math.min(100, pctVal)}%`, backgroundColor: isOver ? '#ef4444' : m.color }} />
                         </div>
-                        <p className="text-[10px] text-right mt-1" style={{ color: isOver ? '#ef4444' : 'rgba(255,255,255,0.2)' }}>{pctVal}%</p>
+                        <p className="text-[10px] text-right mt-1" style={{ color: isOver ? '#ef4444' : '#9CA3AF' }}>{pctVal}%</p>
                       </div>
                     );
                   })}
