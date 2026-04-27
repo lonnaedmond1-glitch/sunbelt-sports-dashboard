@@ -87,13 +87,14 @@ export default function LiveMap({ jobs, vehicles }: Props) {
 
       const map = L.map(mapRef.current, {
         center: [33.5, -83.9], zoom: 8,
-        zoomControl: true, attributionControl: false,
-        minZoom: 6, maxZoom: 18,
+        zoomControl: true, attributionControl: true,
+        minZoom: 6, maxZoom: 19,
       });
       mapInstanceRef.current = map;
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19, subdomains: 'abcd',
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Tiles &copy; Esri',
       }).addTo(map);
 
       // ── Job site pin: pill with short name + % ───────────────────────────
@@ -171,19 +172,19 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         if (isNaN(lat) || isNaN(lng)) return;
 
         const proximityHtml = job.nearestVehicle
-          ? `<div style="margin-top:6px;padding:4px 8px;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:6px;font-size:10px;color:#60a5fa;">🚛 ${job.nearestVehicle.name} — ${job.nearestVehicle.miles.toFixed(1)} mi away</div>`
+          ? `<div style="margin-top:6px;padding:4px 8px;background:rgba(37,99,235,0.08);border:1px solid rgba(37,99,235,0.2);border-radius:6px;font-size:10px;color:#2563eb;">🚛 ${job.nearestVehicle.name} — ${job.nearestVehicle.miles.toFixed(1)} mi away</div>`
           : '';
 
         const marker = L.marker([lat, lng], { icon: jobIcon(pct, job.Job_Name) }).addTo(map);
         marker.bindPopup(`
-          <div style="font-family:Montserrat,sans-serif;min-width:210px;background:#1e2023;color:white;border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,0.1);">
+          <div style="font-family:Montserrat,sans-serif;min-width:210px;background:#ffffff;color:#15181A;border-radius:10px;padding:14px;border:1px solid rgba(21,24,26,0.14);box-shadow:0 10px 28px rgba(0,0,0,0.18);">
             <p style="font-size:10px;color:#20BC64;font-weight:900;text-transform:uppercase;margin:0 0 3px 0;letter-spacing:1px;">${job.Job_Number}</p>
             <p style="font-size:13px;font-weight:800;margin:0 0 4px 0;line-height:1.2;">${job.Job_Name}</p>
-            <p style="font-size:11px;color:rgba(255,255,255,0.45);margin:0 0 2px 0;">${job.General_Contractor || ''}</p>
-            <p style="font-size:11px;color:rgba(255,255,255,0.45);margin:0;">${pct}% complete · ${formatDollars(job.Contract_Amount)}</p>
+            <p style="font-size:11px;color:#6D7478;margin:0 0 2px 0;">${job.General_Contractor || ''}</p>
+            <p style="font-size:11px;color:#6D7478;margin:0;">${pct}% complete · ${formatDollars(job.Contract_Amount)}</p>
             ${proximityHtml}
             <a href="/jobs/${job.Job_Number}" style="display:inline-block;margin-top:10px;font-size:11px;color:#20BC64;font-weight:800;text-decoration:none;">View Snapshot →</a>
-          </div>`, { className: 'dark-popup' });
+          </div>`, { className: 'map-popup' });
       });
 
       // ── Plot vehicle pins (with overlap jitter) ──────────────────────────
@@ -195,17 +196,17 @@ export default function LiveMap({ jobs, vehicles }: Props) {
         const popupLabel = isRental ? 'RENTAL EQUIPMENT' : isAsset ? 'VISIONLINK · ASSET' : 'SAMSARA · LIVE';
         const popupColor = isRental ? '#20BC64' : isAsset ? '#60a5fa' : '#60a5fa';
         const popupDetail = isRental
-          ? `<p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0;">At: ${v.address || 'Unknown'}</p>`
+          ? `<p style="font-size:11px;color:#6D7478;margin:0;">At: ${v.address || 'Unknown'}</p>`
           : isAsset
-          ? `<p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0;">${v.address || ''}</p>`
-          : `<p style="font-size:11px;color:rgba(255,255,255,0.5);margin:0 0 2px 0;">Driver: ${v.driver !== 'Unassigned' ? v.driver : '—'}</p>
+          ? `<p style="font-size:11px;color:#6D7478;margin:0;">${v.address || ''}</p>`
+          : `<p style="font-size:11px;color:#6D7478;margin:0 0 2px 0;">Driver: ${v.driver !== 'Unassigned' ? v.driver : '—'}</p>
              <p style="font-size:11px;color:${v.speed > 2 ? '#4ade80' : '#fb923c'};margin:0;">${v.speed > 2 ? `🟢 Moving · ${v.speed} mph` : '🟠 Parked'}</p>`;
         marker.bindPopup(`
-          <div style="font-family:Montserrat,sans-serif;min-width:190px;background:#1a2744;color:white;border-radius:10px;padding:12px;border:1px solid ${popupColor}40;">
+          <div style="font-family:Montserrat,sans-serif;min-width:190px;background:#ffffff;color:#15181A;border-radius:10px;padding:12px;border:1px solid ${popupColor}66;box-shadow:0 10px 28px rgba(0,0,0,0.18);">
             <p style="font-size:10px;color:${popupColor};font-weight:900;text-transform:uppercase;margin:0 0 3px 0;letter-spacing:1px;">${popupLabel}</p>
             <p style="font-size:13px;font-weight:800;margin:0 0 2px 0;">${v.name.replace(/\s*\(.*\)/, '')}</p>
             ${popupDetail}
-          </div>`, { className: 'dark-popup' });
+          </div>`, { className: 'map-popup' });
       });
 
       // Fit bounds to all pins (jobs + vehicles) — only US Southeast coordinates
@@ -227,12 +228,12 @@ export default function LiveMap({ jobs, vehicles }: Props) {
 
       const style = document.createElement('style');
       style.textContent = `
-        .dark-popup .leaflet-popup-content-wrapper { background:transparent;border:none;box-shadow:none;padding:0; }
-        .dark-popup .leaflet-popup-content { margin:0; }
-        .dark-popup .leaflet-popup-tip-container { display:none; }
-        .leaflet-control-zoom { border:1px solid rgba(255,255,255,0.1) !important; }
-        .leaflet-control-zoom a { background:#1e2023 !important;color:white !important;border-color:rgba(255,255,255,0.1) !important; }
-        .leaflet-control-zoom a:hover { background:#2A2D31 !important; }
+        .map-popup .leaflet-popup-content-wrapper { background:transparent;border:none;box-shadow:none;padding:0; }
+        .map-popup .leaflet-popup-content { margin:0; }
+        .map-popup .leaflet-popup-tip-container { display:none; }
+        .leaflet-control-zoom { border:1px solid rgba(21,24,26,0.14) !important; }
+        .leaflet-control-zoom a { background:#ffffff !important;color:#15181A !important;border-color:rgba(21,24,26,0.14) !important; }
+        .leaflet-control-zoom a:hover { background:#F4F6F7 !important; }
       `;
       document.head.appendChild(style);
     });

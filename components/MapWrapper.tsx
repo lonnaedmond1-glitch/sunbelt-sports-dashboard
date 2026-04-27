@@ -5,10 +5,10 @@ import dynamic from 'next/dynamic';
 const LiveMap = dynamic(() => import('./LiveMap'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center" style={{ background: '#1a1d20' }}>
+    <div className="w-full h-full flex items-center justify-center" style={{ background: '#EEF1EE' }}>
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-[#20BC64] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-white/30 text-xs font-bold uppercase tracking-widest">Loading Map</p>
+        <p className="text-[#6D7478] text-xs font-bold uppercase tracking-widest">Loading Map</p>
       </div>
     </div>
   ),
