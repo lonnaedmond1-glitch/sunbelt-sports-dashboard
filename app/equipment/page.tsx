@@ -4,6 +4,20 @@ import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveRentals, fetchVisionLinkAssets } from '@/lib/sheets-data';
 
+const APPROVED_RENTAL_REP_EMAILS: Record<string, string> = {
+  ur: 'jbeasley@ur.com',
+  united: 'jbeasley@ur.com',
+  united_rentals: 'jbeasley@ur.com',
+  'united rentals': 'jbeasley@ur.com',
+  sr: 'Justin.Stanley@sunbeltrentals.com',
+  sunbelt: 'Justin.Stanley@sunbeltrentals.com',
+  sunbelt_rentals: 'Justin.Stanley@sunbeltrentals.com',
+  'sunbelt rentals': 'Justin.Stanley@sunbeltrentals.com',
+  wm: 'midsouthbuildersdirect@wm.com',
+  waste_management: 'midsouthbuildersdirect@wm.com',
+  'waste management': 'midsouthbuildersdirect@wm.com',
+};
+
 function money(value: number): string {
   return `$${Math.round(value || 0).toLocaleString()}`;
 }
@@ -30,8 +44,14 @@ function getRentalRepEmail(rental: any): string {
     (branchKey && map[branchKey]) ||
     map[vendorKey] ||
     map[vendor] ||
+    (branchKey && APPROVED_RENTAL_REP_EMAILS[branchKey]) ||
+    APPROVED_RENTAL_REP_EMAILS[vendorKey] ||
+    APPROVED_RENTAL_REP_EMAILS[vendor] ||
     (vendor.includes('sunbelt') ? process.env.SUNBELT_RENTAL_SALES_REP_EMAIL : '') ||
     (vendor.includes('united') ? process.env.UNITED_RENTAL_SALES_REP_EMAIL : '') ||
+    (vendor === 'wm' || vendor.includes('waste management')
+      ? process.env.WM_RENTAL_SALES_REP_EMAIL || process.env.WASTE_MANAGEMENT_RENTAL_SALES_REP_EMAIL
+      : '') ||
     process.env.RENTAL_DEFAULT_SALES_REP_EMAIL ||
     ''
   ).trim();
