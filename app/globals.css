@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=DM+Sans:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700;800;900&family=Roboto:wght@300;400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Roboto:wght@300;400;500;700&display=swap');
 
 @import "tailwindcss";
 
@@ -33,11 +33,11 @@ body {
 
 /* ── Typography Utility Classes ── */
 .font-display {
-  font-family: 'Barlow Condensed', 'Montserrat', sans-serif;
+  font-family: 'Montserrat', sans-serif;
 }
 
 .font-body {
-  font-family: 'DM Sans', 'Roboto', sans-serif;
+  font-family: 'Roboto', sans-serif;
 }
 
 /* ── Architectural Grid Background (for empty states / subtle texture) ── */
