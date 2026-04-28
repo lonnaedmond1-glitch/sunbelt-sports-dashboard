@@ -1182,6 +1182,8 @@ const SCHEDULE_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
 const SCHEDULE_GID = '416948597';
 const GANTT_SHEET_ID = '178t9iioyveWqP6o8x2lQwMagexDP0W9FA4I2jfutJmw';
 const GANTT_GID = '1949703319';
+const MS_PROJECT_SCHEDULE_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
+const MS_PROJECT_SCHEDULE_TAB = 'MS_PROJECT_SCHEDULE_LIVE';
 
 // Schedule column layout — verified live against Schedule tab header row.
 // Header row 0:
@@ -1243,20 +1245,63 @@ function parseDateStr(s: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+async function fetchMsProjectScheduleJobs() {
+  try {
+    const rows = await fetchSheetByName(MS_PROJECT_SCHEDULE_SHEET_ID, MS_PROJECT_SCHEDULE_TAB);
+    if (rows.length < 2) return [];
+    const headers = rows[0].map(h => h.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''));
+    const col = (...names: string[]) => {
+      for (const name of names) {
+        const idx = headers.indexOf(name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''));
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+    const get = (row: string[], ...names: string[]) => {
+      const idx = col(...names);
+      return idx >= 0 ? (row[idx] || '').trim() : '';
+    };
+    return rows.slice(1).map(row => {
+      const taskType = get(row, 'Task_Type');
+      const jobNumber = get(row, 'Job_Number');
+      const start = get(row, 'Start_Date');
+      const end = get(row, 'Finish_Date');
+      return {
+        Job_Number: jobNumber,
+        Job_Name: get(row, 'Job_Name'),
+        Project_Type: 'Microsoft Project PDF',
+        Start: start,
+        End: end,
+        startDate: parseDateStr(start),
+        endDate: parseDateStr(end),
+        Percent_Complete: parseFloatSafe(get(row, 'Percent_Complete')),
+        Snapshot_Date: get(row, 'Snapshot_Date'),
+        Source_File: get(row, 'Source_File'),
+        Schedule_Status: get(row, 'Schedule_Status'),
+        Matched_Master_Job: get(row, 'Matched_Master_Job'),
+        taskType,
+      };
+    }).filter(row => row.Job_Number && row.taskType.toLowerCase() === 'project' && row.startDate && row.endDate);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchScheduleData() {
   try {
-    const [schedRes, ganttRes] = await Promise.all([
+    const [schedRes, ganttRes, msProjectJobs] = await Promise.all([
       fetch(`https://docs.google.com/spreadsheets/d/${SCHEDULE_SHEET_ID}/export?format=csv&gid=${SCHEDULE_GID}`, {
         headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
       }),
       fetch(`https://docs.google.com/spreadsheets/d/${GANTT_SHEET_ID}/export?format=csv&gid=${GANTT_GID}`, {
         headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 },
       }),
+      fetchMsProjectScheduleJobs(),
     ]);
 
     // Parse Gantt
-    const ganttJobs: any[] = [];
-    if (ganttRes.ok) {
+    const ganttJobs: any[] = msProjectJobs.length ? msProjectJobs : [];
+    if (!ganttJobs.length && ganttRes.ok) {
       const ganttCSV = await ganttRes.text();
       const ganttLines = ganttCSV.split('\n').map(l => l.replace(/\r$/, ''));
       for (let i = 1; i < ganttLines.length; i++) {
@@ -1378,6 +1423,9 @@ export async function fetchScheduleData() {
       currentWeek: { weekOf: thisMonday.toISOString().split('T')[0], label: `Week of ${thisMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: currentWeekDays },
       nextWeek: { weekOf: nextMonday.toISOString().split('T')[0], label: `Week of ${nextMonday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`, days: nextWeekDays },
       deliveries, activeGanttJobs, jobFirstOccurrences, looseEnds,
+      scheduleTimelineSource: msProjectJobs.length ? 'microsoft_project_pdf' : 'gantt_sheet',
+      msProjectSnapshotDate: msProjectJobs[0]?.Snapshot_Date || '',
+      msProjectSourceFile: msProjectJobs[0]?.Source_File || '',
       scheduledJobCount: scheduledJobs.size, ganttJobCount: ganttJobs.length,
       timestamp: new Date().toISOString(),
     };
