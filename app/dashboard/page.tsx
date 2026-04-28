@@ -287,6 +287,48 @@ function isScheduledCurrently(job: any, scheduleData: any, jobs: any[]): boolean
   return scheduledNums.has(job.Job_Number || '');
 }
 
+function hasJobMapCoords(job: any): boolean {
+  const lat = parseFloat(String(job?.Lat || ''));
+  const lng = parseFloat(String(job?.Lng || ''));
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
+function hasFleetMapCoords(vehicle: any): boolean {
+  const lat = Number(vehicle?.lat);
+  const lng = Number(vehicle?.lng);
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
+function getScheduleCapacityFromAssignments(scheduleData: any) {
+  const totals = { baseDays: 0, pavingDays: 0 };
+  const days = [
+    ...(scheduleData?.currentWeek?.days || []),
+    ...(scheduleData?.nextWeek?.days || []),
+  ];
+
+  for (const day of days) {
+    for (const assignment of (day.assignments || [])) {
+      if (assignment?.decoded?.isOff) continue;
+      if (!['primary', 'sub'].includes(String(assignment?.crewType || '').toLowerCase())) continue;
+
+      const text = [
+        assignment?.decoded?.activity || '',
+        assignment?.decoded?.jobRef || '',
+        assignment?.job || '',
+      ].join(' ').toLowerCase();
+
+      const surfaceRemoval = /surface\s+removal/.test(text);
+      const isPaving = !surfaceRemoval && /\b(pav(e|ing)?|binder|asphalt)\b/.test(text);
+      const isBaseOrSite = surfaceRemoval || /\b(base|mill|milling|grind|grinding|curb|concrete|field event|grading|clip|radius|misc|site)\b/.test(text);
+
+      if (isPaving) totals.pavingDays += 1;
+      else if (isBaseOrSite) totals.baseDays += 1;
+    }
+  }
+
+  return totals;
+}
+
 
 // Closed jobs: hidden from dashboard per Jackie 4/9 — should only focus on open jobs.
 // Source sheet has a separate 'closed jobs' tab; when a job moves there its status becomes COMPLETE/Closed.
@@ -887,8 +929,11 @@ export default async function MasterDashboard() {
   const arOverduePct = arAging.totals.total > 0 ? (arAging.totals.d91Plus / arAging.totals.total) * 100 : 0;
 
   const crewTotals = crewDays.totals;
-  const baseCapacity = crewTotals.stoneBaseDays + crewTotals.millMiscDays + crewTotals.curbDays;
-  const pavingCapacity = crewTotals.pavingDays;
+  const sheetBaseCapacity = crewTotals.stoneBaseDays + crewTotals.millMiscDays + crewTotals.curbDays;
+  const sheetPavingCapacity = crewTotals.pavingDays;
+  const scheduledCapacity = getScheduleCapacityFromAssignments(scheduleData);
+  const baseCapacity = sheetBaseCapacity || scheduledCapacity.baseDays;
+  const pavingCapacity = sheetPavingCapacity || scheduledCapacity.pavingDays;
   const capacityRatio = pavingCapacity > 0 ? baseCapacity / pavingCapacity : null;
   const capacityOnTrack = capacityRatio == null || capacityRatio >= 1.2;
 
@@ -945,6 +990,9 @@ export default async function MasterDashboard() {
       nearestVehicle,
     };
   });
+  const pinnedJobCount = mapJobs.filter(hasJobMapCoords).length;
+  const pinnedFleetCount = (samsara.vehicles || []).filter(hasFleetMapCoords).length;
+  const pinnedMapCount = pinnedJobCount + pinnedFleetCount;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#ffffff_0,#F7F8F6_36%,#EEF1EE_100%)] text-[#15181A] font-body pb-10 antialiased overflow-x-hidden">
@@ -1123,7 +1171,7 @@ export default async function MasterDashboard() {
           <Panel
             title="Live Operations Map"
             subtitle="All active jobs with live fleet pins. Green means aligned. Amber/red means schedule, material, or weather risk."
-            badge={<Chip tone={criticalCount > 0 ? 'red' : warningCount > 0 ? 'amber' : 'green'}>{mapJobs.filter((j: any) => j.Lat && j.Lng).length} pinned</Chip>}
+            badge={<Chip tone={criticalCount > 0 ? 'red' : warningCount > 0 ? 'amber' : 'green'}>{pinnedMapCount} pinned</Chip>}
             className="p-0"
           >
             <div className="px-5 pb-5">
@@ -1152,7 +1200,9 @@ export default async function MasterDashboard() {
               {fleetExceptionRisks.length === 0 ? (
                 <div className="rounded-2xl border border-[#DDE2E5] bg-white p-4">
                   <p className="font-black text-[#0F8F47]">No GPS schedule mismatch found.</p>
-                  <p className="mt-1 text-sm text-[#6D7478]">Fleet location and schedule checks are currently aligned or Samsara is not configured.</p>
+                  <p className="mt-1 text-sm text-[#6D7478]">
+                    {pinnedFleetCount > 0 ? 'Fleet GPS and schedule checks are currently aligned.' : 'No fleet GPS pins are available for this check.'}
+                  </p>
                 </div>
               ) : fleetExceptionRisks.map((risk, index) => (
                 <Link key={`${risk.job}-${index}`} href={risk.job ? `/jobs/${risk.job}` : '/fleet'} className="block rounded-2xl border border-[#DDE2E5] border-l-[6px] border-l-[#D69E2E] bg-white p-3 hover:opacity-90">
