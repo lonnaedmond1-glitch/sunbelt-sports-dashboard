@@ -73,6 +73,61 @@ function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T>
 
 const JOB_LIST_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
 const JOB_LIST_GID = '623969002';
+const PROJECT_SETUP_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
+const PROJECT_SETUP_ACTIVE_JOBS_GID = '1448028936';
+
+type ProjectSetupActiveJob = {
+  Job_Number: string;
+  Job_Name: string;
+  Lat: string;
+  Lng: string;
+  State: string;
+  General_Contractor: string;
+};
+
+async function fetchProjectSetupActiveJobs(): Promise<ProjectSetupActiveJob[]> {
+  return cached('projectSetupActiveJobs', 5 * 60 * 1000, async () => {
+    try {
+      const url = `https://docs.google.com/spreadsheets/d/${PROJECT_SETUP_SHEET_ID}/export?format=csv&gid=${PROJECT_SETUP_ACTIVE_JOBS_GID}`;
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } });
+      if (!response.ok) return [];
+      const lines = (await response.text()).split(/\r\n|\n|\r/).filter(l => l.trim());
+      if (lines.length < 2) return [];
+      const rows = lines.map(parseCSVLine);
+      const headerIndex = rows.findIndex(row => {
+        const normalized = row.map(h => h.toLowerCase().replace(/[^a-z0-9]+/g, ''));
+        return normalized.includes('jobnumber') && normalized.includes('jobname');
+      });
+      if (headerIndex < 0) return [];
+
+      const headers = rows[headerIndex].map(c => c.trim());
+      const get = (row: string[], names: string[], fallbackIndex?: number): string => {
+        for (const name of names) {
+          const idx = idxByHeader(headers, name);
+          if (idx >= 0 && row[idx]) return row[idx].trim();
+        }
+        return fallbackIndex !== undefined ? (row[fallbackIndex] || '').trim() : '';
+      };
+      const validCoordinate = (value: string) => /^-?\d+(\.\d+)?$/.test(value.trim());
+
+      return rows.slice(headerIndex + 1).map(row => {
+        const lat = get(row, ['Latitude', 'Lat'], 23);
+        const lng = get(row, ['Longitude', 'Lng'], 24);
+        return {
+          Job_Number: get(row, ['Job Number'], 2),
+          Job_Name: get(row, ['Job Name'], 3),
+          Lat: validCoordinate(lat) ? lat : '',
+          Lng: validCoordinate(lng) ? lng : '',
+          State: get(row, ['State'], 7),
+          General_Contractor: get(row, ['General Contractor'], 8),
+        };
+      }).filter(row => /^\d{2,3}-\d{3}/.test(row.Job_Number));
+    } catch (error) {
+      console.error('[fetchProjectSetupActiveJobs] failed:', error);
+      return [];
+    }
+  });
+}
 
 // ──────────────────────────── LEVEL 10 MEETING ────────────────────────────
 export function fetchLevel10Meeting() {
@@ -135,11 +190,12 @@ export function fetchLiveJobs() {
   return cached('liveJobs', 5 * 60 * 1000, async () => {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${JOB_LIST_SHEET_ID}/export?format=csv&gid=${JOB_LIST_GID}`;
-    const [response, masterJobs, qboFinancials, crewDays] = await Promise.all([
+    const [response, masterJobs, qboFinancials, crewDays, projectSetupJobs] = await Promise.all([
       fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 300 } }).catch(() => null),
       fetchMasterJobIndex(),
       fetchQboFinancials(),
       fetchCrewDaysSold(),
+      fetchProjectSetupActiveJobs(),
     ]);
 
     let legacyJobs: any[] = [];
@@ -211,6 +267,7 @@ export function fetchLiveJobs() {
     const masterByJob = new Map<string, MasterJobIndexRow>(masterJobs.map(j => [j.Job_Number, j]));
     const qboByJob = new Map<string, QboJobFinancials>(qboFinancials.filter(q => q.Job_Number).map(q => [q.Job_Number, q]));
     const crewDaysByJob = new Map<string, CrewDaysJob>(crewDays.jobs.map(j => [j.Job_Number, j]));
+    const projectSetupByJob = new Map<string, ProjectSetupActiveJob>(projectSetupJobs.map(j => [j.Job_Number, j]));
     const jobNumbers = new Set<string>([...legacyByJob.keys(), ...masterByJob.keys()]);
 
     return Array.from(jobNumbers).map(jobNumber => {
@@ -218,6 +275,7 @@ export function fetchLiveJobs() {
       const master = masterByJob.get(jobNumber);
       const qbo = qboByJob.get(jobNumber);
       const crewDayJob = crewDaysByJob.get(jobNumber);
+      const projectSetup = projectSetupByJob.get(jobNumber);
       const scorecardContract = master?.Contract_Amount || 0;
       const qboIncome = qbo?.Act_Income || 0;
       const contractAmount = scorecardContract > 0 ? scorecardContract : (qboIncome > 0 ? qboIncome : (legacy.Contract_Amount || 0));
@@ -229,14 +287,16 @@ export function fetchLiveJobs() {
       return {
         ...legacy,
         Job_Number: jobNumber,
-        Job_Name: master?.Job_Name || legacy.Job_Name || qbo?.Project_Name || '',
+        Job_Name: master?.Job_Name || legacy.Job_Name || qbo?.Project_Name || projectSetup?.Job_Name || '',
+        Lat: projectSetup?.Lat || legacy.Lat || '',
+        Lng: projectSetup?.Lng || legacy.Lng || '',
         Status: master?.Job_Status || legacy.Status || 'Pending',
-        General_Contractor: crewDayJob?.Contractor || legacy.General_Contractor || '',
+        General_Contractor: crewDayJob?.Contractor || legacy.General_Contractor || projectSetup?.General_Contractor || '',
         Project_Manager: master?.PM || legacy.Project_Manager || '',
         Contract_Amount: contractAmount,
         Billed_To_Date: billedToDate,
         Pct_Complete: pctComplete,
-        Location: legacy.Location || legacy.State || '',
+        Location: legacy.Location || legacy.State || projectSetup?.State || '',
         Estimated_GAB_Tons: master?.Estimated_GAB_Tons || 0,
         Estimated_Binder_Tons: master?.Estimated_Binder_Tons || 0,
         Estimated_Topping_Tons: master?.Estimated_Topping_Tons || 0,
