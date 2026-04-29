@@ -5,7 +5,9 @@ import Papa from 'papaparse';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const revalidate = 300;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 function loadCsvRows(filename: string): Record<string, string>[] {
   const csvPath = path.join(process.cwd(), 'data', filename);
@@ -139,6 +141,9 @@ export default async function FleetPage() {
     return { color: '#20BC64', label: 'OK' };
   };
 
+  const hosApiStatus = diagnostics.hosStatus ? String(diagnostics.hosStatus) : '';
+  const hosBlocked = hosApiStatus === '403' || Boolean(diagnostics.hosError);
+
   const driverTable = hos.length > 0
     ? hos.filter(h => h.driverName).map(h => ({
         name: h.driverName,
@@ -148,8 +153,10 @@ export default async function FleetPage() {
         shift: h.shiftRemainingHrs ?? null,
         cycle: h.cycleRemainingHrs ?? null,
         currentStatus: h.currentStatus || '',
+        hosBlocked: false,
       }))
-    : crews.filter(c => c.status !== 'exempt').map(c => {
+    : crews.length > 0
+      ? crews.filter(c => c.status !== 'exempt').map(c => {
       const h = hos.find((x: any) => cleanText(x.driverName).toLowerCase() === cleanText(c.name).toLowerCase());
       return {
         name: c.name,
@@ -158,9 +165,20 @@ export default async function FleetPage() {
         drive: h?.driveRemainingHrs ?? null,
         shift: h?.shiftRemainingHrs ?? null,
         cycle: h?.cycleRemainingHrs ?? null,
-        currentStatus: h?.currentStatus || '',
+        currentStatus: h?.currentStatus || (hosBlocked ? `Samsara HOS blocked${hosApiStatus ? ` ${hosApiStatus}` : ''}` : ''),
+        hosBlocked,
       };
-    });
+    })
+      : compliance.map(c => ({
+        name: c.name,
+        eldStatus: 'unknown',
+        logDate: '',
+        drive: null,
+        shift: null,
+        cycle: null,
+        currentStatus: hosBlocked ? `Samsara HOS blocked${hosApiStatus ? ` ${hosApiStatus}` : ''}` : 'No HOS log',
+        hosBlocked,
+      }));
 
   const vehiclesMoving = vehicles.filter(v => (v.speed || 0) > 2);
   const vehiclesParked = vehicles.filter(v => (v.speed || 0) <= 2);
@@ -169,7 +187,6 @@ export default async function FleetPage() {
   const activeDriverCount = driverTable.length || crews.length || compliance.length;
   const driversAtRisk = driverTable.filter(d => d.drive != null && d.drive <= 2).length;
   const hasAnyHosData = driverTable.some(d => d.drive != null || d.shift != null || d.cycle != null);
-  const hosApiStatus = diagnostics.hosStatus ? String(diagnostics.hosStatus) : '';
   const hosUnavailable = configured && driverTable.length === 0 && hos.length === 0;
 
   // Compliance countdown tone
@@ -309,7 +326,7 @@ export default async function FleetPage() {
                   const dr = toneFor(d.drive, 0.5, 2);
                   const sh = toneFor(d.shift, 1, 3);
                   const cy = toneFor(d.cycle, 5, 15);
-                  const fmt = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}h`;
+                  const fmt = (v: number | null) => v == null ? (d.hosBlocked ? 'Blocked' : '—') : `${v.toFixed(1)}h`;
                   return (
                     <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
                       <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
@@ -523,6 +540,7 @@ export default async function FleetPage() {
                       };
                     }
                     const toneFor = (hrs: number | null, critical: number, warn: number) => {
+                      if (hrs == null && hosBlocked) return { color: '#F5A623', bg: '#FEF3DB', label: 'BLOCKED' };
                       if (hrs == null) return { color: '#9CA3AF', bg: '#F1F3F4', label: 'N/A' };
                       if (hrs <= critical) return { color: '#E04343', bg: '#FDECEC', label: 'STOP' };
                       if (hrs <= warn)     return { color: '#F5A623', bg: '#FEF3DB', label: 'WATCH' };
@@ -531,7 +549,7 @@ export default async function FleetPage() {
                     const d = toneFor(lowboyHos.driveRemainingHrs, 0.5, 2);
                     const s = toneFor(lowboyHos.shiftRemainingHrs, 1, 3);
                     const c = toneFor(lowboyHos.cycleRemainingHrs, 5, 15);
-                    const hrs = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}h`;
+                    const hrs = (v: number | null) => v == null ? (hosBlocked ? 'Blocked' : '—') : `${v.toFixed(1)}h`;
                     return (
                       <div className="mt-4 pt-4 border-t border-[#F1F3F4]">
                         <div className="flex justify-between items-center mb-2">
@@ -583,7 +601,7 @@ export default async function FleetPage() {
                   </div>
                   <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
                     <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">HOS</p>
-                    <p className="text-sm font-black text-[#9CA3AF]">No HOS log</p>
+                    <p className={`text-sm font-black ${hosBlocked ? 'text-[#F5A623]' : 'text-[#9CA3AF]'}`}>{hosBlocked ? `Samsara HOS blocked${hosApiStatus ? ` ${hosApiStatus}` : ''}` : 'No HOS log'}</p>
                     <p className="mt-1 text-xs text-[#757A7F]">No made-up drive hours shown.</p>
                   </div>
                 </div>
