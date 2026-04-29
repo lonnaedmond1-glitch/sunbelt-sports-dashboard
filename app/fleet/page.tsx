@@ -123,6 +123,7 @@ function loadEldDiagnostics(): EldDiag[] {
 export default async function FleetPage() {
   const samsara = await getGlobalSamsara();
   const configured = samsara.configured;
+  const diagnostics: any = (samsara as any).diagnostics || {};
   const vehicles: any[] = samsara.vehicles || [];
   const crews: any[] = samsara.crews || [];
   const hos: any[] = (samsara as any).hos || [];
@@ -168,6 +169,8 @@ export default async function FleetPage() {
   const activeDriverCount = driverTable.length || crews.length || compliance.length;
   const driversAtRisk = driverTable.filter(d => d.drive != null && d.drive <= 2).length;
   const hasAnyHosData = driverTable.some(d => d.drive != null || d.shift != null || d.cycle != null);
+  const hosApiStatus = diagnostics.hosStatus ? String(diagnostics.hosStatus) : '';
+  const hosUnavailable = configured && driverTable.length === 0 && hos.length === 0;
 
   // Compliance countdown tone
   const cdlTone = (days: number | null) => {
@@ -200,8 +203,9 @@ export default async function FleetPage() {
           <p className="text-[10px] text-[#757A7F] mt-0.5">{vehiclesMoving.length} moving · {vehiclesParked.length} parked</p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Active Drivers</p>
+          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Drivers</p>
           <p className="text-3xl font-black text-[#20BC64]">{activeDriverCount}</p>
+          <p className="text-[10px] text-[#757A7F] mt-0.5">{driverTable.length > 0 ? 'from Samsara HOS' : 'from DOT file'}</p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
           <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">HOS Risk</p>
@@ -294,7 +298,13 @@ export default async function FleetPage() {
               </thead>
               <tbody>
                 {driverTable.length === 0 ? (
-                  <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-[#757A7F]">No non-exempt drivers reporting.</td></tr>
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-[#757A7F]">
+                      {hosUnavailable
+                        ? `No HOS clock rows returned by Samsara${hosApiStatus ? ` (status ${hosApiStatus})` : ''}. Vehicle GPS is connected, but driver HOS is not coming through this token.`
+                        : 'No non-exempt drivers reporting.'}
+                    </td>
+                  </tr>
                 ) : driverTable.map((d, i) => {
                   const dr = toneFor(d.drive, 0.5, 2);
                   const sh = toneFor(d.shift, 1, 3);

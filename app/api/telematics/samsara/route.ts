@@ -12,6 +12,7 @@ export async function getGlobalSamsara() {
 
   try {
     const headers = { Authorization: `Bearer ${SAMSARA_API_KEY}`, 'Content-Type': 'application/json' };
+    const diagnostics: Record<string, string | number> = {};
 
     // Fetch vehicle locations
     const vehicleRes = await fetch('https://api.samsara.com/fleet/vehicles/locations', {
@@ -50,6 +51,7 @@ export async function getGlobalSamsara() {
     });
 
     let crews: any[] = [];
+    diagnostics.driversStatus = driverRes.status;
     if (driverRes.ok) {
       const dData = await driverRes.json();
       crews = (dData.data || []).map((d: any) => ({
@@ -68,6 +70,7 @@ export async function getGlobalSamsara() {
         headers,
         next: { revalidate: 300 }, // 5 minutes
       });
+      diagnostics.hosStatus = hosRes.status;
       if (hosRes.ok) {
         const hData = await hosRes.json();
         const msToHours = (value: unknown) => typeof value === 'number' ? value / 3600000 : null;
@@ -86,8 +89,12 @@ export async function getGlobalSamsara() {
             currentStatus: d.currentDutyStatus?.hosStatusType || '',
           };
         });
+      } else {
+        diagnostics.hosError = 'Samsara HOS clocks did not return data';
       }
     } catch (e) {
+      diagnostics.hosStatus = 'fetch_failed';
+      diagnostics.hosError = 'Samsara HOS clocks fetch failed';
       console.warn('[telematics/samsara] HOS fetch failed:', e);
     }
 
@@ -100,7 +107,7 @@ export async function getGlobalSamsara() {
       })).filter((driver: any) => driver.name);
     }
 
-    return { vehicles, crews, hos, configured: true, timestamp: new Date().toISOString() };
+    return { vehicles, crews, hos, configured: true, diagnostics, timestamp: new Date().toISOString() };
   } catch (error) {
     console.error('[telematics/samsara] Error:', error);
     return { vehicles: [], crews: [], hos: [], configured: false, error: 'Samsara fetch failed' };
