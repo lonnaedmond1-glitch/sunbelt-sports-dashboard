@@ -1,11 +1,31 @@
 import React from 'react';
 import Link from 'next/link';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
-import { fetchVisionLinkAssets } from '@/lib/sheets-data';
+import Papa from 'papaparse';
 import * as fs from 'fs';
 import * as path from 'path';
 
-export const revalidate = 86400;
+export const revalidate = 300;
+
+function loadCsvRows(filename: string): Record<string, string>[] {
+  const csvPath = path.join(process.cwd(), 'data', filename);
+  if (!fs.existsSync(csvPath)) return [];
+  const text = fs.readFileSync(csvPath, 'utf-8');
+  const result = Papa.parse<Record<string, string>>(text, {
+    header: true,
+    skipEmptyLines: true,
+  });
+  return result.data;
+}
+
+function cleanText(value: string | undefined): string {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function toNumber(value: string | undefined): number {
+  const n = parseFloat((value || '').replace(/[^0-9.-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
 
 // ── Driver compliance CSV reader ──────────────────────────────────────────
 interface ComplianceRow {
@@ -21,11 +41,7 @@ interface ComplianceRow {
 
 function loadDriverCompliance(): ComplianceRow[] {
   try {
-    const csvPath = path.join(process.cwd(), 'data', 'driver_compliance.csv');
-    if (!fs.existsSync(csvPath)) return [];
-    const text = fs.readFileSync(csvPath, 'utf-8');
-    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
-    if (lines.length < 2) return [];
+    const rows = loadCsvRows('driver_compliance.csv');
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const daysUntil = (dateStr: string): number | null => {
       if (!dateStr) return null;
@@ -33,20 +49,20 @@ function loadDriverCompliance(): ComplianceRow[] {
       if (isNaN(d.getTime())) return null;
       return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
     };
-    return lines.slice(1).map(line => {
-      // Handle quoted fields with newlines (David Hudson's name has a newline in the CSV)
-      const cols = line.split(',').map(c => c.replace(/"/g, '').trim());
-      const name = cols[0] || '';
+    return rows.map(row => {
+      const name = cleanText(row['Driver Name']);
       if (!name) return null;
+      const cdlExpiration = cleanText(row['CDL/DL Expiration Date']);
+      const medExpiration = cleanText(row['Medical Certificate (MEC) Expiration']);
       return {
         name,
-        licenseNumber: cols[1] || '',
-        cdlExpiration: cols[2] || '',
-        cdlDaysLeft: daysUntil(cols[2] || ''),
-        medExpiration: cols[3] || '',
-        medDaysLeft: daysUntil(cols[3] || ''),
-        randomStatus: cols[4] || '',
-        randomDeadline: cols[5] || '',
+        licenseNumber: cleanText(row['Drivers License Number']),
+        cdlExpiration,
+        cdlDaysLeft: daysUntil(cdlExpiration),
+        medExpiration,
+        medDaysLeft: daysUntil(medExpiration),
+        randomStatus: cleanText(row['Random Selection Status']),
+        randomDeadline: cleanText(row['Random Test Deadline']),
       };
     }).filter((r): r is ComplianceRow => r !== null && r.name.length > 0);
   } catch { return []; }
@@ -55,31 +71,34 @@ function loadDriverCompliance(): ComplianceRow[] {
 // ── Driver safety CSV reader ──────────────────────────────────────────
 interface SafetyRow {
   rank: number; name: string; score: number; driveTime: string;
-  totalMiles: number; maxSpeed: number; events: number;
-  lightSpeeding: number; moderateSpeeding: number; heavySpeeding: number;
+  totalMiles: number; maxSpeed: number; events: number; behaviors: number;
+  lightSpeeding: number; moderateSpeeding: number; heavySpeeding: number; severeSpeeding: number;
+  harshAccel: number; harshBrake: number; harshTurn: number; mobileUsage: number; noSeatBelt: number; forwardCollisionWarning: number;
 }
 function loadDriverSafety(): SafetyRow[] {
   try {
-    const csvPath = path.join(process.cwd(), 'data', 'samsara_driver_safety.csv');
-    if (!fs.existsSync(csvPath)) return [];
-    const text = fs.readFileSync(csvPath, 'utf-8');
-    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
-    if (lines.length < 2) return [];
-    return lines.slice(1).map(line => {
-      const c = line.split(',');
-      const rank = parseInt(c[0]) || 0;
+    return loadCsvRows('samsara_driver_safety.csv').map(row => {
+      const rank = parseInt(row['Rank'] || '') || 0;
       if (rank === 0) return null; // skip "All Drivers" summary row
       return {
         rank,
-        name: (c[1] || '').trim(),
-        score: parseInt(c[6]) || 0,
-        driveTime: (c[7] || '').trim(),
-        totalMiles: parseFloat(c[8]) || 0,
-        maxSpeed: parseFloat(c[22]) || 0,
-        events: parseInt(c[9]) || 0,
-        lightSpeeding: parseFloat(c[17]) || 0,
-        moderateSpeeding: parseFloat(c[18]) || 0,
-        heavySpeeding: parseFloat(c[19]) || 0,
+        name: cleanText(row['Driver Name']),
+        score: toNumber(row['Safety Score']),
+        driveTime: cleanText(row['Drive Time (hh:mm:ss)']),
+        totalMiles: toNumber(row['Total Distance (mi)']),
+        maxSpeed: toNumber(row['Max Speed (mph)']),
+        events: toNumber(row['Total Events']),
+        behaviors: toNumber(row['Total Behaviors']),
+        lightSpeeding: toNumber(row['Percent Light Speeding']),
+        moderateSpeeding: toNumber(row['Percent Moderate Speeding']),
+        heavySpeeding: toNumber(row['Percent Heavy Speeding']),
+        severeSpeeding: toNumber(row['Percent Severe Speeding']),
+        harshAccel: toNumber(row['Harsh Accel']),
+        harshBrake: toNumber(row['Harsh Brake']),
+        harshTurn: toNumber(row['Harsh Turn']),
+        mobileUsage: toNumber(row['Mobile Usage']),
+        noSeatBelt: toNumber(row['No Seat Belt']),
+        forwardCollisionWarning: toNumber(row['Forward Collision Warning']),
       };
     }).filter((r): r is SafetyRow => r !== null);
   } catch { return []; }
@@ -102,7 +121,7 @@ function loadEldDiagnostics(): EldDiag[] {
 }
 
 export default async function FleetPage() {
-  const [samsara, vlAssets] = await Promise.all([getGlobalSamsara(), fetchVisionLinkAssets()]);
+  const samsara = await getGlobalSamsara();
   const configured = samsara.configured;
   const vehicles: any[] = samsara.vehicles || [];
   const crews: any[] = samsara.crews || [];
@@ -110,21 +129,6 @@ export default async function FleetPage() {
   const compliance = loadDriverCompliance();
   const safety = loadDriverSafety();
   const eldDiags = loadEldDiagnostics();
-
-  // Fleet health summary from VisionLink
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const vlHealthy = vlAssets.filter((a: any) => {
-    const lr = a.Last_Reported ? new Date(a.Last_Reported) : null;
-    if (!lr || isNaN(lr.getTime())) return false;
-    return (today.getTime() - lr.getTime()) / (1000 * 60 * 60 * 24) <= 7;
-  }).length;
-  const vlStale = vlAssets.filter((a: any) => {
-    const lr = a.Last_Reported ? new Date(a.Last_Reported) : null;
-    if (!lr || isNaN(lr.getTime())) return true;
-    return (today.getTime() - lr.getTime()) / (1000 * 60 * 60 * 24) > 30;
-  }).length;
-  const vlCheck = vlAssets.length - vlHealthy - vlStale;
-  const fleetScore = vlAssets.length > 0 ? Math.round((vlHealthy / vlAssets.length) * 100) : null;
 
   // HOS tone helper
   const toneFor = (hrs: number | null, critical: number, warn: number) => {
@@ -134,11 +138,18 @@ export default async function FleetPage() {
     return { color: '#20BC64', label: 'OK' };
   };
 
-  // Filter EXEMPT drivers out of HOS table — they don't report HOS
-  const driverTable = crews
-    .filter(c => c.status !== 'exempt')
-    .map(c => {
-      const h = hos.find((x: any) => (x.driverName || '').toLowerCase() === (c.name || '').toLowerCase());
+  const driverTable = hos.length > 0
+    ? hos.filter(h => h.driverName).map(h => ({
+        name: h.driverName,
+        eldStatus: 'on_duty',
+        logDate: h.logDate || '',
+        drive: h.driveRemainingHrs ?? null,
+        shift: h.shiftRemainingHrs ?? null,
+        cycle: h.cycleRemainingHrs ?? null,
+        currentStatus: h.currentStatus || '',
+      }))
+    : crews.filter(c => c.status !== 'exempt').map(c => {
+      const h = hos.find((x: any) => cleanText(x.driverName).toLowerCase() === cleanText(c.name).toLowerCase());
       return {
         name: c.name,
         eldStatus: c.status,
@@ -152,6 +163,9 @@ export default async function FleetPage() {
 
   const vehiclesMoving = vehicles.filter(v => (v.speed || 0) > 2);
   const vehiclesParked = vehicles.filter(v => (v.speed || 0) <= 2);
+  const vehiclesAssigned = vehicles.filter(v => v.driver && v.driver !== 'Unassigned');
+  const fleetScore = vehicles.length > 0 ? Math.round((vehiclesAssigned.length / vehicles.length) * 100) : null;
+  const activeDriverCount = driverTable.length || crews.length || compliance.length;
   const driversAtRisk = driverTable.filter(d => d.drive != null && d.drive <= 2).length;
   const hasAnyHosData = driverTable.some(d => d.drive != null || d.shift != null || d.cycle != null);
 
@@ -187,7 +201,7 @@ export default async function FleetPage() {
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
           <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Active Drivers</p>
-          <p className="text-3xl font-black text-[#20BC64]">{crews.length}</p>
+          <p className="text-3xl font-black text-[#20BC64]">{activeDriverCount}</p>
         </div>
         <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
           <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">HOS Risk</p>
@@ -227,7 +241,7 @@ export default async function FleetPage() {
         <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
           <div>
             <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Fleet Health</h2>
-            <p className="text-[10px] text-[#757A7F] mt-0.5">Owned equipment (VisionLink) + Samsara vehicle operational status.</p>
+            <p className="text-[10px] text-[#757A7F] mt-0.5">Samsara vehicle GPS and driver assignment only.</p>
           </div>
           {fleetScore != null && (
             <div className="text-right">
@@ -238,24 +252,24 @@ export default async function FleetPage() {
         </div>
         <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5 text-center">
-            <p className="text-2xl font-black text-[#20BC64]">{vehiclesMoving.length + vlHealthy}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Active / Healthy</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">{vehiclesMoving.length} vehicles moving · {vlHealthy} equipment reporting</p>
+            <p className="text-2xl font-black text-[#20BC64]">{vehicles.length}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Reporting</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">Samsara vehicles with GPS</p>
           </div>
           <div className="rounded-xl p-4 border border-[#F5A623]/20 bg-[#F5A623]/5 text-center">
-            <p className="text-2xl font-black text-[#F5A623]">{vlCheck}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Needs Check</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">7-30 days since last report</p>
+            <p className="text-2xl font-black text-[#F5A623]">{vehiclesParked.length}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Parked</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">0-2 mph right now</p>
           </div>
           <div className="rounded-xl p-4 border border-[#E04343]/20 bg-[#E04343]/5 text-center">
-            <p className="text-2xl font-black text-[#E04343]">{vlStale}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Stale / Offline</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">30+ days no signal</p>
+            <p className="text-2xl font-black text-[#E04343]">{vehicles.length - vehiclesAssigned.length}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">No Driver</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">No assigned driver shown</p>
           </div>
           <div className="rounded-xl p-4 border border-[#F1F3F4] text-center">
-            <p className="text-2xl font-black text-[#3C4043]">{vehicles.length + vlAssets.length}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Total Fleet</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">{vehicles.length} Samsara · {vlAssets.length} VisionLink</p>
+            <p className="text-2xl font-black text-[#3C4043]">{vehiclesMoving.length}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Moving</p>
+            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">Above 2 mph</p>
           </div>
         </div>
       </div>
@@ -359,7 +373,7 @@ export default async function FleetPage() {
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
               <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Driver Safety Scores</h2>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">Samsara 30-day rolling scores. 100 = perfect, &lt;70 = needs coaching.</p>
+              <p className="text-[10px] text-[#757A7F] mt-0.5">Samsara score based on speeding, harsh driving, phone use, seat belt, and collision warnings. 100 is best.</p>
             </div>
             <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">
               {safety.length > 0 ? `Avg: ${Math.round(safety.reduce((s, d) => s + d.score, 0) / safety.length)}` : 'No data'}
@@ -372,7 +386,7 @@ export default async function FleetPage() {
               <table className="w-full text-sm">
                 <thead className="bg-[#F1F3F4]">
                   <tr>
-                    {['#', 'Driver', 'Score', 'Drive Time', 'Miles', 'Max Speed', 'Events'].map(h => (
+                    {['#', 'Driver', 'Safety Score', 'Speeding %', 'Risk Events', 'Drive Time', 'Miles', 'Max Speed'].map(h => (
                       <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
                     ))}
                   </tr>
@@ -380,6 +394,9 @@ export default async function FleetPage() {
                 <tbody>
                   {safety.map((d, i) => {
                     const scoreColor = d.score >= 80 ? '#20BC64' : d.score >= 60 ? '#F5A623' : '#E04343';
+                    const speedingPct = d.lightSpeeding + d.moderateSpeeding + d.heavySpeeding + d.severeSpeeding;
+                    const behaviorEvents = d.harshAccel + d.harshBrake + d.harshTurn + d.mobileUsage + d.noSeatBelt + d.forwardCollisionWarning;
+                    const riskEvents = Math.max(d.events, d.behaviors, behaviorEvents);
                     return (
                       <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${d.score < 60 ? 'bg-[#E04343]/5' : ''}`}>
                         <td className="px-3 py-2 text-xs text-[#757A7F]">{d.rank}</td>
@@ -387,10 +404,11 @@ export default async function FleetPage() {
                         <td className="px-3 py-2">
                           <span className="text-sm font-black" style={{ color: scoreColor }}>{d.score}</span>
                         </td>
+                        <td className="px-3 py-2 text-xs font-bold text-[#757A7F]">{speedingPct.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-xs text-[#757A7F]">{riskEvents}</td>
                         <td className="px-3 py-2 text-xs text-[#757A7F] font-mono">{d.driveTime}</td>
                         <td className="px-3 py-2 text-xs text-[#757A7F]">{d.totalMiles.toLocaleString()}</td>
                         <td className="px-3 py-2 text-xs font-bold" style={{ color: d.maxSpeed > 80 ? '#E04343' : '#3C4043' }}>{Math.round(d.maxSpeed)} mph</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{d.events}</td>
                       </tr>
                     );
                   })}

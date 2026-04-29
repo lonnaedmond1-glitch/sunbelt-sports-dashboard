@@ -60,35 +60,44 @@ export async function getGlobalSamsara() {
       }));
     }
 
-    // Fetch Hours of Service (HOS) daily logs for DOT compliance
-    // Samsara endpoint returns per-driver running totals for the current duty day.
-    // Docs: https://developers.samsara.com/reference/gethoslogsummaries
+    // Fetch live Hours of Service clocks for DOT remaining hours.
+    // Daily logs do not carry the current remaining drive/shift/cycle clocks.
     let hos: any[] = [];
     try {
-      const hosRes = await fetch('https://api.samsara.com/fleet/hos/daily-logs?limit=50', {
+      const hosRes = await fetch('https://api.samsara.com/fleet/hos/clocks?limit=50', {
         headers,
         next: { revalidate: 300 }, // 5 minutes
       });
       if (hosRes.ok) {
         const hData = await hosRes.json();
+        const msToHours = (value: unknown) => typeof value === 'number' ? value / 3600000 : null;
         hos = (hData.data || []).map((d: any) => {
-          const latest = Array.isArray(d.dailyLogs) && d.dailyLogs.length > 0
-            ? d.dailyLogs[d.dailyLogs.length - 1]
-            : null;
+          const clocks = d.clocks || {};
           return {
             driverId: d.driver?.id || '',
             driverName: d.driver?.name || '',
-            logDate: latest?.logDate || '',
-            // Remaining time values (in ms) from Samsara, converted to hours
-            driveRemainingHrs: latest?.driveRemaining != null ? latest.driveRemaining / 3600000 : null,
-            shiftRemainingHrs: latest?.shiftRemaining != null ? latest.shiftRemaining / 3600000 : null,
-            cycleRemainingHrs: latest?.cycleRemaining != null ? latest.cycleRemaining / 3600000 : null,
-            currentStatus: latest?.currentDutyStatus || '',
+            currentVehicle: d.currentVehicle?.name || '',
+            logDate: '',
+            driveRemainingHrs: msToHours(clocks.drive?.driveRemainingDurationMs),
+            shiftRemainingHrs: msToHours(clocks.shift?.shiftRemainingDurationMs),
+            cycleRemainingHrs: msToHours(clocks.cycle?.cycleRemainingDurationMs),
+            breakRemainingHrs: msToHours(clocks.break?.timeUntilBreakDurationMs),
+            cycleTomorrowHrs: msToHours(clocks.cycle?.cycleTomorrowDurationMs),
+            currentStatus: d.currentDutyStatus?.hosStatusType || '',
           };
         });
       }
     } catch (e) {
       console.warn('[telematics/samsara] HOS fetch failed:', e);
+    }
+
+    if (crews.length === 0 && hos.length > 0) {
+      crews = hos.map((h: any) => ({
+        id: h.driverId,
+        name: h.driverName,
+        phone: '',
+        status: 'on_duty',
+      })).filter((driver: any) => driver.name);
     }
 
     return { vehicles, crews, hos, configured: true, timestamp: new Date().toISOString() };
