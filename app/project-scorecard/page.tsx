@@ -61,7 +61,6 @@ type ScorecardRow = {
   qboCost: number;
   qboProfit: number;
   qboMargin: number;
-  source: string;
 };
 
 function mapByJob<T extends { Job_Number: string }>(rows: T[]): Map<string, T> {
@@ -94,11 +93,6 @@ function buildRows(
     const master = masterByJob.get(jobNumber);
     const actual = actualByJob.get(jobNumber);
     const qbo = qboByJob.get(jobNumber);
-    const source = [
-      master ? 'Master' : '',
-      actual ? 'Production' : '',
-      qbo ? 'QBO' : '',
-    ].filter(Boolean).join(' + ');
 
     return {
       jobNumber,
@@ -119,7 +113,6 @@ function buildRows(
       qboCost: qbo?.Act_Cost || 0,
       qboProfit: qbo?.Profit || 0,
       qboMargin: qbo?.Act_Income ? qbo.Profit / qbo.Act_Income : 0,
-      source,
     };
   }).sort((a, b) => {
     const aOrder = masterOrder.get(a.jobNumber) ?? 9999;
@@ -234,7 +227,6 @@ export default async function ProjectScorecardPage() {
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">QBO Revenue</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">QBO Profit</th>
                 <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Margin</th>
-                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Source</th>
               </tr>
             </thead>
             <tbody>
@@ -261,7 +253,6 @@ export default async function ProjectScorecardPage() {
                     <td className="px-3 py-2 text-right text-[11px] text-[#757A7F]">{money(row.qboIncome)}</td>
                     <td className={`px-3 py-2 text-right text-[11px] font-bold ${row.qboProfit >= 0 ? 'text-[#0F8F47]' : 'text-[#E04343]'}`}>{money(row.qboProfit)}</td>
                     <td className={`px-3 py-2 text-right text-[11px] font-bold ${row.qboIncome ? marginTone(row.qboMargin) : 'text-[#9CA3AF]'}`}>{row.qboIncome ? pct(row.qboMargin) : '—'}</td>
-                    <td className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF]">{row.source || '—'}</td>
                   </tr>
                 );
               })}
