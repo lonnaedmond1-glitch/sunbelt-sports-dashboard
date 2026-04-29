@@ -1,230 +1,267 @@
-export const revalidate = 86400; // Daily ISR
-import React from 'react';
+export const revalidate = 300;
+
 import Link from 'next/link';
-import { getAllScorecards } from '@/lib/csv-parser';
-import { fetchLiveJobs, fetchProjectScorecardsEstVsAct, fetchQboFinancials } from '@/lib/sheets-data';
+import {
+  fetchEstVsActual,
+  fetchMasterJobIndex,
+  fetchQboFinancials,
+  type EstVsActualRow,
+  type MasterJobIndexRow,
+  type QboJobFinancials,
+} from '@/lib/sheets-data';
 
-function num(v: string | number | undefined | null): number {
-  if (v == null) return 0;
-  const x = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,\s"%]/g, ''));
-  return isNaN(x) ? 0 : x;
+function money(value: number): string {
+  return value.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  });
 }
 
-function varianceColor(act: number, est: number): string {
-  if (est === 0) return 'text-[#9CA3AF]';
-  const ratio = act / est;
-  if (ratio > 1.05) return 'text-[#E04343]';
-  if (ratio > 0.95) return 'text-[#0F8F47]';
-  return 'text-[#2563EB]';
+function tons(value: number): string {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
-function progressColor(act: number, est: number): string {
-  if (est === 0) return '#CBD5DA';
-  const ratio = act / est;
-  if (ratio > 1.05) return '#ef4444';
-  if (ratio > 0.90) return '#20BC64';
-  return '#60a5fa';
+function hours(value: number): string {
+  return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
-export default async function ProjectScorecardPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
-  const params = await searchParams;
-  const range = (params?.range === 'month' || params?.range === 'lifetime') ? params.range : 'ytd';
+function pct(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
 
-  const [liveRows, jobs, qbo] = await Promise.all([
-    fetchProjectScorecardsEstVsAct(),
-    fetchLiveJobs(),
+function varianceTone(variance: number): string {
+  if (variance > 0) return 'text-[#E04343]';
+  if (variance < 0) return 'text-[#0F8F47]';
+  return 'text-[#757A7F]';
+}
+
+function marginTone(value: number): string {
+  if (value >= 0.2) return 'text-[#0F8F47]';
+  if (value >= 0.1) return 'text-[#B7791F]';
+  return 'text-[#E04343]';
+}
+
+type ScorecardRow = {
+  jobNumber: string;
+  jobName: string;
+  pm: string;
+  status: string;
+  contractAmount: number;
+  estimatedGabTons: number;
+  actualGabTons: number;
+  estimatedBinderTons: number;
+  actualBinderTons: number;
+  estimatedToppingTons: number;
+  actualToppingTons: number;
+  estimatedAsphaltTons: number;
+  actualAsphaltTons: number;
+  manHours: number;
+  qboIncome: number;
+  qboCost: number;
+  qboProfit: number;
+  qboMargin: number;
+  source: string;
+};
+
+function mapByJob<T extends { Job_Number: string }>(rows: T[]): Map<string, T> {
+  const map = new Map<string, T>();
+  rows.forEach(row => {
+    const jobNumber = row.Job_Number?.trim();
+    if (jobNumber) map.set(jobNumber, row);
+  });
+  return map;
+}
+
+function buildRows(
+  masterRows: MasterJobIndexRow[],
+  actualRows: EstVsActualRow[],
+  qboRows: QboJobFinancials[],
+): ScorecardRow[] {
+  const masterByJob = mapByJob(masterRows);
+  const actualByJob = mapByJob(actualRows);
+  const qboByJob = mapByJob(qboRows);
+  const masterOrder = new Map(masterRows.map((row, index) => [row.Job_Number, index]));
+
+  const jobNumbers = new Set<string>();
+  masterRows.forEach(row => jobNumbers.add(row.Job_Number));
+  actualRows.forEach(row => jobNumbers.add(row.Job_Number));
+  qboRows.forEach(row => {
+    if (/^\d{2,3}-\d{3}/.test(row.Job_Number)) jobNumbers.add(row.Job_Number);
+  });
+
+  return Array.from(jobNumbers).map(jobNumber => {
+    const master = masterByJob.get(jobNumber);
+    const actual = actualByJob.get(jobNumber);
+    const qbo = qboByJob.get(jobNumber);
+    const source = [
+      master ? 'Master' : '',
+      actual ? 'Production' : '',
+      qbo ? 'QBO' : '',
+    ].filter(Boolean).join(' + ');
+
+    return {
+      jobNumber,
+      jobName: master?.Job_Name || actual?.Job_Name || qbo?.Project_Name || 'Missing job name',
+      pm: master?.PM || actual?.PM || '',
+      status: master?.Job_Status || actual?.Status || (qbo ? 'QBO' : ''),
+      contractAmount: master?.Contract_Amount || 0,
+      estimatedGabTons: actual?.Estimated_GAB_Tons ?? master?.Estimated_GAB_Tons ?? 0,
+      actualGabTons: actual?.Actual_GAB_Tons || 0,
+      estimatedBinderTons: actual?.Estimated_Binder_Tons ?? master?.Estimated_Binder_Tons ?? 0,
+      actualBinderTons: actual?.Actual_Binder_Tons || 0,
+      estimatedToppingTons: actual?.Estimated_Topping_Tons ?? master?.Estimated_Topping_Tons ?? 0,
+      actualToppingTons: actual?.Actual_Topping_Tons || 0,
+      estimatedAsphaltTons: actual?.Estimated_Asphalt_Tons ?? master?.Estimated_Asphalt_Tons ?? 0,
+      actualAsphaltTons: actual?.Actual_Asphalt_Tons || 0,
+      manHours: actual?.Man_Hours || 0,
+      qboIncome: qbo?.Act_Income || 0,
+      qboCost: qbo?.Act_Cost || 0,
+      qboProfit: qbo?.Profit || 0,
+      qboMargin: qbo?.Act_Income ? qbo.Profit / qbo.Act_Income : 0,
+      source,
+    };
+  }).sort((a, b) => {
+    const aOrder = masterOrder.get(a.jobNumber) ?? 9999;
+    const bOrder = masterOrder.get(b.jobNumber) ?? 9999;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.jobNumber.localeCompare(b.jobNumber);
+  });
+}
+
+export default async function ProjectScorecardPage() {
+  const [masterRows, actualRows, qboRows] = await Promise.all([
+    fetchMasterJobIndex(),
+    fetchEstVsActual(),
     fetchQboFinancials(),
   ]);
 
-  // Fall back to CSV if the live sheet tab is empty so we never show a blank page.
-  const csvRows = getAllScorecards();
-  const source: 'live' | 'csv' = liveRows.length > 0 ? 'live' : 'csv';
-  const scorecards = source === 'live'
-    ? liveRows.map(r => ({
-        Job_Number: r.Job_Number,
-        Est_Man_Hours: String(r.Est_Man_Hours),
-        Act_Man_Hours: String(r.Act_Man_Hours),
-        Est_Stone_Tons: String(r.Est_Stone_Tons),
-        Act_Stone_Tons: String(r.Act_Stone_Tons),
-        Est_Binder_Tons: String(r.Est_Binder_Tons),
-        Act_Binder_Tons: String(r.Act_Binder_Tons),
-        Est_Topping_Tons: String(r.Est_Topping_Tons),
-        Act_Topping_Tons: String(r.Act_Topping_Tons),
-        Est_Days_On_Site: String(r.Est_Days_On_Site),
-        Act_Days_On_Site: String(r.Act_Days_On_Site),
-        Weather_Days: String(r.Weather_Days),
-      }))
-    : csvRows;
+  const rows = buildRows(masterRows, actualRows, qboRows);
+  const qboUpdatedAt = qboRows.find(row => row.Updated_At)?.Updated_At || 'No QBO timestamp';
+  const totals = rows.reduce(
+    (acc, row) => ({
+      contractAmount: acc.contractAmount + row.contractAmount,
+      estimatedGabTons: acc.estimatedGabTons + row.estimatedGabTons,
+      actualGabTons: acc.actualGabTons + row.actualGabTons,
+      estimatedBinderTons: acc.estimatedBinderTons + row.estimatedBinderTons,
+      actualBinderTons: acc.actualBinderTons + row.actualBinderTons,
+      estimatedToppingTons: acc.estimatedToppingTons + row.estimatedToppingTons,
+      actualToppingTons: acc.actualToppingTons + row.actualToppingTons,
+      estimatedAsphaltTons: acc.estimatedAsphaltTons + row.estimatedAsphaltTons,
+      actualAsphaltTons: acc.actualAsphaltTons + row.actualAsphaltTons,
+      manHours: acc.manHours + row.manHours,
+      qboIncome: acc.qboIncome + row.qboIncome,
+      qboCost: acc.qboCost + row.qboCost,
+      qboProfit: acc.qboProfit + row.qboProfit,
+    }),
+    {
+      contractAmount: 0,
+      estimatedGabTons: 0,
+      actualGabTons: 0,
+      estimatedBinderTons: 0,
+      actualBinderTons: 0,
+      estimatedToppingTons: 0,
+      actualToppingTons: 0,
+      estimatedAsphaltTons: 0,
+      actualAsphaltTons: 0,
+      manHours: 0,
+      qboIncome: 0,
+      qboCost: 0,
+      qboProfit: 0,
+    },
+  );
+  const portfolioMargin = totals.qboIncome > 0 ? totals.qboProfit / totals.qboIncome : 0;
 
-  const updatedAt = source === 'live' ? (liveRows[0]?.Updated_At || '—') : 'static CSV';
-
-  const jobMap = new Map<string, string>();
-  jobs.forEach(j => { if (j?.Job_Number) jobMap.set(j.Job_Number.trim(), j.Job_Name); });
-
-  const qboMap = new Map<string, typeof qbo[number]>();
-  qbo.forEach(q => { if (q.Job_Number) qboMap.set(q.Job_Number.trim(), q); });
-
-  const totals = {
-    estHours: scorecards.reduce((s, sc) => s + num(sc.Est_Man_Hours), 0),
-    actHours: scorecards.reduce((s, sc) => s + num(sc.Act_Man_Hours), 0),
-    estStone: scorecards.reduce((s, sc) => s + num(sc.Est_Stone_Tons), 0),
-    actStone: scorecards.reduce((s, sc) => s + num(sc.Act_Stone_Tons), 0),
-    estBinder: scorecards.reduce((s, sc) => s + num(sc.Est_Binder_Tons), 0),
-    actBinder: scorecards.reduce((s, sc) => s + num(sc.Act_Binder_Tons), 0),
-    estTopping: scorecards.reduce((s, sc) => s + num(sc.Est_Topping_Tons), 0),
-    actTopping: scorecards.reduce((s, sc) => s + num(sc.Act_Topping_Tons), 0),
-    estDays: scorecards.reduce((s, sc) => s + num(sc.Est_Days_On_Site), 0),
-    actDays: scorecards.reduce((s, sc) => s + num(sc.Act_Days_On_Site), 0),
-    weatherDays: scorecards.reduce((s, sc) => s + num(sc.Weather_Days), 0),
-  };
-
-  const metrics = [
-    { label: 'Man Hours',    est: totals.estHours,   act: totals.actHours,   unit: 'hrs',  color: '#fb923c' },
-    { label: 'Stone (GAB)',  est: totals.estStone,   act: totals.actStone,   unit: 'tons', color: '#a78bfa' },
-    { label: 'Binder',       est: totals.estBinder,  act: totals.actBinder,  unit: 'tons', color: '#60a5fa' },
-    { label: 'Topping',      est: totals.estTopping, act: totals.actTopping, unit: 'tons', color: '#20BC64' },
-    { label: 'Days On Site', est: totals.estDays,    act: totals.actDays,    unit: 'days', color: '#f472b6' },
+  const kpis = [
+    { label: 'Scorecard Jobs', value: rows.length.toLocaleString('en-US'), note: 'Master + production + QBO' },
+    { label: 'Contract Value', value: money(totals.contractAmount), note: 'MASTER JOB INDEX sum' },
+    { label: 'QBO Revenue', value: money(totals.qboIncome), note: 'Act_Income sum' },
+    { label: 'QBO Profit', value: money(totals.qboProfit), note: 'Profit sum' },
+    { label: 'QBO Margin', value: pct(portfolioMargin), note: 'Profit / revenue' },
+    { label: 'Man Hours', value: hours(totals.manHours), note: 'Est vs Actual sum' },
   ];
 
   return (
-    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-sans p-8">
-      <header className="mb-8">
-        <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Project Scorecard</h1>
-        <p className="text-[#757A7F] text-sm">Estimated vs Actual — Man Hours, Materials &amp; Schedule across all projects.</p>
+    <div className="min-h-screen bg-[#F1F3F4] p-8 font-sans text-[#3C4043]">
+      <header className="mb-6">
+        <h1 className="mb-1 text-2xl font-black uppercase tracking-tight text-[#3C4043]">Project Scorecard</h1>
+        <p className="text-sm text-[#757A7F]">
+          Live job production and QBO money from the Scorecard Hub.
+        </p>
       </header>
 
-      {/* Time range toggle */}
-      <div className="mb-4 flex items-center gap-2">
-        <span className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Range:</span>
-        {(['month', 'ytd', 'lifetime'] as const).map(r => {
-          const active = range === r;
-          return (
-            <Link
-              key={r}
-              href={r === 'ytd' ? '/project-scorecard' : `/project-scorecard?range=${r}`}
-              className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-colors ${active ? 'bg-[#20BC64]/20 text-[#0F8F47] border-[#20BC64]/40' : 'bg-white text-[#757A7F] border-[#DDE2E5] hover:text-[#3C4043] hover:bg-[#FAFCFB]'}`}
-            >
-              {r === 'month' ? 'Month' : r === 'ytd' ? 'YTD' : 'Lifetime'}
-            </Link>
-          );
-        })}
-      </div>
-
-      {/* Live/static banner */}
-      {source === 'live' ? (
-        <div className="mb-6 flex items-start gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-4 py-3">
-          <span className="text-[#20BC64] text-lg mt-0.5">●</span>
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-[#0F8F47]">Live — Project_Scorecards_Live tab</p>
-            <p className="text-xs text-[#757A7F] mt-0.5">Updated {updatedAt}. Pulled from the scorecard hub Google Sheet. Edit the tab directly; changes flow through daily ISR refresh.</p>
-          </div>
-        </div>
-      ) : (
-        <div className="mb-6 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
-          <span className="text-[#F5A623] text-lg mt-0.5">&#9888;</span>
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-[#B7791F]">Static fallback — Scorecards CSV</p>
-            <p className="text-xs text-[#757A7F] mt-0.5">The <code className="font-mono text-[11px]">Project_Scorecards_Live</code> tab is empty. Add rows with columns <span className="font-mono text-[11px]">Job_Number, Est_Man_Hours, Act_Man_Hours, Est_Stone_Tons, Act_Stone_Tons, Est_Binder_Tons, Act_Binder_Tons, Est_Topping_Tons, Act_Topping_Tons, Est_Days_On_Site, Act_Days_On_Site, Weather_Days, Updated_At</span> to go live.</p>
-          </div>
-        </div>
-      )}
-
-      {/* KPI tiles */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-8">
-        {metrics.map(m => {
-          const pct = m.est > 0 ? Math.round((m.act / m.est) * 100) : 0;
-          return (
-            <div key={m.label} className="bg-white rounded-xl p-4 border border-[#DDE2E5]" style={{ borderColor: `${m.color}33` }}>
-              <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: m.color }}>{m.label}</p>
-              <div className="flex justify-between items-end gap-2">
-                <div>
-                  <p className="text-[9px] text-[#757A7F] uppercase">Est</p>
-                  <p className="text-lg font-black text-[#3C4043]">{m.est.toLocaleString()}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-[9px] text-[#757A7F] uppercase">Act</p>
-                  <p className="text-lg font-black" style={{ color: m.color }}>{m.act.toLocaleString()}</p>
-                </div>
-              </div>
-              <div className="mt-2 h-1.5 bg-[#E8ECEE] rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${Math.min(100, pct)}%`, backgroundColor: progressColor(m.act, m.est) }} />
-              </div>
-              <p className="text-[9px] text-[#757A7F] mt-1 text-right">{pct}% of estimate</p>
-            </div>
-          );
-        })}
-        <div className="bg-white rounded-xl p-4 border border-[#DDE2E5]" style={{ borderColor: '#f59e0b33' }}>
-          <p className="text-[10px] font-black uppercase tracking-widest mb-2 text-[#B7791F]">Weather Days</p>
-          <p className="text-3xl font-black text-[#F5A623]">{totals.weatherDays}</p>
-          <p className="text-[9px] text-[#757A7F] mt-1">total lost days</p>
+      <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+        <span className="mt-0.5 text-lg text-[#20BC64]">●</span>
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-[#0F8F47]">Live — Scorecard Hub tabs</p>
+          <p className="mt-0.5 text-xs text-[#757A7F]">
+            Sources: MASTER JOB INDEX, Est vs Actual, and QBO Est vs Actuals. Refreshes every 5 minutes. QBO updated {qboUpdatedAt}.
+          </p>
         </div>
       </div>
 
-      {/* Job-by-job */}
-      <div className="bg-white rounded-xl border border-[#DDE2E5] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#DDE2E5] flex justify-between items-center">
-          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Job-by-Job Comparison</h2>
-          <span className="text-[10px] text-[#757A7F] font-bold uppercase">{source === 'live' ? 'Live' : 'Static CSV'}</span>
+      <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-6">
+        {kpis.map(kpi => (
+          <div key={kpi.label} className="rounded-xl border border-[#DDE2E5] bg-white p-4">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{kpi.label}</p>
+            <p className="text-xl font-black text-[#3C4043]">{kpi.value}</p>
+            <p className="mt-1 text-[9px] text-[#757A7F]">{kpi.note}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-[#DDE2E5] bg-white">
+        <div className="flex items-center justify-between border-b border-[#DDE2E5] px-5 py-4">
+          <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">Job-by-Job Scorecard</h2>
+          <span className="text-[10px] font-bold uppercase text-[#757A7F]">{rows.length} jobs</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-[#F1F3F4]">
               <tr>
-                <th className="text-left px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Job</th>
-                <th className="text-center px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]" colSpan={2}>Man Hours</th>
-                <th className="text-center px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]" colSpan={2}>Stone (tons)</th>
-                <th className="text-center px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]" colSpan={2}>Binder (tons)</th>
-                <th className="text-center px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]" colSpan={2}>Topping (tons)</th>
-                <th className="text-center px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]" colSpan={2}>Days</th>
-                <th className="text-right px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">QBO Profit</th>
-                <th className="text-right px-3 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Margin</th>
-              </tr>
-              <tr className="bg-[#FAFCFB] border-t border-[#DDE2E5]">
-                <th></th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Est</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Act</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Est</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Act</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Est</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Act</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Est</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Act</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Est</th>
-                <th className="text-[9px] font-bold uppercase text-[#9CA3AF] px-2 py-1">Act</th>
-                <th></th><th></th>
+                <th className="min-w-[260px] px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Job</th>
+                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#757A7F]">PM</th>
+                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Status</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Contract</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">GAB Est</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">GAB Act</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Binder Est</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Binder Act</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Topping Est</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Topping Act</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Asphalt Var</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Hours</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">QBO Revenue</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">QBO Profit</th>
+                <th className="px-3 py-3 text-right text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Margin</th>
+                <th className="px-3 py-3 text-left text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Source</th>
               </tr>
             </thead>
             <tbody>
-              {scorecards.map((sc, i) => {
-                const mh = { est: num(sc.Est_Man_Hours), act: num(sc.Act_Man_Hours) };
-                const st = { est: num(sc.Est_Stone_Tons), act: num(sc.Act_Stone_Tons) };
-                const bd = { est: num(sc.Est_Binder_Tons), act: num(sc.Act_Binder_Tons) };
-                const tp = { est: num(sc.Est_Topping_Tons), act: num(sc.Act_Topping_Tons) };
-                const dy = { est: num(sc.Est_Days_On_Site), act: num(sc.Act_Days_On_Site) };
-                const q = qboMap.get(sc.Job_Number.trim());
-                const name = jobMap.get(sc.Job_Number.trim()) || '';
+              {rows.map(row => {
+                const asphaltVariance = row.actualAsphaltTons - row.estimatedAsphaltTons;
                 return (
-                  <tr key={i} className="border-t border-[#DDE2E5] hover:bg-[#FAFCFB]">
+                  <tr key={row.jobNumber} className="border-t border-[#DDE2E5] hover:bg-[#FAFCFB]">
                     <td className="px-3 py-2">
-                      <Link href={`/jobs/${sc.Job_Number}`} className="text-[#20BC64] font-bold text-xs hover:underline">{sc.Job_Number}</Link>
-                      <div className="text-[10px] text-[#757A7F]">{name}</div>
+                      <Link href={`/jobs/${row.jobNumber}`} className="text-xs font-black text-[#20BC64] hover:underline">
+                        {row.jobNumber} · {row.jobName}
+                      </Link>
                     </td>
-                    <td className="text-center px-2 py-2 text-[11px] text-[#757A7F]">{mh.est.toLocaleString()}</td>
-                    <td className={`text-center px-2 py-2 text-[11px] font-bold ${varianceColor(mh.act, mh.est)}`}>{mh.act.toLocaleString()}</td>
-                    <td className="text-center px-2 py-2 text-[11px] text-[#757A7F]">{st.est.toLocaleString()}</td>
-                    <td className={`text-center px-2 py-2 text-[11px] font-bold ${varianceColor(st.act, st.est)}`}>{st.act.toLocaleString()}</td>
-                    <td className="text-center px-2 py-2 text-[11px] text-[#757A7F]">{bd.est.toLocaleString()}</td>
-                    <td className={`text-center px-2 py-2 text-[11px] font-bold ${varianceColor(bd.act, bd.est)}`}>{bd.act.toLocaleString()}</td>
-                    <td className="text-center px-2 py-2 text-[11px] text-[#757A7F]">{tp.est.toLocaleString()}</td>
-                    <td className={`text-center px-2 py-2 text-[11px] font-bold ${varianceColor(tp.act, tp.est)}`}>{tp.act.toLocaleString()}</td>
-                    <td className="text-center px-2 py-2 text-[11px] text-[#757A7F]">{dy.est}</td>
-                    <td className={`text-center px-2 py-2 text-[11px] font-bold ${varianceColor(dy.act, dy.est)}`}>{dy.act}</td>
-                    <td className={`text-right px-3 py-2 text-[11px] font-bold ${q ? (q.Profit >= 0 ? 'text-[#0F8F47]' : 'text-[#E04343]') : 'text-[#9CA3AF]'}`}>
-                      {q ? `$${(q.Profit / 1000).toFixed(0)}K` : '—'}
-                    </td>
-                    <td className={`text-right px-3 py-2 text-[11px] font-bold ${q ? (q.Profit_Margin >= 0.2 ? 'text-[#0F8F47]' : q.Profit_Margin >= 0.1 ? 'text-[#B7791F]' : 'text-[#E04343]') : 'text-[#9CA3AF]'}`}>
-                      {q && q.Act_Income > 0 ? `${(q.Profit_Margin * 100).toFixed(0)}%` : '—'}
-                    </td>
+                    <td className="px-3 py-2 text-[11px] font-bold text-[#757A7F]">{row.pm || '—'}</td>
+                    <td className="px-3 py-2 text-[11px] font-bold text-[#757A7F]">{row.status || '—'}</td>
+                    <td className="px-3 py-2 text-right text-[11px] text-[#757A7F]">{money(row.contractAmount)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] text-[#757A7F]">{tons(row.estimatedGabTons)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] font-bold text-[#2563EB]">{tons(row.actualGabTons)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] text-[#757A7F]">{tons(row.estimatedBinderTons)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] font-bold text-[#2563EB]">{tons(row.actualBinderTons)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] text-[#757A7F]">{tons(row.estimatedToppingTons)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] font-bold text-[#2563EB]">{tons(row.actualToppingTons)}</td>
+                    <td className={`px-3 py-2 text-right text-[11px] font-bold ${varianceTone(asphaltVariance)}`}>{tons(asphaltVariance)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] font-bold text-[#3C4043]">{hours(row.manHours)}</td>
+                    <td className="px-3 py-2 text-right text-[11px] text-[#757A7F]">{money(row.qboIncome)}</td>
+                    <td className={`px-3 py-2 text-right text-[11px] font-bold ${row.qboProfit >= 0 ? 'text-[#0F8F47]' : 'text-[#E04343]'}`}>{money(row.qboProfit)}</td>
+                    <td className={`px-3 py-2 text-right text-[11px] font-bold ${row.qboIncome ? marginTone(row.qboMargin) : 'text-[#9CA3AF]'}`}>{row.qboIncome ? pct(row.qboMargin) : '—'}</td>
+                    <td className="px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-[#9CA3AF]">{row.source || '—'}</td>
                   </tr>
                 );
               })}
