@@ -29,7 +29,10 @@ function toNumber(value: string | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-// ── Driver compliance CSV reader ──────────────────────────────────────────
+const DOT_COMPLIANCE_SHEET_ID = process.env.DOT_COMPLIANCE_SHEET_ID || '1Sjy2D088jh28_NYGK8Zcp73hxrkRQRAD3vmhSw2sAUg';
+const DOT_COMPLIANCE_DRIVER_GID = process.env.DOT_COMPLIANCE_DRIVER_GID || '878551575';
+
+// ── Driver compliance reader ──────────────────────────────────────────
 interface ComplianceRow {
   name: string;
   licenseNumber: string;
@@ -41,33 +44,58 @@ interface ComplianceRow {
   randomDeadline: string;
 }
 
-function loadDriverCompliance(): ComplianceRow[] {
-  try {
-    const rows = loadCsvRows('driver_compliance.csv');
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const daysUntil = (dateStr: string): number | null => {
-      if (!dateStr) return null;
-      const d = new Date(dateStr.trim());
-      if (isNaN(d.getTime())) return null;
-      return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+function buildDriverCompliance(rows: Record<string, string>[]): ComplianceRow[] {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const daysUntil = (dateStr: string): number | null => {
+    if (!dateStr) return null;
+    const d = new Date(dateStr.trim());
+    if (isNaN(d.getTime())) return null;
+    return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  return rows.map(row => {
+    const name = cleanText(row['Driver Name']);
+    if (!name) return null;
+    const cdlExpiration = cleanText(row['CDL/DL Expiration Date']);
+    const medExpiration = cleanText(row['Medical Certificate (MEC) Expiration']);
+    return {
+      name,
+      licenseNumber: cleanText(row['Drivers License Number']),
+      cdlExpiration,
+      cdlDaysLeft: daysUntil(cdlExpiration),
+      medExpiration,
+      medDaysLeft: daysUntil(medExpiration),
+      randomStatus: cleanText(row['Random Selection Status']),
+      randomDeadline: cleanText(row['Random Test Deadline']),
     };
-    return rows.map(row => {
-      const name = cleanText(row['Driver Name']);
-      if (!name) return null;
-      const cdlExpiration = cleanText(row['CDL/DL Expiration Date']);
-      const medExpiration = cleanText(row['Medical Certificate (MEC) Expiration']);
-      return {
-        name,
-        licenseNumber: cleanText(row['Drivers License Number']),
-        cdlExpiration,
-        cdlDaysLeft: daysUntil(cdlExpiration),
-        medExpiration,
-        medDaysLeft: daysUntil(medExpiration),
-        randomStatus: cleanText(row['Random Selection Status']),
-        randomDeadline: cleanText(row['Random Test Deadline']),
-      };
-    }).filter((r): r is ComplianceRow => r !== null && r.name.length > 0);
-  } catch { return []; }
+  }).filter((r): r is ComplianceRow => r !== null && r.name.length > 0);
+}
+
+async function loadDriverCompliance(): Promise<ComplianceRow[]> {
+  try {
+    const url = `https://docs.google.com/spreadsheets/d/${DOT_COMPLIANCE_SHEET_ID}/export?format=csv&gid=${DOT_COMPLIANCE_DRIVER_GID}`;
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      cache: 'no-store',
+    });
+
+    if (response.ok) {
+      const result = Papa.parse<Record<string, string>>(await response.text(), {
+        header: true,
+        skipEmptyLines: true,
+      });
+      const liveRows = buildDriverCompliance(result.data);
+      if (liveRows.length > 0) return liveRows;
+    }
+  } catch (error) {
+    console.error('[loadDriverCompliance] live DOT sheet failed:', error);
+  }
+
+  try {
+    return buildDriverCompliance(loadCsvRows('driver_compliance.csv'));
+  } catch {
+    return [];
+  }
 }
 
 // ── Driver safety CSV reader ──────────────────────────────────────────
@@ -129,7 +157,7 @@ export default async function FleetPage() {
   const vehicles: any[] = samsara.vehicles || [];
   const crews: any[] = samsara.crews || [];
   const hos: any[] = (samsara as any).hos || [];
-  const compliance = loadDriverCompliance();
+  const compliance = await loadDriverCompliance();
   const safety = loadDriverSafety();
   const eldDiags = loadEldDiagnostics();
 
