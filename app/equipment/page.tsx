@@ -123,11 +123,16 @@ function callOffHref(rental: any, repEmail: string): string {
   return `mailto:${encodeURIComponent(repEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
-export default async function EquipmentPage() {
-  const csvRentals = getAllRentals();
-  const jobs = await fetchLiveJobs();
-  const liveRentals = await fetchLiveRentals();
-  const vlAssets = await fetchVisionLinkAssets();
+export default async function EquipmentPage({ searchParams }: { searchParams?: Promise<{ tab?: string }> }) {
+  const params = await searchParams;
+  const activeTab = params?.tab === 'rentals' ? 'rentals' : 'assets';
+  const showRentals = activeTab === 'rentals';
+  const csvRentals = showRentals ? getAllRentals() : [];
+  const [jobs, liveRentals, vlAssets] = await Promise.all([
+    showRentals ? fetchLiveJobs() : Promise.resolve([]),
+    showRentals ? fetchLiveRentals() : Promise.resolve([]),
+    fetchVisionLinkAssets(),
+  ]);
 
   const isLive = liveRentals.length > 0;
 
@@ -269,10 +274,29 @@ export default async function EquipmentPage() {
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
       <header className="mb-6">
         <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Equipment</h1>
-        <p className="text-[#757A7F] text-sm">Owned heavy equipment vs. rentals. Rental data refreshes every 5 minutes when the Gmail sync sheet is current.</p>
+        <p className="text-[#757A7F] text-sm">
+          {showRentals
+            ? 'Rental status, daily burn, and call-off control. Rental data refreshes every 5 minutes when the Gmail sync sheet is current.'
+            : 'Owned heavy equipment health, engine hours, and last check-in.'}
+        </p>
       </header>
 
-      {!isLive && (
+      <nav className="mb-5 flex flex-wrap gap-2" aria-label="Equipment tabs">
+        <Link
+          href="/equipment"
+          className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-widest ${activeTab === 'assets' ? 'bg-[#20BC64] text-white' : 'bg-white text-[#6D7478] border border-[#DDE2E5]'}`}
+        >
+          Owned Assets
+        </Link>
+        <Link
+          href="/equipment?tab=rentals"
+          className={`rounded-full px-4 py-2 text-xs font-black uppercase tracking-widest ${activeTab === 'rentals' ? 'bg-[#20BC64] text-white' : 'bg-white text-[#6D7478] border border-[#DDE2E5]'}`}
+        >
+          Rentals
+        </Link>
+      </nav>
+
+      {showRentals && !isLive && (
         <div className="mb-5 flex items-start gap-3 bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3">
           <span className="text-amber-600 text-lg mt-0.5" aria-hidden>!</span>
           <div>
@@ -282,10 +306,7 @@ export default async function EquipmentPage() {
         </div>
       )}
 
-      {/* ── 2-COLUMN LAYOUT: OWNED (left) | RENTED (right) ─────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* ════════ OWNED ASSETS ════════ */}
+      {activeTab === 'assets' && (
         <section className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
@@ -335,8 +356,9 @@ export default async function EquipmentPage() {
             </div>
           )}
         </section>
+      )}
 
-        {/* ════════ RENTED EQUIPMENT ════════ */}
+      {activeTab === 'rentals' && (
         <section className="bg-white rounded-xl border border-[#F1F3F4] shadow-sm overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
@@ -464,8 +486,7 @@ export default async function EquipmentPage() {
             </div>
           )}
         </section>
-
-      </div>
+      )}
     </div>
   );
 }
