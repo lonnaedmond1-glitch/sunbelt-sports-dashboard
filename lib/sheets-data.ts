@@ -396,6 +396,14 @@ export function fetchFleetAssets() {
 // Until then, we try to fetch by tab name using gid=0 as placeholder.
 // The Apps Script writes to tabs named "Sunbelt Rentals Live" and "United Rentals Live".
 
+function normalizeRentalHeader(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function normalizeRentalValue(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 async function fetchSheetByName(sheetId: string, tabName: string): Promise<string[][]> {
   // Try fetching export with tab name — Google Sheets export by gid only,
   // so we fetch the full spreadsheet metadata to find the gid dynamically.
@@ -418,21 +426,23 @@ export function fetchLiveRentals() {
   return cached('liveRentals', 5 * 60 * 1000, async () => {
     try {
       const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
-      const [sunbeltRows, unitedRows] = await Promise.all([
+      const [sunbeltRows, unitedRows, overrideRows] = await Promise.all([
         fetchSheetByName(RENTAL_SHEET_ID, 'Sunbelt Rentals Live'),
         fetchSheetByName(RENTAL_SHEET_ID, 'United Rentals Live'),
+        fetchSheetByName(RENTAL_SHEET_ID, 'Rental_Status_Overrides'),
       ]);
 
       const rentals: any[] = [];
+      const overrides = parseRentalStatusOverrides(overrideRows);
 
       // Parse Sunbelt tab (standardized columns from our Apps Script):
       if (sunbeltRows.length > 1) {
-        const headers = sunbeltRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+        const headers = sunbeltRows[0].map(normalizeRentalHeader);
         for (let i = 1; i < sunbeltRows.length; i++) {
           const r = sunbeltRows[i];
           if (!r || r.length < 5) continue;
           const getCol = (name: string) => {
-            const idx = headers.indexOf(name);
+            const idx = headers.indexOf(normalizeRentalHeader(name));
             return idx >= 0 ? (r[idx] || '').trim() : '';
           };
           const equipType = getCol('equipment_type') || getCol('class_name');
@@ -456,18 +466,23 @@ export function fetchLiveRentals() {
             emailDate: getCol('email_date'),
             syncedAt: getCol('synced_at'),
             salesRepEmail: getCol('sales_rep_email') || getCol('rep_email'),
+            rentalStatus: getCol('rental_status') || getCol('status') || getCol('delivery_status'),
+            orderedDate: getCol('ordered_date'),
+            deliveredDate: getCol('delivered_date'),
+            calledOffDate: getCol('called_off_date') || getCol('off_rent_date'),
+            statusNotes: getCol('status_notes') || getCol('notes'),
           });
         }
       }
 
       // Parse United Rentals tab (columns may vary — we handle dynamically)
       if (unitedRows.length > 1) {
-        const headers = unitedRows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+        const headers = unitedRows[0].map(normalizeRentalHeader);
         for (let i = 1; i < unitedRows.length; i++) {
           const r = unitedRows[i];
           if (!r || r.every(c => !c?.trim())) continue;
           const getCol = (name: string) => {
-            const idx = headers.findIndex(h => h.includes(name));
+            const idx = headers.findIndex(h => h.includes(normalizeRentalHeader(name)));
             return idx >= 0 ? (r[idx] || '').trim() : '';
           };
           const equipType = getCol('description') || getCol('equipment') || getCol('class') || r[2]?.trim() || '';
@@ -491,6 +506,11 @@ export function fetchLiveRentals() {
             emailDate: getCol('email_date') || '',
             syncedAt: getCol('synced_at') || '',
             salesRepEmail: getCol('sales_rep_email') || getCol('rep_email') || '',
+            rentalStatus: getCol('rental_status') || getCol('status') || getCol('delivery_status'),
+            orderedDate: getCol('ordered_date'),
+            deliveredDate: getCol('delivered_date'),
+            calledOffDate: getCol('called_off_date') || getCol('off_rent_date'),
+            statusNotes: getCol('status_notes') || getCol('notes'),
           });
         }
       }
@@ -537,6 +557,11 @@ export function fetchLiveRentals() {
                   emailDate: '',
                   syncedAt: '',
                   salesRepEmail: g(col('salesrepemail')) || g(col('repemail')),
+                  rentalStatus: g(col('rentalstatus')) || g(col('status')),
+                  orderedDate: g(col('ordereddate')),
+                  deliveredDate: g(col('delivereddate')),
+                  calledOffDate: g(col('calledoffdate')) || g(col('offrentdate')),
+                  statusNotes: g(col('statusnotes')) || g(col('notes')),
                 });
               }
             }
@@ -577,6 +602,11 @@ export function fetchLiveRentals() {
                     emailDate: '',
                     syncedAt: '',
                     salesRepEmail: '',
+                    rentalStatus: '',
+                    orderedDate: '',
+                    deliveredDate: '',
+                    calledOffDate: '',
+                    statusNotes: '',
                   });
                 }
               }
@@ -585,11 +615,75 @@ export function fetchLiveRentals() {
         }
       }
 
-      return rentals;
+      return rentals.map(rental => applyRentalStatusOverride(rental, overrides));
     } catch {
       return [];
     }
   });
+}
+
+function parseRentalStatusOverrides(rows: string[][]) {
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(normalizeRentalHeader);
+  if (!headers.includes('rental_status') && !headers.includes('status')) return [];
+  const get = (row: string[], ...names: string[]) => {
+    for (const name of names) {
+      const idx = headers.indexOf(normalizeRentalHeader(name));
+      if (idx >= 0 && row[idx]) return row[idx].trim();
+    }
+    return '';
+  };
+  return rows.slice(1).map(row => ({
+    vendor: get(row, 'Vendor'),
+    contractNumber: get(row, 'Contract_Number', 'Contract Number'),
+    equipmentType: get(row, 'Equipment_Type', 'Equipment Type'),
+    jobName: get(row, 'Job_Name', 'Job Name'),
+    rentalStatus: get(row, 'Rental_Status', 'Status'),
+    orderedDate: get(row, 'Ordered_Date', 'Ordered Date'),
+    deliveredDate: get(row, 'Delivered_Date', 'Delivered Date'),
+    calledOffDate: get(row, 'Called_Off_Date', 'Called Off Date', 'Off_Rent_Date'),
+    statusNotes: get(row, 'Status_Notes', 'Notes'),
+    salesRepEmail: get(row, 'Sales_Rep_Email', 'Rep_Email'),
+  })).filter(row => row.contractNumber || row.equipmentType || row.jobName);
+}
+
+function applyRentalStatusOverride(rental: any, overrides: any[]) {
+  const rentalContract = normalizeRentalValue(String(rental.contractNumber || ''));
+  const rentalVendor = normalizeRentalValue(String(rental.vendor || ''));
+  const rentalEquipment = normalizeRentalValue(String(rental.equipmentType || rental.className || ''));
+  const rentalJob = normalizeRentalValue(String(rental.jobName || rental.jobLocation || ''));
+
+  const override = overrides.find(row => {
+    const overrideContract = normalizeRentalValue(String(row.contractNumber || ''));
+    const overrideEquipment = normalizeRentalValue(String(row.equipmentType || ''));
+    const overrideJob = normalizeRentalValue(String(row.jobName || ''));
+
+    if (overrideContract && rentalContract && overrideContract === rentalContract) {
+      if (overrideEquipment && !rentalEquipment.includes(overrideEquipment)) return false;
+      if (overrideJob && rentalJob && !rentalJob.includes(overrideJob)) return false;
+      return true;
+    }
+
+    if (!overrideEquipment || !rentalEquipment.includes(overrideEquipment)) return false;
+
+    const overrideVendor = normalizeRentalValue(String(row.vendor || ''));
+    if (overrideVendor && rentalVendor && !rentalVendor.includes(overrideVendor)) return false;
+
+    if (overrideJob && rentalJob && !rentalJob.includes(overrideJob)) return false;
+
+    return true;
+  });
+
+  if (!override) return rental;
+  return {
+    ...rental,
+    rentalStatus: override.rentalStatus || rental.rentalStatus || '',
+    orderedDate: override.orderedDate || rental.orderedDate || '',
+    deliveredDate: override.deliveredDate || rental.deliveredDate || '',
+    calledOffDate: override.calledOffDate || rental.calledOffDate || '',
+    statusNotes: override.statusNotes || rental.statusNotes || '',
+    salesRepEmail: override.salesRepEmail || rental.salesRepEmail || '',
+  };
 }
 
 // ──────────────────────────── VISIONLINK ASSETS (Live Sheet) ────────────────────────────

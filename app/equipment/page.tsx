@@ -1,5 +1,5 @@
 import React from 'react';
-export const revalidate = 86400; // Daily ISR
+export const revalidate = 300;
 import Link from 'next/link';
 import { getAllRentals } from '@/lib/csv-parser';
 import { fetchLiveJobs, fetchLiveRentals, fetchVisionLinkAssets } from '@/lib/sheets-data';
@@ -26,6 +26,56 @@ function parseRentalDate(value: string): Date | null {
   if (!value) return null;
   const parsed = new Date(value);
   return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function daysBetween(start: Date | null, end: Date | null): number | null {
+  if (!start || !end) return null;
+  const startDay = new Date(start); startDay.setHours(0, 0, 0, 0);
+  const endDay = new Date(end); endDay.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.ceil((endDay.getTime() - startDay.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function getRentalStatus(rental: any, days: number, now: Date) {
+  const rawStatus = String(rental.Rental_Status || rental.rentalStatus || rental.status || '').toLowerCase();
+  const pickupDate = parseRentalDate(rental.Target_Off_Rent || rental.pickupDate || '');
+  const calledOffDate = parseRentalDate(rental.Called_Off_Date || rental.calledOffDate || '');
+  const dateRented = parseRentalDate(rental.Date_Rented || rental.dateRented || '');
+  const pickupIsPast = pickupDate ? pickupDate.getTime() <= now.getTime() : false;
+
+  if (
+    calledOffDate ||
+    pickupIsPast ||
+    /called|off.?rent|off rent|picked.?up|returned|closed|cancel/.test(rawStatus)
+  ) {
+    return {
+      key: 'called_off',
+      label: 'Called Off',
+      color: '#6D7478',
+      billable: false,
+      effectiveDays: daysBetween(dateRented, calledOffDate || pickupDate) ?? days,
+    };
+  }
+
+  if (
+    /ordered|not.?delivered|pending|awaiting|scheduled|reserved/.test(rawStatus) ||
+    (!dateRented && days === 0)
+  ) {
+    return {
+      key: 'ordered',
+      label: 'Ordered / Not Delivered',
+      color: '#F5A623',
+      billable: false,
+      effectiveDays: 0,
+    };
+  }
+
+  return {
+    key: 'on_site',
+    label: 'On Site',
+    color: '#20BC64',
+    billable: true,
+    effectiveDays: days,
+  };
 }
 
 function getRentalRepEmail(rental: any): string {
@@ -106,10 +156,16 @@ export default async function EquipmentPage() {
       Target_Off_Rent: r.pickupDate || '',
       Daily_Rate: r.dayRate.toString(),
       Accrued_Amount: String(r.accruedAmount || 0),
+      Date_Rented: r.dateRented || '',
       Contract_Number: r.contractNumber,
       Email_Date: r.emailDate || '',
       Synced_At: r.syncedAt || '',
       salesRepEmail: r.salesRepEmail || '',
+      Rental_Status: r.rentalStatus || '',
+      Ordered_Date: r.orderedDate || '',
+      Delivered_Date: r.deliveredDate || '',
+      Called_Off_Date: r.calledOffDate || '',
+      Status_Notes: r.statusNotes || '',
       isLive: true,
     };
   }) : csvRentals.map(r => ({ ...r, Job_Name_Raw: '', isLive: false }));
@@ -132,18 +188,30 @@ export default async function EquipmentPage() {
   let totalAccruedBurn = 0;
   let overdueCount = 0;
   let missingRateCount = 0;
+  let orderedCount = 0;
+  let onSiteCount = 0;
+  let calledOffCount = 0;
+  const now = new Date();
 
   const enrichedRentals = dedupedRentals.map((r: any) => {
     const days = parseInt(r.Days_On_Site) || 0;
     const rate = parseFloat(r.Daily_Rate) || 0;
-    const accrued = parseFloat(r.Accrued_Amount) || (days * rate);
-    const isOverdue = days > 30;
+    const status = getRentalStatus(r, days, now);
+    const accrued = status.key === 'ordered'
+      ? 0
+      : parseFloat(r.Accrued_Amount) || (status.effectiveDays * rate);
+    const dailyBurn = status.billable ? rate : 0;
+    const totalBurn = status.billable ? days * rate : accrued;
+    const isOverdue = status.key === 'on_site' && days > 30;
     const rateMissing = rate <= 0;
 
-    totalDailyBurn += rate;
+    totalDailyBurn += dailyBurn;
     totalAccruedBurn += accrued;
     if (isOverdue) overdueCount++;
-    if (rateMissing) missingRateCount++;
+    if (rateMissing && status.key !== 'called_off') missingRateCount++;
+    if (status.key === 'ordered') orderedCount++;
+    if (status.key === 'on_site') onSiteCount++;
+    if (status.key === 'called_off') calledOffCount++;
 
     const displayName =
       (r.Job_Name_Raw && r.Job_Name_Raw.length > 0)
@@ -155,14 +223,19 @@ export default async function EquipmentPage() {
       days,
       rate,
       accrued,
+      dailyBurn,
       rateMissing,
-      totalBurn: days * rate,
+      totalBurn,
       isOverdue,
+      status,
       jobName: displayName || 'Unassigned',
       hasJobLink: !!(r.Job_Number && r.Job_Number.toString().trim()),
       dataDate: r.Synced_At || r.Email_Date || '',
     };
-  }).sort((a: any, b: any) => b.totalBurn - a.totalBurn);
+  }).sort((a: any, b: any) => {
+    const rank: Record<string, number> = { on_site: 0, ordered: 1, called_off: 2 };
+    return (rank[a.status.key] - rank[b.status.key]) || (b.totalBurn - a.totalBurn);
+  });
 
   const latestRentalDate = enrichedRentals
     .map((r: any) => parseRentalDate(r.dataDate))
@@ -196,7 +269,7 @@ export default async function EquipmentPage() {
     <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
       <header className="mb-6">
         <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Equipment</h1>
-        <p className="text-[#757A7F] text-sm">Owned heavy equipment vs. on-rent units. Updated daily.</p>
+        <p className="text-[#757A7F] text-sm">Owned heavy equipment vs. rentals. Rental data refreshes every 5 minutes when the Gmail sync sheet is current.</p>
       </header>
 
       {!isLive && (
@@ -268,21 +341,27 @@ export default async function EquipmentPage() {
           <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
             <div>
               <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">
-                Active Rentals {isLive && <span className={`ml-1 text-[8px] px-1.5 py-0.5 rounded tracking-normal ${rentalDataFresh ? 'bg-[#20BC64]/20 text-[#20BC64]' : 'bg-[#F5A623]/15 text-[#B7791F]'}`}>{rentalDataFresh ? 'LIVE' : 'STALE'}</span>}
+                Rentals {isLive && <span className={`ml-1 text-[8px] px-1.5 py-0.5 rounded tracking-normal ${rentalDataFresh ? 'bg-[#20BC64]/20 text-[#20BC64]' : 'bg-[#F5A623]/15 text-[#B7791F]'}`}>{rentalDataFresh ? 'LIVE' : 'STALE'}</span>}
               </h2>
               <p className="text-[10px] text-[#757A7F] mt-0.5">
                 {money(totalDailyBurn)} / day burn · {money(totalAccruedBurn)} accumulated
                 {rentalAge != null && <span> · updated {rentalAge === 0 ? 'today' : `${rentalAge}d ago`}</span>}
                 {' · '}
+                <span className="text-[#20BC64] font-bold">{onSiteCount} on site</span>
+                {' · '}
+                <span className="text-[#F5A623] font-bold">{orderedCount} ordered</span>
+                {' · '}
+                <span className="text-[#6D7478] font-bold">{calledOffCount} called off</span>
+                {' · '}
                 {overdueCount > 0 && <span className="text-[#E04343] font-bold">{overdueCount} overdue</span>}
                 {overdueCount > 0 && missingRateCount > 0 && ' · '}
                 {missingRateCount > 0 && <span className="text-[#F5A623] font-bold">{missingRateCount} missing rate</span>}
-                {overdueCount === 0 && missingRateCount === 0 && <span className="text-[#20BC64]">all clean</span>}
+                {overdueCount === 0 && missingRateCount === 0 && ' '}
               </p>
             </div>
             <div className="text-right">
               <p className="text-2xl font-black text-[#3C4043]">{enrichedRentals.length}</p>
-              <p className="text-[10px] text-[#757A7F]/70 font-bold uppercase">on rent</p>
+              <p className="text-[10px] text-[#757A7F]/70 font-bold uppercase">tracked</p>
             </div>
           </div>
 
@@ -297,6 +376,7 @@ export default async function EquipmentPage() {
                   <tr>
                     <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Equipment / Vendor</th>
                     <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Job</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Status</th>
                     <th className="text-center px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Days</th>
                     <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Daily Rate</th>
                     <th className="text-right px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Burn</th>
@@ -305,7 +385,7 @@ export default async function EquipmentPage() {
                 </thead>
                 <tbody>
                   {enrichedRentals.map((r, i) => {
-                    const rowTone = r.isOverdue ? 'bg-[#E04343]/5' : r.rateMissing ? 'bg-[#F5A623]/5' : '';
+                    const rowTone = r.isOverdue ? 'bg-[#E04343]/5' : r.status.key === 'called_off' ? 'bg-[#F1F3F4]/70' : r.rateMissing ? 'bg-[#F5A623]/5' : '';
                     const repEmail = getRentalRepEmail(r);
                     return (
                       <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${rowTone}`}>
@@ -328,9 +408,17 @@ export default async function EquipmentPage() {
                             <p className="text-[10px] text-[#757A7F] mt-0.5 truncate max-w-[140px]" title={r.jobName}>{r.jobName}</p>
                           )}
                         </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-widest" style={{ color: r.status.color, backgroundColor: `${r.status.color}18` }}>
+                            {r.status.label}
+                          </span>
+                          {r.Status_Notes && (
+                            <p className="mt-1 max-w-[150px] truncate text-[9px] text-[#757A7F]" title={r.Status_Notes}>{r.Status_Notes}</p>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black ${r.isOverdue ? 'bg-[#E04343]/15 text-[#E04343]' : 'bg-[#F1F3F4] text-[#3C4043]/70'}`}>
-                            {r.days}d
+                            {r.status.effectiveDays}d
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -343,7 +431,9 @@ export default async function EquipmentPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {r.rateMissing ? (
+                          {r.status.key === 'ordered' ? (
+                            <span className="text-xs text-[#757A7F]/40">$0</span>
+                          ) : r.rateMissing ? (
                             <span className="text-xs text-[#757A7F]/40">—</span>
                           ) : (
                             <p className={`text-xs font-black ${r.isOverdue ? 'text-[#E04343]' : 'text-[#3C4043]'}`}>
@@ -352,7 +442,11 @@ export default async function EquipmentPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {repEmail ? (
+                          {r.status.key === 'called_off' ? (
+                            <span className="inline-flex rounded-full bg-[#F1F3F4] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-[#6D7478]">
+                              Called Off
+                            </span>
+                          ) : repEmail ? (
                             <a href={callOffHref(r, repEmail)} className="inline-flex rounded-full bg-[#20BC64] px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white hover:bg-[#16a558]">
                               Call Off
                             </a>
