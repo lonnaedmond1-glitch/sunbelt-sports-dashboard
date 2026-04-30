@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     "_archive/**",
     "fix.js",
     "parse_level10.js",
+    "**/* 2.ts",
+    "**/* 2.tsx",
+    "**/* 3.ts",
+    "**/* 3.tsx",
   ]),
   {
     rules: {

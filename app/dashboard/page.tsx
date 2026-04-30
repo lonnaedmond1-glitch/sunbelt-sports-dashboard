@@ -6,11 +6,56 @@ import path from 'path';
 import MapWrapper from '@/components/MapWrapper';
 import { fetchLiveJobs, fetchLiveFieldReports, fetchScheduleData, fetchQboFinancials, fetchArAging, fetchReworkLog, fetchCrewDaysSold, fetchEstVsActual } from '@/lib/sheets-data';
 import { formatDollars, formatDollarsCompact } from '@/lib/format';
+import { getDashboardIntelligence, type DashboardSourceStatus } from '@/lib/dashboard-intelligence';
+import { OperationsActionControls, RegenerateBriefButton } from '@/components/IntelligenceBriefControls';
 
+export const dynamic = 'force-dynamic';
 export const revalidate = 300;
 
 const getLiveJobs = fetchLiveJobs;
 const getLiveFieldReports = fetchLiveFieldReports;
+
+function parseSourceDate(value: string): number {
+  if (!value) return NaN;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function newestSourceDate(values: string[]): string {
+  const timestamps = values
+    .map(parseSourceDate)
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a);
+  return timestamps.length ? new Date(timestamps[0]).toISOString() : '';
+}
+
+function oldestSourceDate(values: string[]): string {
+  const timestamps = values
+    .map(parseSourceDate)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  return timestamps.length ? new Date(timestamps[0]).toISOString() : new Date().toISOString();
+}
+
+function isOlderThanHours(value: string, hours: number): boolean {
+  const parsed = parseSourceDate(value);
+  if (!Number.isFinite(parsed)) return true;
+  return Date.now() - parsed > hours * 60 * 60 * 1000;
+}
+
+function formatSourceTimestamp(value: string): string {
+  if (!value) return '-';
+  const parsed = parseSourceDate(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toLocaleString('en-US') : value;
+}
+
+function countScheduleAssignments(scheduleData: any): number {
+  const days = [
+    ...(scheduleData?.currentWeek?.days || []),
+    ...(scheduleData?.nextWeek?.days || []),
+  ];
+  return days.reduce((sum: number, day: any) => sum + (day.assignments?.length || 0), 0);
+}
 
 // ─── Haversine distance (miles) ───────────────────────────────────────────────
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -921,6 +966,7 @@ export default async function MasterDashboard() {
 
   const criticalCount = risks.filter(r => r.level === 'critical').length;
   const warningCount = risks.filter(r => r.level === 'warning').length;
+  const fleetMismatchCount = risks.filter(r => r.message.includes('SCHEDULE DEVIATION')).length;
 
   const healthColor: Record<string, string> = { green: '#20BC64', amber: '#F5A623', red: '#E04343', gray: '#9CA3AF' };
 
@@ -993,6 +1039,124 @@ export default async function MasterDashboard() {
   const pinnedJobCount = mapJobs.filter(hasJobMapCoords).length;
   const pinnedFleetCount = (samsara.vehicles || []).filter(hasFleetMapCoords).length;
   const pinnedMapCount = pinnedJobCount + pinnedFleetCount;
+  const fleetAtJobsites = (samsara.vehicles || []).filter((vehicle: any) => {
+    if (!hasFleetMapCoords(vehicle)) return false;
+    return mapJobs.some((job: any) => {
+      const lat = parseFloat(job.Lat);
+      const lng = parseFloat(job.Lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+      return haversineDistance(lat, lng, Number(vehicle.lat), Number(vehicle.lng)) <= 10;
+    });
+  });
+
+  const scheduleAssignmentCount = countScheduleAssignments(scheduleData);
+  const reportsUpdatedAt = newestSourceDate(fieldReports.map((r: any) => r.Last_Report_Date || ''));
+  const dataLoadedAt = new Date().toISOString();
+  const arOverdueRatio = arAging.totals.total > 0 ? arAging.totals.d91Plus / arAging.totals.total : 0;
+  const sourceStatuses: DashboardSourceStatus[] = [
+    {
+      key: 'live_risks',
+      label: 'Live risks',
+      status: 'connected',
+      lastUpdated: dataLoadedAt,
+      recordCount: risks.length,
+      summary: `${criticalCount} critical, ${warningCount} warning.`,
+      error: '',
+      sourceRef: 'Dashboard risk engine',
+    },
+    {
+      key: 'qbo',
+      label: 'QBO',
+      status: qboFinancials.length === 0 ? 'missing' : qboStale ? 'failed' : 'connected',
+      lastUpdated: _qboUpdated,
+      recordCount: qboFinancials.length,
+      summary: `${qboActive.length} active jobs. Avg margin ${(avgMargin * 100).toFixed(1)}%.`,
+      error: qboFinancials.length === 0 ? 'No QBO rows returned.' : qboStale ? `QBO data is stale or missing an update timestamp. Last update: ${_qboUpdated || 'unknown'}.` : '',
+      sourceRef: 'Scorecard Hub · QBO Est vs Actuals',
+    },
+    {
+      key: 'ar',
+      label: 'A/R',
+      status: arAging.rows.length === 0 ? 'missing' : !_arUpdated || isOlderThanHours(_arUpdated, 36) ? 'failed' : 'connected',
+      lastUpdated: _arUpdated,
+      recordCount: arAging.rows.length,
+      summary: `${formatDollars(arAging.totals.total)} outstanding. ${(arOverdueRatio * 100).toFixed(1)}% over 90 days.`,
+      error: arAging.rows.length === 0 ? 'No A/R rows returned.' : !_arUpdated || isOlderThanHours(_arUpdated, 36) ? `A/R data is stale or missing an update timestamp. Last update: ${_arUpdated || 'unknown'}.` : '',
+      sourceRef: 'Scorecard Hub · QBO AR Aging',
+    },
+    {
+      key: 'reports',
+      label: 'Reports',
+      status: fieldReports.length === 0 ? 'missing' : 'connected',
+      lastUpdated: reportsUpdatedAt,
+      recordCount: fieldReports.length,
+      summary: `${fieldReports.length} job report rollups. ${missingReportJobs.length} missing scheduled reports.`,
+      error: fieldReports.length === 0 ? 'No field report rows returned from Jotform or Google Forms.' : '',
+      sourceRef: 'Jotform + Google Forms field reports',
+    },
+    {
+      key: 'fleet',
+      label: 'Fleet',
+      status: !samsara.configured ? 'missing' : (samsara.vehicles?.length || 0) === 0 ? 'failed' : 'connected',
+      lastUpdated: samsara.timestamp || dataLoadedAt,
+      recordCount: samsara.vehicles?.length || 0,
+      summary: samsara.configured ? `${samsara.vehicles?.length || 0} vehicles reporting. ${fleetAtJobsites.length} near jobsites.` : 'Samsara is not configured.',
+      error: !samsara.configured ? 'SAMSARA_API_KEY is missing or Samsara fetch failed.' : (samsara.vehicles?.length || 0) === 0 ? 'Samsara is configured but returned no vehicle locations.' : '',
+      sourceRef: 'Samsara Fleet API · vehicles/locations',
+    },
+    {
+      key: 'schedule',
+      label: 'Schedule',
+      status: scheduleAssignmentCount === 0 ? 'missing' : 'connected',
+      lastUpdated: scheduleData.timestamp || dataLoadedAt,
+      recordCount: scheduleAssignmentCount,
+      summary: `${scheduledJobs.length} jobs scheduled now. ${scheduleAssignmentCount} assignments loaded.`,
+      error: scheduleAssignmentCount === 0 ? 'No current or next week schedule assignments returned.' : '',
+      sourceRef: 'Microsoft Project schedule export sheet',
+    },
+    {
+      key: 'crew_capacity',
+      label: 'Crew capacity',
+      status: crewDays.jobs.length > 0 ? 'connected' : 'missing',
+      lastUpdated: dataLoadedAt,
+      recordCount: crewDays.jobs.length,
+      summary: `${crewDays.jobs.length} crew-day rows. Base ${baseCapacity.toFixed(1)}d, paving ${pavingCapacity.toFixed(1)}d.`,
+      error: crewDays.jobs.length > 0 ? '' : 'No crew capacity rows returned.',
+      sourceRef: 'Gantt workbook · 25-26 Crew Days Sold',
+    },
+  ];
+  const dataFreshnessAt = oldestSourceDate(sourceStatuses.map(s => s.lastUpdated));
+  const intelligence = await getDashboardIntelligence({
+    risks,
+    jobs,
+    missingReportJobs,
+    marginAtRiskDollars,
+    lossJobCount: lossJobs.length,
+    arTotal: arAging.totals.total,
+    ar91Plus: arAging.totals.d91Plus,
+    avgMargin,
+    qboUpdatedAt: _qboUpdated,
+    qboStale,
+    fleetMismatchCount,
+    scheduledJobCount: scheduledJobs.length,
+    fleetAtJobsitesCount: fleetAtJobsites.length,
+    vehicleCount: samsara.vehicles?.length || 0,
+    capacityRatio,
+    sourceStatuses,
+    dataFreshnessAt,
+  });
+
+  const intelligenceColor: Record<string, string> = { critical: '#E04343', warning: '#F5A623', good: '#20BC64' };
+  const intelligenceBg: Record<string, string> = { critical: '#FDECEC', warning: '#FEF3DB', good: '#E8F8EF' };
+  const intelligenceBorder: Record<string, string> = { critical: 'rgba(224,67,67,0.3)', warning: 'rgba(245,166,35,0.3)', good: 'rgba(32,188,100,0.24)' };
+  const severityColor: Record<string, string> = { CRITICAL: '#E04343', HIGH: '#E04343', MEDIUM: '#F5A623', LOW: '#20BC64' };
+  const severityBg: Record<string, string> = { CRITICAL: '#FDECEC', HIGH: '#FDECEC', MEDIUM: '#FEF3DB', LOW: '#E8F8EF' };
+  const impactColor: Record<string, string> = { POSITIVE: '#0A8F4A', NEGATIVE: '#C92A2A', NEUTRAL: '#757A7F' };
+  const freshnessColor: Record<string, string> = { FRESH: '#0A8F4A', STALE: '#B36B00', MISSING: '#C92A2A' };
+  const freshnessBg: Record<string, string> = { FRESH: '#E8F8EF', STALE: '#FEF3DB', MISSING: '#FDECEC' };
+  const evidenceById = new Map(intelligence.evidence.map(item => [item.id, item]));
+  const evidenceItems = (ids: string[]) => ids.map(id => evidenceById.get(id)).filter(Boolean) as typeof intelligence.evidence;
+  const priorityTone = (priority: string) => priority === 'CRITICAL' || priority === 'HIGH' ? 'critical' : priority === 'MEDIUM' ? 'warning' : 'good';
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#ffffff_0,#F7F8F6_36%,#EEF1EE_100%)] text-[#15181A] font-body pb-10 antialiased overflow-x-hidden">
@@ -1055,6 +1219,261 @@ export default async function MasterDashboard() {
             tone={missingReportJobs.length > 0 ? 'red' : 'green'}
             note={missingReportJobs.length > 0 ? 'Missing yesterday field reports.' : 'Yesterday reports are in.'}
           />
+        </section>
+
+        <section className="rounded-[18px] border border-[#DDE2E5] bg-white/90 shadow-[0_14px_35px_rgba(21,24,26,0.08)] overflow-hidden">
+          <div className="p-5 border-b border-[#F1F3F4] flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="font-display text-sm font-black uppercase tracking-widest text-[#3C4043]">AI Operations Brief</h2>
+                <span className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest" style={{ color: severityColor[intelligence.score.label === 'CRITICAL' ? 'CRITICAL' : intelligence.score.label === 'AT_RISK' ? 'HIGH' : intelligence.score.label === 'WATCH' ? 'MEDIUM' : 'LOW'], background: severityBg[intelligence.score.label === 'CRITICAL' ? 'CRITICAL' : intelligence.score.label === 'AT_RISK' ? 'HIGH' : intelligence.score.label === 'WATCH' ? 'MEDIUM' : 'LOW'] }}>
+                  {intelligence.score.label}
+                </span>
+                <span className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-widest" style={{ color: intelligence.mode !== 'LOCAL' ? '#0A8F4A' : '#B36B00', background: intelligence.mode !== 'LOCAL' ? '#E8F8EF' : '#FEF3DB' }}>
+                  AI mode: {intelligence.mode === 'GEMINI' ? 'Gemini intelligence' : intelligence.mode === 'OPENAI' ? 'OpenAI intelligence' : 'Local intelligence'}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap items-end gap-4">
+                <p className="font-display text-5xl font-black text-[#3C4043]">{intelligence.score.overall}<span className="text-xl text-[#757A7F]">/100</span></p>
+                <div className="pb-1">
+                  <p className="text-lg font-black text-[#3C4043]">{intelligence.headline}</p>
+                  <p className="text-xs text-[#757A7F] mt-1 max-w-5xl leading-relaxed">{intelligence.executiveSummary}</p>
+                </div>
+              </div>
+              {intelligence.fallbackUsed && (
+                <p className="mt-3 rounded-md border border-[#F5A623]/30 bg-[#FEF3DB] px-3 py-2 text-xs font-bold text-[#B36B00]">
+                  {intelligence.fallbackReason || 'Local intelligence used.'}
+                </p>
+              )}
+            </div>
+            <RegenerateBriefButton />
+          </div>
+
+          <div className="grid grid-cols-2 gap-px bg-[#F1F3F4] md:grid-cols-4 xl:grid-cols-7">
+            {[
+              ['Last generated', formatSourceTimestamp(intelligence.lastGeneratedAt)],
+              ['Data freshness', formatSourceTimestamp(intelligence.dataFreshnessAt)],
+              ['Actions open', String(intelligence.nextActions.length)],
+              ['Critical owners', String(intelligence.ownerLoad.filter(o => o.openCriticalActions > 0).length)],
+              ['Stale sources', String(intelligence.staleDataWarnings.length)],
+              ['Changes', String(intelligence.changedSinceLastBrief.length)],
+              ['Confidence', `${Math.round(intelligence.confidence * 100)}%`],
+            ].map(([label, value]) => (
+              <div key={label} className="bg-white px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{label}</p>
+                <p className="mt-1 text-sm font-black text-[#3C4043]">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="p-5 grid grid-cols-12 gap-5 border-b border-[#F1F3F4]">
+            <div className="col-span-12 xl:col-span-5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Why This Score</p>
+              <div className="space-y-2">
+                {intelligence.score.reasons.map(reason => {
+                  const items = evidenceItems(reason.evidenceIds);
+                  return (
+                    <div key={reason.category} className="rounded-lg border border-[#F1F3F4] bg-white p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-black text-[#3C4043]">{reason.category.replace(/_/g, ' ')}</p>
+                          <p className="mt-1 text-xs text-[#757A7F] leading-relaxed">{reason.explanation}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-widest" style={{ color: severityColor[reason.severity], background: severityBg[reason.severity] }}>{reason.severity}</span>
+                          <span className="rounded-full bg-[#F1F3F4] px-2 py-1 text-[10px] font-black uppercase tracking-widest" style={{ color: impactColor[reason.impact] }}>{reason.impact} {reason.scoreImpact}</span>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] text-[#3C4043] md:grid-cols-2">
+                        <p><span className="font-black uppercase tracking-widest text-[#757A7F]">Owner:</span> {reason.owner || 'Owner missing - assign now'}</p>
+                        <p><span className="font-black uppercase tracking-widest text-[#757A7F]">Time:</span> {formatSourceTimestamp(reason.timestamp)}</p>
+                        <p className="md:col-span-2"><span className="font-black uppercase tracking-widest text-[#757A7F]">Action:</span> {reason.recommendedAction}</p>
+                        <p className="md:col-span-2"><span className="font-black uppercase tracking-widest text-[#757A7F]">Source:</span> {reason.source}</p>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {items.map(item => item.sourceUrl ? (
+                          <Link key={item.id} href={item.sourceUrl} className="text-[10px] font-black uppercase tracking-widest text-[#0A8F4A] hover:underline">{item.title}</Link>
+                        ) : (
+                          <span key={item.id} className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{item.title}</span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="col-span-12 xl:col-span-7">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Top Actions</p>
+              <div className="space-y-3">
+                {intelligence.topActions.length === 0 ? (
+                  <div className="rounded-lg border border-[#20BC64]/20 bg-[#E8F8EF] p-3">
+                    <p className="text-sm font-black text-[#20BC64]">No action needed right now</p>
+                    <p className="text-xs text-[#757A7F] mt-1">The live checks are clean.</p>
+                  </div>
+                ) : intelligence.topActions.map(action => {
+                  const tone = priorityTone(action.priority);
+                  const items = evidenceItems(action.sourceEvidenceIds);
+                  return (
+                    <div key={action.id} className="rounded-lg border p-4" style={{ background: intelligenceBg[tone], borderColor: intelligenceBorder[tone] }}>
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-black text-[#3C4043]">{action.title}</p>
+                            <span className="rounded-full bg-white/70 px-2 py-1 text-[10px] font-black uppercase tracking-widest" style={{ color: intelligenceColor[tone] }}>{action.priority}</span>
+                            <span className="rounded-full bg-white/70 px-2 py-1 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{action.status}</span>
+                          </div>
+                          <p className="text-xs text-[#757A7F] mt-1 leading-relaxed">{action.reason}</p>
+                        </div>
+                        <div className="text-left md:text-right">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Owner</p>
+                          <p className="text-sm font-black" style={{ color: action.owner ? intelligenceColor[tone] : '#C92A2A' }}>{action.owner || 'Owner missing - assign now'}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] text-[#3C4043] md:grid-cols-2">
+                        <p><span className="font-black uppercase tracking-widest text-[#757A7F]">Due:</span> {action.dueDate || '-'}</p>
+                        <p><span className="font-black uppercase tracking-widest text-[#757A7F]">Escalation:</span> {action.escalationRule}</p>
+                        <p className="md:col-span-2"><span className="font-black uppercase tracking-widest text-[#757A7F]">What happens if ignored:</span> Risk stays open and escalates by rule.</p>
+                        <p className="md:col-span-2"><span className="font-black uppercase tracking-widest text-[#757A7F]">Evidence:</span> {items.map(item => item.title).join(' · ') || '-'}</p>
+                      </div>
+                      <OperationsActionControls action={action} evidence={intelligence.evidence} />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 grid grid-cols-12 gap-5">
+            <div className="col-span-12 lg:col-span-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Critical Blockers / Risks</p>
+              <div className="space-y-2">
+                {intelligence.score.reasons.filter(r => r.severity === 'CRITICAL' || r.severity === 'HIGH').slice(0, 5).map(reason => (
+                  <div key={`risk-${reason.category}`} className="rounded-lg border p-3" style={{ background: severityBg[reason.severity], borderColor: 'rgba(224,67,67,0.18)' }}>
+                    <p className="text-sm font-black text-[#3C4043]">{reason.category.replace(/_/g, ' ')}</p>
+                    <p className="mt-1 text-xs text-[#757A7F]">{reason.explanation}</p>
+                    <p className="mt-2 text-[10px] font-black uppercase tracking-widest" style={{ color: severityColor[reason.severity] }}>{reason.severity}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="col-span-12 lg:col-span-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Watchlist</p>
+              <div className="space-y-2">
+                {intelligence.watchlist.map(item => {
+                  const items = evidenceItems(item.sourceEvidenceIds);
+                  return (
+                    <div key={item.id} className="rounded-lg border border-[#F1F3F4] bg-white p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-black text-[#3C4043]">{item.title}</p>
+                        <span className="rounded-full bg-[#F1F3F4] px-2 py-1 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{item.category}</span>
+                      </div>
+                      <p className="mt-1 text-xs font-bold text-[#3C4043]">{item.currentStatus}</p>
+                      <p className="mt-1 text-xs text-[#757A7F]">{item.whyItMatters}</p>
+                      <p className="mt-2 text-[10px] text-[#757A7F]"><span className="font-black uppercase tracking-widest">Trigger:</span> {item.triggerCondition}</p>
+                      <p className="mt-1 text-[10px] text-[#757A7F]"><span className="font-black uppercase tracking-widest">Preempt:</span> {item.recommendedAction}</p>
+                      <p className="mt-1 text-[10px] text-[#757A7F]"><span className="font-black uppercase tracking-widest">Evidence:</span> {items.map(e => e.title).join(' · ') || '-'}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="col-span-12 lg:col-span-4 space-y-5">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Owner Load</p>
+                <div className="space-y-2">
+                  {intelligence.ownerLoad.length === 0 ? <p className="text-xs text-[#757A7F]">No owners assigned.</p> : intelligence.ownerLoad.map(owner => (
+                    <div key={owner.owner} className="rounded-lg border border-[#F1F3F4] bg-white p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-black text-[#3C4043]">{owner.owner}</p>
+                        <p className="text-xs font-black text-[#C92A2A]">{owner.openCriticalActions} critical · {owner.openHighActions} high</p>
+                      </div>
+                      <p className="mt-1 text-xs text-[#757A7F]">{owner.riskNote}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Changed Since Last Brief</p>
+                <div className="space-y-2">
+                  {intelligence.changedSinceLastBrief.slice(0, 5).map(change => (
+                    <div key={change.id} className="rounded-lg border border-[#F1F3F4] bg-white p-3">
+                      <p className="text-sm font-black text-[#3C4043]">{change.title}</p>
+                      <p className="mt-1 text-xs text-[#757A7F]">{change.previousValue || '-'} {'->'} {change.currentValue || '-'}</p>
+                      <p className="mt-1 text-[10px] font-black uppercase tracking-widest" style={{ color: impactColor[change.impact] }}>{change.impact}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {(intelligence.staleDataWarnings.length > 0 || intelligence.error) && (
+            <div className="px-5 pb-5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mb-3">Stale Data Warnings</p>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {intelligence.staleDataWarnings.map(warning => (
+                  <div key={`${warning.source}-${warning.warning}`} className="rounded-lg border border-[#F5A623]/30 bg-[#FEF3DB] p-3">
+                    <p className="text-sm font-black text-[#B36B00]">{warning.source}</p>
+                    <p className="mt-1 text-xs text-[#757A7F]">{warning.warning}</p>
+                    <p className="mt-1 text-[10px] text-[#757A7F]">Updated: {formatSourceTimestamp(warning.lastUpdatedAt || '')}</p>
+                  </div>
+                ))}
+                {intelligence.error && (
+                  <div className="rounded-lg border border-[#E04343]/30 bg-[#FDECEC] p-3">
+                    <p className="text-sm font-black text-[#C92A2A]">OpenAI error</p>
+                    <p className="mt-1 text-xs font-bold text-[#C92A2A]">{intelligence.error}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <details className="border-t border-[#F1F3F4] bg-white">
+            <summary className="cursor-pointer px-5 py-3 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">Admin / Debug: intelligence health, sources, evidence</summary>
+            <div className="grid grid-cols-1 gap-4 px-5 pb-5 xl:grid-cols-3">
+              <div className="rounded-lg border border-[#F1F3F4] p-3">
+                <p className="text-xs font-black text-[#3C4043]">Health</p>
+                <div className="mt-2 space-y-1 text-xs text-[#757A7F]">
+                  <p>Mode: {intelligence.health.mode}</p>
+                  <p>Primary provider: {intelligence.health.primaryProvider}</p>
+                  <p>Provider used: {intelligence.providerUsed}</p>
+                  <p>Gemini key present: {String(intelligence.health.hasGeminiApiKey)}</p>
+                  <p>OpenAI fallback key present: {String(intelligence.health.hasApiKey)}</p>
+                  <p>Model route: {intelligence.modelRoute}</p>
+                  <p>Model: server-side only</p>
+                  <p>Last run: {formatSourceTimestamp(intelligence.health.lastRunAt || '')}</p>
+                  <p>Last error: {intelligence.health.lastError || '-'}</p>
+                  <p>Store: {intelligence.persistence.target}</p>
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#F1F3F4] p-3">
+                <p className="text-xs font-black text-[#3C4043]">Source Freshness</p>
+                <div className="mt-2 space-y-2">
+                  {intelligence.sourceFreshness.map(source => (
+                    <div key={source.source} className="flex items-start justify-between gap-2 text-xs">
+                      <span className="text-[#3C4043]">{source.source}</span>
+                      <span className="rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-widest" style={{ color: freshnessColor[source.status], background: freshnessBg[source.status] }}>{source.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#F1F3F4] p-3">
+                <p className="text-xs font-black text-[#3C4043]">Evidence Objects</p>
+                <div className="mt-2 max-h-64 overflow-y-auto space-y-2">
+                  {intelligence.evidence.map(item => (
+                    <div key={item.id} className="border-b border-[#F1F3F4] pb-2 text-xs">
+                      <p className="font-black text-[#3C4043]">{item.title}</p>
+                      <p className="text-[#757A7F]">{item.sourceType} · {formatSourceTimestamp(item.capturedAt)}</p>
+                      <p className="text-[#757A7F]">{item.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </details>
         </section>
 
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(380px,1.2fr)_minmax(360px,1fr)_minmax(330px,0.9fr)]">

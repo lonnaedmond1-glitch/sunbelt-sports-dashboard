@@ -69,6 +69,10 @@ function cached<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T>
   return fn().then(data => { _cache.set(key, { data, expires: now + ttlMs }); return data; });
 }
 
+export function clearSheetsDataCache() {
+  _cache.clear();
+}
+
 // ──────────────────────────── JOBS (Google Sheets) ────────────────────────────
 
 const JOB_LIST_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
