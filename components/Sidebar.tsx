@@ -5,66 +5,75 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
 const navItems = [
-  { href: '/dashboard', label: 'Command Center', mark: 'CMD', pill: 'Live' },
-  { href: '/portfolio', label: 'Portfolio', mark: 'JOB', pill: 'Jobs' },
-  { href: '/schedule', label: 'Schedule', mark: 'SCH', pill: 'Week' },
-  { href: '/equipment', label: 'Equipment', mark: 'EQP', pill: 'Rent' },
-  { href: '/fleet', label: 'Fleet', mark: 'FLT', pill: 'GPS' },
-  { href: '/project-scorecard', label: 'Scorecard', mark: 'EOS', pill: 'EOS' },
-  { href: '/sales', label: 'Sales', mark: 'BID', pill: 'Pipe' },
-  { href: '/marketing', label: 'Marketing', mark: 'MKT', pill: 'Brand' },
+  { href: '/dashboard', label: 'Command Center' },
+  { href: '/portfolio', label: 'Portfolio' },
+  { href: '/schedule', label: 'Schedule' },
+  { href: '/equipment', label: 'Equipment' },
+  { href: '/rentals', label: 'Rentals' },
+  { href: '/fleet', label: 'Fleet' },
+  { href: '/project-scorecard', label: 'Scorecard' },
+  { href: '/sales', label: 'Sales' },
+  { href: '/marketing', label: 'Marketing' },
 ];
+
+function todayLabel(): string {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date());
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="relative z-[60] flex h-auto w-full flex-col overflow-hidden bg-[#171A1C] px-[18px] py-6 text-white shadow-xl md:fixed md:left-0 md:top-0 md:h-full md:w-[280px] md:overflow-y-auto">
-      <div className="mb-6 flex justify-center border-b border-white/10 pb-[18px]">
-        <Image
-          src="/sunbelt-sports-logo.png"
-          alt="Sunbelt Sports"
-          width={512}
-          height={160}
-          className="h-auto max-h-24 w-full max-w-[260px] object-contain drop-shadow-[0_10px_18px_rgba(0,0,0,0.35)]"
-          style={{ filter: 'brightness(0) invert(1)' }}
-          priority
-          unoptimized
-        />
-      </div>
+    <header className="sticky top-0 z-[70] border-b border-[rgba(31,41,55,0.15)] bg-[#FAFAF7]/95 backdrop-blur">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-6 py-4 lg:px-8">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <Link href="/dashboard" className="flex items-center gap-4">
+            <Image
+              src="/sunbelt-sports-logo.png"
+              alt="Sunbelt Sports"
+              width={176}
+              height={55}
+              className="h-10 w-auto object-contain"
+              priority
+              unoptimized
+            />
+            <div className="border-l border-[rgba(31,41,55,0.15)] pl-4">
+              <p className="ops-display text-[24px] font-extrabold uppercase leading-none text-[#0F172A]">
+                Sunbelt Sports Operations
+              </p>
+              <p className="text-xs font-semibold text-[#475569]">One clear operating question per page.</p>
+            </div>
+          </Link>
+          <div className="text-left md:text-right">
+            <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#94A3B8]">{todayLabel()}</p>
+            <p className="text-xs font-semibold text-[#475569]">Source data refreshes by page</p>
+          </div>
+        </div>
 
-      <div className="mx-2 mb-2 text-[11px] font-black uppercase tracking-[0.12em] text-[#879094]">Command</div>
-      <nav className="grid grid-cols-2 gap-1 md:grid-cols-1" aria-label="Dashboard navigation">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center justify-between gap-3 rounded-xl px-3 py-3 text-sm font-black transition-colors
-                ${isActive
-                  ? 'bg-[#20BC64]/20 text-white'
-                  : 'text-[#D9DFE1] hover:bg-[#20BC64]/15 hover:text-white'
+        <nav className="flex gap-5 overflow-x-auto border-t border-[rgba(31,41,55,0.15)] pt-3" aria-label="Dashboard navigation">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`whitespace-nowrap border-b-2 pb-2 text-sm font-bold transition-colors ${
+                  isActive
+                    ? 'border-[#0BBE63] text-[#0F172A]'
+                    : 'border-transparent text-[#475569] hover:border-[rgba(31,41,55,0.25)] hover:text-[#0F172A]'
                 }`}
-            >
-              <span className="flex items-center gap-3">
-                <span className={`grid h-7 w-9 place-items-center rounded-lg text-[10px] font-black tracking-tight ${isActive ? 'bg-[#20BC64] text-[#08120C]' : 'bg-white/10 text-[#C9D1D3]'}`}>
-                  {item.mark}
-                </span>
-                <span>{item.label}</span>
-              </span>
-              <span className="rounded-full bg-white/10 px-2 py-1 text-[11px] font-black text-[#C9D1D3]">{item.pill}</span>
-            </Link>
-          );
-        })}
-      </nav>
-
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/[0.07] p-4">
-        <strong className="mb-1.5 block text-sm">Design Logic</strong>
-        <p className="m-0 text-xs leading-relaxed text-[#B9C0C3]">
-          Default view shows exceptions first: risk, money, crew mismatch, field data, and capacity.
-        </p>
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
-    </aside>
+    </header>
   );
 }

@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <Sidebar />
-        <main className="md:ml-[280px]">{children}</main>
+        <main>{children}</main>
       </body>
     </html>
   );

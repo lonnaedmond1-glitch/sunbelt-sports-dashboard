@@ -1,157 +1,129 @@
-import React from 'react';
-import Link from 'next/link';
+import { EmptyState, HealthPill, KpiCard, PageShell, ProgressBar, Section, moneyCompact } from '@/components/OperationsUI';
 import { fetchBidLog } from '@/lib/sheets-data';
+import { formatDollars } from '@/lib/format';
 
-export const revalidate = 86400;
+export const revalidate = 300;
+
+function bucket(status: string): 'Won' | 'Lost' | 'Under Review' | 'Budgetary' | 'Other' {
+  const text = String(status || '').toUpperCase();
+  if (text.includes('WIN')) return 'Won';
+  if (text.includes('LOSS') || text.includes('LOST')) return 'Lost';
+  if (text.includes('UNDER REVIEW')) return 'Under Review';
+  if (text.includes('BUDGETARY')) return 'Budgetary';
+  return 'Other';
+}
+
+function stageTone(stage: string) {
+  if (stage === 'Won') return 'ok' as const;
+  if (stage === 'Lost') return 'critical' as const;
+  if (stage === 'Under Review') return 'info' as const;
+  if (stage === 'Budgetary') return 'warning' as const;
+  return 'neutral' as const;
+}
 
 export default async function SalesPage() {
   const bids = await fetchBidLog();
-
-  // Status buckets
-  const categorize = (s: string): 'win' | 'loss' | 'review' | 'budgetary' | 'other' => {
-    const u = (s || '').toUpperCase();
-    if (u.includes('WIN')) return 'win';
-    if (u.includes('LOSS') || u.includes('LOST')) return 'loss';
-    if (u.includes('UNDER REVIEW')) return 'review';
-    if (u.includes('BUDGETARY')) return 'budgetary';
-    return 'other';
-  };
-
-  const wins = bids.filter(b => categorize(b.Status) === 'win');
-  const losses = bids.filter(b => categorize(b.Status) === 'loss');
-  const review = bids.filter(b => categorize(b.Status) === 'review');
-  const budgetary = bids.filter(b => categorize(b.Status) === 'budgetary');
-
-  const totalProposalValue = bids.reduce((s, b) => s + b.Proposal, 0);
-  const totalAwarded = wins.reduce((s, b) => s + (b.Awarded || b.Proposal), 0);
-  const totalPipe = review.reduce((s, b) => s + b.Pipe, 0);
-  const totalLost = losses.reduce((s, b) => s + (b.Lost || b.Proposal), 0);
-
-  const winCount = wins.length;
-  const totalDecided = wins.length + losses.length;
-  const winRate = totalDecided > 0 ? (winCount / totalDecided) * 100 : 0;
-  const avgDealSize = wins.length > 0 ? totalAwarded / wins.length : 0;
+  const rows = bids.map(bid => ({ ...bid, bucket: bucket(bid.Status) }));
+  const wins = rows.filter(row => row.bucket === 'Won');
+  const lost = rows.filter(row => row.bucket === 'Lost');
+  const review = rows.filter(row => row.bucket === 'Under Review');
+  const budgetary = rows.filter(row => row.bucket === 'Budgetary');
+  const totalProposal = rows.reduce((sum, row) => sum + row.Proposal, 0);
+  const totalWon = wins.reduce((sum, row) => sum + (row.Awarded || row.Proposal), 0);
+  const totalReview = review.reduce((sum, row) => sum + (row.Pipe || row.Proposal * (row.Probability / 100)), 0);
+  const totalLost = lost.reduce((sum, row) => sum + (row.Lost || row.Proposal), 0);
+  const decided = wins.length + lost.length;
+  const winRate = decided ? Math.round((wins.length / decided) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
-      <header className="mb-6 flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Sales Pipeline</h1>
-          <p className="text-[#757A7F] text-sm">Bid tracking — Under Review → Won → Lost. Live from Bud’s 2026 Bid Log.</p>
-          <div className="mt-3 rounded-lg bg-[#60a5fa]/5 border border-[#60a5fa]/20 px-4 py-3 max-w-3xl">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa]/80 mb-1">What this page is for</p>
-            <p className="text-xs text-[#3C4043] leading-relaxed">Single view of every 2026 bid and where it stands. Use it at your Monday sales meeting to see proposal value, weighted pipeline, win rate, and which bids still need a follow-up. Edit the bid log directly in Bud’s sheet; this page refreshes daily.</p>
-          </div>
-        </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">← Dashboard</Link>
-      </header>
+    <PageShell title="Sales" question="Where is every bid in the pipeline?" updatedAt={`${rows.length} bid rows read`}>
+      <div className="mb-6 grid gap-4 md:grid-cols-4">
+        <KpiCard label="Total Bids" value={rows.length} context={`${moneyCompact(totalProposal)} proposed`} />
+        <KpiCard label="Won YTD" value={moneyCompact(totalWon)} context={`${wins.length} won · ${winRate}% win rate`} tone="ok" />
+        <KpiCard label="Active In Review" value={moneyCompact(totalReview)} context={`${review.length} bids under review`} tone={review.length ? 'warning' : 'neutral'} />
+        <KpiCard label="Lost" value={moneyCompact(totalLost)} context={`${lost.length} lost bids`} tone={lost.length ? 'critical' : 'neutral'} />
+      </div>
 
-      {bids.length === 0 ? (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-5 py-4">
-          <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">Awaiting Bid Log Data</p>
-          <p className="text-xs text-[#757A7F]">Could not read Bud’s 2026 Bid Log. Make sure the sheet has “Anyone with the link can view” access so Vercel can fetch the CSV export.</p>
-        </div>
-      ) : (
-        <>
-          {/* KPI row */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Total Bids</p>
-              <p className="text-3xl font-black text-[#3C4043]">{bids.length}</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">${(totalProposalValue/1000000).toFixed(1)}M proposed</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Won</p>
-              <p className="text-3xl font-black text-[#20BC64]">{wins.length}</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">${(totalAwarded/1000000).toFixed(2)}M awarded</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Under Review</p>
-              <p className="text-3xl font-black text-[#60a5fa]">{review.length}</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">${(totalPipe/1000000).toFixed(2)}M weighted</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Lost</p>
-              <p className="text-3xl font-black text-[#E04343]">{losses.length}</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">${(totalLost/1000000).toFixed(2)}M lost</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Win Rate</p>
-              <p className={`text-3xl font-black ${winRate >= 30 ? 'text-[#20BC64]' : winRate >= 15 ? 'text-[#F5A623]' : 'text-[#E04343]'}`}>{winRate.toFixed(0)}%</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">Avg deal ${(avgDealSize/1000).toFixed(0)}K</p>
-            </div>
-          </div>
-
-          {/* 4 columns for Win / Review / Budgetary / Loss */}
-          <div className="grid grid-cols-4 gap-4 mb-8">
+      <Section title="Pipeline Funnel" kicker="Budgetary to submitted to under review to won or lost.">
+        {rows.length === 0 ? (
+          <EmptyState title="No bid rows found" detail="The bid log did not return rows." />
+        ) : (
+          <div className="grid gap-4 p-4 md:grid-cols-4">
             {[
-              { label: 'Won', color: '#20BC64', rows: wins },
-              { label: 'Under Review', color: '#60a5fa', rows: review },
-              { label: 'Budgetary', color: '#F5A623', rows: budgetary },
-              { label: 'Lost', color: '#E04343', rows: losses },
-            ].map(col => (
-              <div key={col.label} className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-                <div className="px-4 py-3 border-b border-[#F1F3F4] flex justify-between items-center" style={{ background: `${col.color}10` }}>
-                  <h3 className="text-xs font-black uppercase tracking-widest" style={{ color: col.color }}>{col.label}</h3>
-                  <span className="text-xs font-bold text-[#757A7F]">{col.rows.length}</span>
+              { label: 'Budgetary', rows: budgetary },
+              { label: 'Under Review', rows: review },
+              { label: 'Won', rows: wins },
+              { label: 'Lost', rows: lost },
+            ].map(stage => {
+              const value = stage.rows.reduce((sum, row) => sum + row.Proposal, 0);
+              return (
+                <div key={stage.label} className="rounded-lg border border-[rgba(31,41,55,0.15)] p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <HealthPill label={stage.label} tone={stageTone(stage.label)} />
+                    <span className="text-sm font-extrabold text-[#0F172A]">{stage.rows.length}</span>
+                  </div>
+                  <p className="ops-display text-[32px] font-extrabold leading-none">{moneyCompact(value)}</p>
+                  <div className="mt-4"><ProgressBar value={rows.length ? (stage.rows.length / rows.length) * 100 : 0} tone={stageTone(stage.label)} /></div>
                 </div>
-                <div className="p-3 space-y-2 min-h-[240px] max-h-[500px] overflow-y-auto">
-                  {col.rows.slice(0, 25).map((b, i) => (
-                    <div key={i} className="rounded-lg p-3 border bg-[#F1F3F4]/40" style={{ borderColor: `${col.color}20` }}>
-                      <p className="text-xs font-bold text-[#3C4043] truncate" title={`${b.Job_Name} — ${b.Location}`}>{b.Job_Name}</p>
-                      <p className="text-[10px] text-[#757A7F] mt-0.5 truncate">{b.Customer}</p>
-                      <div className="flex justify-between items-end mt-2">
-                        <span className="text-[10px] text-[#757A7F]/70">{b.Bid_Number} · {b.Probability}%</span>
-                        <span className="text-xs font-black" style={{ color: col.color }}>${(b.Proposal / 1000).toFixed(0)}K</span>
-                      </div>
-                    </div>
-                  ))}
-                  {col.rows.length === 0 && (
-                    <p className="text-[11px] text-[#757A7F]/60 text-center py-6">No bids in this bucket.</p>
-                  )}
+              );
+            })}
+          </div>
+        )}
+      </Section>
+
+      <Section title="Under Review" kicker="Default work queue for the Monday sales meeting." className="mt-6">
+        {review.length === 0 ? (
+          <EmptyState title="No bids under review" detail="No active review rows came back from the bid log." />
+        ) : (
+          <div className="grid gap-4 p-4 md:grid-cols-2 xl:grid-cols-3">
+            {review.sort((a, b) => b.Probability - a.Probability).slice(0, 18).map(row => (
+              <div key={row.Bid_Number} className="rounded-lg border border-[rgba(31,41,55,0.15)] p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#0BBE63]">{row.Bid_Number}</p>
+                    <p className="mt-1 font-extrabold text-[#0F172A]">{row.Job_Name || 'Unnamed bid'}</p>
+                    <p className="mt-1 text-sm text-[#475569]">{row.Customer}</p>
+                  </div>
+                  <HealthPill label={`${row.Probability}%`} tone={row.Probability >= 70 ? 'ok' : row.Probability >= 40 ? 'warning' : 'neutral'} />
+                </div>
+                <div className="mt-4 flex items-end justify-between">
+                  <span className="text-xs text-[#475569]">{row.Location || row.Expected_Start || 'No location'}</span>
+                  <strong>{formatDollars(row.Proposal)}</strong>
                 </div>
               </div>
             ))}
           </div>
+        )}
+      </Section>
 
-          {/* Full bid log table */}
-          <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#F1F3F4]">
-              <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">All 2026 Bids</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#F1F3F4]">
-                  <tr>
-                    {['Bid #', 'Date', 'Customer', 'Job Name', 'Location', 'Prob.', 'Proposal', 'Status', 'Feedback'].map(h => (
-                      <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {bids.map((b, i) => {
-                    const cat = categorize(b.Status);
-                    const toneColor = cat === 'win' ? '#20BC64' : cat === 'loss' ? '#E04343' : cat === 'review' ? '#60a5fa' : cat === 'budgetary' ? '#F5A623' : '#9CA3AF';
-                    return (
-                      <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
-                        <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{b.Bid_Number}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{b.Date_Bid}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F] truncate max-w-[180px]" title={b.Customer}>{b.Customer}</td>
-                        <td className="px-3 py-2 text-xs font-bold text-[#3C4043] truncate max-w-[220px]" title={b.Job_Name}>{b.Job_Name}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F] truncate max-w-[160px]">{b.Location}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{b.Probability}%</td>
-                        <td className="px-3 py-2 text-xs font-black text-[#3C4043]">${(b.Proposal / 1000).toFixed(0)}K</td>
-                        <td className="px-3 py-2 text-xs font-black" style={{ color: toneColor }}>{b.Status || '—'}</td>
-                        <td className="px-3 py-2 text-[10px] text-[#757A7F] truncate max-w-[240px]" title={b.Feedback}>{b.Feedback}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+      <Section title="Full Bid Log" kicker="Complete scan table from the bid log." className="mt-6">
+        <div className="overflow-x-auto">
+          <table className="ops-table w-full">
+            <thead>
+              <tr>
+                {['Bid #', 'Date', 'Customer', 'Job', 'Location', 'Probability', 'Proposal', 'Status', 'Feedback'].map(header => (
+                  <th key={header} className="px-4 py-3 text-left">{header}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(row => (
+                <tr key={row.Bid_Number}>
+                  <td className="px-4 py-3 font-extrabold">{row.Bid_Number}</td>
+                  <td className="px-4 py-3">{row.Date_Bid}</td>
+                  <td className="px-4 py-3">{row.Customer}</td>
+                  <td className="px-4 py-3 font-bold">{row.Job_Name}</td>
+                  <td className="px-4 py-3">{row.Location}</td>
+                  <td className="px-4 py-3">{row.Probability}%</td>
+                  <td className="ops-money px-4 py-3 font-extrabold">{formatDollars(row.Proposal)}</td>
+                  <td className="px-4 py-3"><HealthPill label={row.bucket} tone={stageTone(row.bucket)} /></td>
+                  <td className="px-4 py-3 text-[#475569]">{row.Feedback || 'No feedback'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </PageShell>
   );
 }

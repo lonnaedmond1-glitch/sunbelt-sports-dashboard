@@ -1,469 +1,241 @@
-import React from 'react';
-import Link from 'next/link';
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
+import { AlertCard, EmptyState, HealthPill, KpiCard, PageShell, ProgressBar, Section } from '@/components/OperationsUI';
 import Papa from 'papaparse';
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'fs';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 export const fetchCache = 'force-no-store';
 
-function loadCsvRows(filename: string): Record<string, string>[] {
-  const csvPath = path.join(process.cwd(), 'data', filename);
-  if (!fs.existsSync(csvPath)) return [];
-  const text = fs.readFileSync(csvPath, 'utf-8');
-  const result = Papa.parse<Record<string, string>>(text, {
-    header: true,
-    skipEmptyLines: true,
-  });
-  return result.data;
-}
-
-function cleanText(value: string | undefined): string {
-  return (value || '').replace(/\s+/g, ' ').trim();
-}
-
-function toNumber(value: string | undefined): number {
-  const n = parseFloat((value || '').replace(/[^0-9.-]/g, ''));
-  return isNaN(n) ? 0 : n;
-}
-
-const DOT_COMPLIANCE_SHEET_ID = process.env.DOT_COMPLIANCE_SHEET_ID || '1Sjy2D088jh28_NYGK8Zcp73hxrkRQRAD3vmhSw2sAUg';
-const DOT_COMPLIANCE_DRIVER_GID = process.env.DOT_COMPLIANCE_DRIVER_GID || '878551575';
-
-// ── Driver compliance reader ──────────────────────────────────────────
-interface ComplianceRow {
+type ComplianceRow = {
   name: string;
-  licenseNumber: string;
   cdlExpiration: string;
   cdlDaysLeft: number | null;
   medExpiration: string;
   medDaysLeft: number | null;
   randomStatus: string;
-  randomDeadline: string;
+};
+
+type SafetyRow = {
+  rank: number;
+  name: string;
+  score: number;
+  totalMiles: number;
+  maxSpeed: number;
+  events: number;
+  lightSpeeding: number;
+  moderateSpeeding: number;
+  heavySpeeding: number;
+  severeSpeeding: number;
+  harshAccel: number;
+  harshBrake: number;
+  harshTurn: number;
+  mobileUsage: number;
+  noSeatBelt: number;
+};
+
+const DOT_COMPLIANCE_SHEET_ID = process.env.DOT_COMPLIANCE_SHEET_ID || '1Sjy2D088jh28_NYGK8Zcp73hxrkRQRAD3vmhSw2sAUg';
+const DOT_COMPLIANCE_DRIVER_GID = process.env.DOT_COMPLIANCE_DRIVER_GID || '878551575';
+
+function clean(value: string | undefined): string {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function number(value: string | undefined): number {
+  const parsed = parseFloat((value || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function loadCsvRows(filename: string): Record<string, string>[] {
+  const csvPath = path.join(process.cwd(), 'data', filename);
+  if (!fs.existsSync(csvPath)) return [];
+  return Papa.parse<Record<string, string>>(fs.readFileSync(csvPath, 'utf-8'), {
+    header: true,
+    skipEmptyLines: true,
+  }).data;
 }
 
 function buildDriverCompliance(rows: Record<string, string>[]): ComplianceRow[] {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   const daysUntil = (dateStr: string): number | null => {
     if (!dateStr) return null;
-    const d = new Date(dateStr.trim());
-    if (isNaN(d.getTime())) return null;
-    return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const parsed = new Date(dateStr.trim());
+    if (!Number.isFinite(parsed.getTime())) return null;
+    return Math.ceil((parsed.getTime() - today.getTime()) / 86_400_000);
   };
 
   return rows.map(row => {
-    const name = cleanText(row['Driver Name']);
+    const name = clean(row['Driver Name']);
     if (!name) return null;
-    const cdlExpiration = cleanText(row['CDL/DL Expiration Date']);
-    const medExpiration = cleanText(row['Medical Certificate (MEC) Expiration']);
+    const cdlExpiration = clean(row['CDL/DL Expiration Date']);
+    const medExpiration = clean(row['Medical Certificate (MEC) Expiration']);
     return {
       name,
-      licenseNumber: cleanText(row['Drivers License Number']),
       cdlExpiration,
       cdlDaysLeft: daysUntil(cdlExpiration),
       medExpiration,
       medDaysLeft: daysUntil(medExpiration),
-      randomStatus: cleanText(row['Random Selection Status']),
-      randomDeadline: cleanText(row['Random Test Deadline']),
+      randomStatus: clean(row['Random Selection Status']),
     };
-  }).filter((r): r is ComplianceRow => r !== null && r.name.length > 0);
+  }).filter((row): row is ComplianceRow => row !== null);
 }
 
 async function loadDriverCompliance(): Promise<ComplianceRow[]> {
   try {
     const url = `https://docs.google.com/spreadsheets/d/${DOT_COMPLIANCE_SHEET_ID}/export?format=csv&gid=${DOT_COMPLIANCE_DRIVER_GID}`;
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      cache: 'no-store',
-    });
-
+    const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' });
     if (response.ok) {
-      const result = Papa.parse<Record<string, string>>(await response.text(), {
-        header: true,
-        skipEmptyLines: true,
-      });
-      const liveRows = buildDriverCompliance(result.data);
-      if (liveRows.length > 0) return liveRows;
+      const parsed = Papa.parse<Record<string, string>>(await response.text(), { header: true, skipEmptyLines: true });
+      const rows = buildDriverCompliance(parsed.data);
+      if (rows.length) return rows;
     }
   } catch (error) {
-    console.error('[loadDriverCompliance] live DOT sheet failed:', error);
+    console.error('[fleet] DOT compliance live fetch failed', error);
   }
-
-  try {
-    return buildDriverCompliance(loadCsvRows('driver_compliance.csv'));
-  } catch {
-    return [];
-  }
+  return buildDriverCompliance(loadCsvRows('driver_compliance.csv'));
 }
 
-// ── Driver safety CSV reader ──────────────────────────────────────────
-interface SafetyRow {
-  rank: number; name: string; score: number; driveTime: string;
-  totalMiles: number; maxSpeed: number; events: number; behaviors: number;
-  lightSpeeding: number; moderateSpeeding: number; heavySpeeding: number; severeSpeeding: number;
-  harshAccel: number; harshBrake: number; harshTurn: number; mobileUsage: number; noSeatBelt: number; forwardCollisionWarning: number;
-}
 function loadDriverSafety(): SafetyRow[] {
-  try {
-    return loadCsvRows('samsara_driver_safety.csv').map(row => {
-      const rank = parseInt(row['Rank'] || '') || 0;
-      if (rank === 0) return null; // skip "All Drivers" summary row
-      return {
-        rank,
-        name: cleanText(row['Driver Name']),
-        score: toNumber(row['Safety Score']),
-        driveTime: cleanText(row['Drive Time (hh:mm:ss)']),
-        totalMiles: toNumber(row['Total Distance (mi)']),
-        maxSpeed: toNumber(row['Max Speed (mph)']),
-        events: toNumber(row['Total Events']),
-        behaviors: toNumber(row['Total Behaviors']),
-        lightSpeeding: toNumber(row['Percent Light Speeding']),
-        moderateSpeeding: toNumber(row['Percent Moderate Speeding']),
-        heavySpeeding: toNumber(row['Percent Heavy Speeding']),
-        severeSpeeding: toNumber(row['Percent Severe Speeding']),
-        harshAccel: toNumber(row['Harsh Accel']),
-        harshBrake: toNumber(row['Harsh Brake']),
-        harshTurn: toNumber(row['Harsh Turn']),
-        mobileUsage: toNumber(row['Mobile Usage']),
-        noSeatBelt: toNumber(row['No Seat Belt']),
-        forwardCollisionWarning: toNumber(row['Forward Collision Warning']),
-      };
-    }).filter((r): r is SafetyRow => r !== null);
-  } catch { return []; }
+  return loadCsvRows('samsara_driver_safety.csv').map(row => {
+    const rank = parseInt(row['Rank'] || '', 10) || 0;
+    if (!rank) return null;
+    return {
+      rank,
+      name: clean(row['Driver Name']),
+      score: number(row['Safety Score']),
+      totalMiles: number(row['Total Distance (mi)']),
+      maxSpeed: number(row['Max Speed (mph)']),
+      events: number(row['Total Events']),
+      lightSpeeding: number(row['Percent Light Speeding']),
+      moderateSpeeding: number(row['Percent Moderate Speeding']),
+      heavySpeeding: number(row['Percent Heavy Speeding']),
+      severeSpeeding: number(row['Percent Severe Speeding']),
+      harshAccel: number(row['Harsh Accel']),
+      harshBrake: number(row['Harsh Brake']),
+      harshTurn: number(row['Harsh Turn']),
+      mobileUsage: number(row['Mobile Usage']),
+      noSeatBelt: number(row['No Seat Belt']),
+    };
+  }).filter((row): row is SafetyRow => row !== null);
 }
 
-// ── ELD Diagnostics reader ──────────────────────────────────────────
-interface EldDiag { date: string; event: string; asset: string; }
-function loadEldDiagnostics(): EldDiag[] {
-  try {
-    const csvPath = path.join(process.cwd(), 'data', 'eld_diagnostics.csv');
-    if (!fs.existsSync(csvPath)) return [];
-    const text = fs.readFileSync(csvPath, 'utf-8');
-    const lines = text.split(/\r\n|\n/).filter(l => l.trim());
-    if (lines.length < 2) return [];
-    return lines.slice(1).map(line => {
-      const c = line.split(',').map(s => s.replace(/"/g, '').trim());
-      return { date: c[0] || '', event: c[1] || '', asset: c[3] || '' };
-    }).filter(r => r.event);
-  } catch { return []; }
+function daysTone(days: number | null) {
+  if (days == null) return { label: 'Missing', tone: 'warning' as const };
+  if (days <= 30) return { label: `${days}d`, tone: 'critical' as const };
+  if (days <= 90) return { label: `${days}d`, tone: 'warning' as const };
+  return { label: `${days}d`, tone: 'ok' as const };
+}
+
+function hoursTone(value: number | null | undefined, cap: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return { label: 'Not reporting', pct: 0, tone: 'warning' as const };
+  return {
+    label: `${value.toFixed(1)}h`,
+    pct: Math.round((value / cap) * 100),
+    tone: value <= 2 ? 'critical' as const : value <= 4 ? 'warning' as const : 'ok' as const,
+  };
+}
+
+function scoreTone(score: number) {
+  if (score >= 90) return 'ok' as const;
+  if (score >= 75) return 'warning' as const;
+  return 'critical' as const;
 }
 
 export default async function FleetPage() {
-  const samsara = await getGlobalSamsara();
-  const configured = samsara.configured;
-  const diagnostics: any = (samsara as any).diagnostics || {};
-  const vehicles: any[] = samsara.vehicles || [];
-  const crews: any[] = samsara.crews || [];
-  const hos: any[] = (samsara as any).hos || [];
-  const compliance = await loadDriverCompliance();
-  const safety = loadDriverSafety();
-  const eldDiags = loadEldDiagnostics();
+  const [samsara, compliance, safety] = await Promise.all([
+    getGlobalSamsara(),
+    loadDriverCompliance(),
+    Promise.resolve(loadDriverSafety()),
+  ]);
 
-  // HOS tone helper
-  const toneFor = (hrs: number | null, critical: number, warn: number) => {
-    if (hrs == null) return { color: '#9CA3AF', label: 'N/A' };
-    if (hrs <= critical) return { color: '#E04343', label: 'STOP' };
-    if (hrs <= warn)     return { color: '#F5A623', label: 'WATCH' };
-    return { color: '#20BC64', label: 'OK' };
-  };
-
-  const hosApiStatus = diagnostics.hosStatus ? String(diagnostics.hosStatus) : '';
-  const hosBlocked = hosApiStatus === '403' || Boolean(diagnostics.hosError);
-
-  const driverTable = hos.length > 0
-    ? hos.filter(h => h.driverName).map(h => ({
-        name: h.driverName,
-        eldStatus: 'on_duty',
-        logDate: h.logDate || '',
-        drive: h.driveRemainingHrs ?? null,
-        shift: h.shiftRemainingHrs ?? null,
-        cycle: h.cycleRemainingHrs ?? null,
-        currentStatus: h.currentStatus || '',
-        hosBlocked: false,
-      }))
-    : crews.length > 0
-      ? crews.filter(c => c.status !== 'exempt').map(c => {
-      const h = hos.find((x: any) => cleanText(x.driverName).toLowerCase() === cleanText(c.name).toLowerCase());
-      return {
-        name: c.name,
-        eldStatus: c.status,
-        logDate: h?.logDate || '',
-        drive: h?.driveRemainingHrs ?? null,
-        shift: h?.shiftRemainingHrs ?? null,
-        cycle: h?.cycleRemainingHrs ?? null,
-        currentStatus: h?.currentStatus || (hosBlocked ? `Samsara HOS blocked${hosApiStatus ? ` ${hosApiStatus}` : ''}` : ''),
-        hosBlocked,
-      };
-    })
-      : compliance.map(c => ({
-        name: c.name,
-        eldStatus: 'unknown',
-        logDate: '',
-        drive: null,
-        shift: null,
-        cycle: null,
-        currentStatus: hosBlocked ? `Samsara HOS blocked${hosApiStatus ? ` ${hosApiStatus}` : ''}` : 'No HOS log',
-        hosBlocked,
-      }));
-
-  const vehiclesMoving = vehicles.filter(v => (v.speed || 0) > 2);
-  const vehiclesParked = vehicles.filter(v => (v.speed || 0) <= 2);
-  const vehiclesAssigned = vehicles.filter(v => v.driver && v.driver !== 'Unassigned');
-  const fleetScore = vehicles.length > 0 ? Math.round((vehiclesAssigned.length / vehicles.length) * 100) : null;
-  const activeDriverCount = driverTable.length || crews.length || compliance.length;
-  const driversAtRisk = driverTable.filter(d => d.drive != null && d.drive <= 2).length;
-  const hasAnyHosData = driverTable.some(d => d.drive != null || d.shift != null || d.cycle != null);
-  const hosUnavailable = configured && driverTable.length === 0 && hos.length === 0;
-
-  // Compliance countdown tone
-  const cdlTone = (days: number | null) => {
-    if (days == null) return { color: '#9CA3AF', label: 'N/A' };
-    if (days <= 30) return { color: '#E04343', label: `${days}d` };
-    if (days <= 90) return { color: '#F5A623', label: `${days}d` };
-    return { color: '#20BC64', label: `${days}d` };
-  };
-
-  const urgentCompliance = compliance.filter(c =>
-    (c.cdlDaysLeft != null && c.cdlDaysLeft <= 90) ||
-    (c.medDaysLeft != null && c.medDaysLeft <= 90)
-  ).length;
+  const vehicles = samsara.vehicles || [];
+  const hos = samsara.hos || [];
+  const vehiclesAssigned = vehicles.filter((vehicle: any) => vehicle.driver && vehicle.driver !== 'Unassigned');
+  const unassignedVehicles = vehicles.filter((vehicle: any) => !vehicle.driver || vehicle.driver === 'Unassigned');
+  const expiringSoon = compliance.filter(row =>
+    (row.cdlDaysLeft != null && row.cdlDaysLeft <= 30) ||
+    (row.medDaysLeft != null && row.medDaysLeft <= 30) ||
+    row.medDaysLeft == null
+  );
+  const avgSafetyScore = safety.length ? Math.round(safety.reduce((sum, row) => sum + row.score, 0) / safety.length) : null;
+  const riskEvents = safety.reduce((sum, row) => sum + row.events, 0);
+  const hosNotReporting = samsara.configured && hos.length === 0;
+  const lowboy = vehicles.find((vehicle: any) => /lowboy|david/i.test(`${vehicle.name} ${vehicle.driver}`));
+  const lowboyHos = hos.find((row: any) => /david|hudson/i.test(row.driverName || ''));
 
   return (
-    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
-      <header className="mb-6 flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Fleet &amp; Driver Compliance</h1>
-          <p className="text-[#757A7F] text-sm">Samsara vehicle positions, driver HOS, DOT license &amp; medical compliance.</p>
-        </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">&larr; Dashboard</Link>
-      </header>
-
-      {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Vehicles</p>
-          <p className="text-3xl font-black text-[#20BC64]">{vehicles.length}</p>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">{vehiclesMoving.length} moving · {vehiclesParked.length} parked</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Drivers</p>
-          <p className="text-3xl font-black text-[#20BC64]">{activeDriverCount}</p>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">{driverTable.length > 0 ? 'from Samsara HOS' : 'from DOT file'}</p>
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">HOS Risk</p>
-          {hasAnyHosData ? (
-            <>
-              <p className={`text-3xl font-black ${driversAtRisk > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{driversAtRisk}</p>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">&le;2h drive left</p>
-            </>
-          ) : (
-            <>
-              <p className="text-3xl font-black text-[#9CA3AF]">&mdash;</p>
-              <p className="text-[10px] text-[#9CA3AF] mt-0.5 font-bold uppercase">No HOS data</p>
-            </>
-          )}
-        </div>
-        <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">DOT Compliance</p>
-          <p className="text-3xl font-black text-[#3C4043]">{compliance.length}</p>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">drivers on file</p>
-        </div>
-        <div className={`bg-white rounded-xl p-5 border ${urgentCompliance > 0 ? 'border-[#E04343]/30' : 'border-[#F1F3F4]'}`}>
-          <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Expiring &le;90d</p>
-          <p className={`text-3xl font-black ${urgentCompliance > 0 ? 'text-[#E04343]' : 'text-[#20BC64]'}`}>{urgentCompliance}</p>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">license or medical card</p>
-        </div>
+    <PageShell title="Fleet" question="Are my drivers safe, legal, and where they should be?" updatedAt={samsara.timestamp ? new Date(samsara.timestamp).toLocaleString('en-US') : 'Samsara source'}>
+      <div className="mb-6 grid gap-3">
+        {hosNotReporting ? (
+          <AlertCard severity="HIGH" title="HOS is not reporting" detail="Samsara vehicle GPS is connected, but HOS clock rows are not coming through this token." owner="Fleet" />
+        ) : null}
+        {expiringSoon.length > 0 ? (
+          <AlertCard severity="CRITICAL" title={`${expiringSoon.length} driver compliance items need review`} detail="CDL or medical card is missing or inside the 30-day window." owner="Fleet" />
+        ) : null}
+        {unassignedVehicles.length > 0 ? (
+          <AlertCard severity="HIGH" title={`${unassignedVehicles.length} vehicles have no assigned driver`} detail="Fleet accountability is not clear until each reporting vehicle has a driver." owner="Fleet" />
+        ) : null}
       </div>
 
-      {!configured && (
-        <div className="mb-8 rounded-xl bg-amber-500/10 border border-amber-500/30 px-5 py-4">
-          <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">Awaiting Samsara integration</p>
-          <p className="text-xs text-[#757A7F]">Set <code className="font-mono text-[11px]">SAMSARA_API_KEY</code> in Vercel env vars to populate HOS data.</p>
-        </div>
-      )}
-
-      {/* Fleet Health Summary */}
-      <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden mb-8">
-        <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
-          <div>
-            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Fleet Health</h2>
-            <p className="text-[10px] text-[#757A7F] mt-0.5">Samsara vehicle GPS and driver assignment only.</p>
+      <Section title="Lowboy Command" kicker="Moved to the top because lowboy decisions affect the whole schedule.">
+        <div className="grid gap-4 p-4 md:grid-cols-4">
+          <div className="rounded-lg border border-[rgba(31,41,55,0.15)] p-4">
+            <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#475569]">Location</p>
+            <p className="mt-2 font-extrabold text-[#0F172A]">{lowboy?.address || 'No lowboy signal'}</p>
+            <p className="mt-1 text-sm text-[#475569]">{lowboy ? `${Math.round(lowboy.speed || 0)} mph · ${lowboy.driver || 'Driver missing'}` : 'Samsara did not return a lowboy vehicle.'}</p>
           </div>
-          {fleetScore != null && (
-            <div className="text-right">
-              <p className={`text-2xl font-black ${fleetScore >= 80 ? 'text-[#20BC64]' : fleetScore >= 50 ? 'text-[#F5A623]' : 'text-[#E04343]'}`}>{fleetScore}%</p>
-              <p className="text-[10px] text-[#757A7F]/70 font-bold uppercase">healthy</p>
+          {[
+            { title: 'Drive Time', data: hoursTone(lowboyHos?.driveRemainingHrs, 11) },
+            { title: 'Shift', data: hoursTone(lowboyHos?.shiftRemainingHrs, 14) },
+            { title: 'Cycle', data: hoursTone(lowboyHos?.cycleRemainingHrs, 60) },
+          ].map(item => (
+            <div key={item.title} className="rounded-lg border border-[rgba(31,41,55,0.15)] p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-[0.08em] text-[#475569]">{item.title}</p>
+                <HealthPill label={item.data.label} tone={item.data.tone} />
+              </div>
+              <ProgressBar value={item.data.pct} tone={item.data.tone} />
             </div>
-          )}
+          ))}
         </div>
-        <div className="p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-xl p-4 border border-[#20BC64]/20 bg-[#20BC64]/5 text-center">
-            <p className="text-2xl font-black text-[#20BC64]">{vehicles.length}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Reporting</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">Samsara vehicles with GPS</p>
-          </div>
-          <div className="rounded-xl p-4 border border-[#F5A623]/20 bg-[#F5A623]/5 text-center">
-            <p className="text-2xl font-black text-[#F5A623]">{vehiclesParked.length}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Parked</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">0-2 mph right now</p>
-          </div>
-          <div className="rounded-xl p-4 border border-[#E04343]/20 bg-[#E04343]/5 text-center">
-            <p className="text-2xl font-black text-[#E04343]">{vehicles.length - vehiclesAssigned.length}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">No Driver</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">No assigned driver shown</p>
-          </div>
-          <div className="rounded-xl p-4 border border-[#F1F3F4] text-center">
-            <p className="text-2xl font-black text-[#3C4043]">{vehiclesMoving.length}</p>
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F] mt-1">Moving</p>
-            <p className="text-[9px] text-[#757A7F]/60 mt-0.5">Above 2 mph</p>
-          </div>
-        </div>
+      </Section>
+
+      <div className="my-6 grid gap-4 md:grid-cols-4">
+        <KpiCard label="Vehicles Reporting" value={vehicles.length} context={`${vehiclesAssigned.length} assigned`} tone={vehicles.length ? 'ok' : 'warning'} />
+        <KpiCard label="Drivers On File" value={compliance.length} context="DOT compliance sheet" />
+        <KpiCard label="Avg Safety Score" value={avgSafetyScore ?? 'Missing'} context="Samsara safety export" tone={avgSafetyScore == null ? 'warning' : scoreTone(avgSafetyScore)} />
+        <KpiCard label="Risk Events This Week" value={riskEvents} context="From driver safety rows" tone={riskEvents ? 'warning' : 'ok'} />
       </div>
 
-      {/* HOS + DOT Compliance */}
-      <div className="grid grid-cols-1 gap-6 mb-8">
-
-        {/* ═══ HOS Compliance — exempt drivers filtered out ═══ */}
-        <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F1F3F4]">
-            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Driver HOS Compliance</h2>
-            <p className="text-[10px] text-[#757A7F] mt-0.5">Non-exempt drivers only. 11h drive / 14h shift / 60h cycle caps.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#F1F3F4]">
-                <tr>
-                  {['Driver', 'Duty Status', 'Drive', 'Shift', 'Cycle'].map(h => (
-                    <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {driverTable.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-[#757A7F]">
-                      {hosUnavailable
-                        ? `No HOS clock rows returned by Samsara${hosApiStatus ? ` (status ${hosApiStatus})` : ''}. Vehicle GPS is connected, but driver HOS is not coming through this token.`
-                        : 'No non-exempt drivers reporting.'}
-                    </td>
-                  </tr>
-                ) : driverTable.map((d, i) => {
-                  const dr = toneFor(d.drive, 0.5, 2);
-                  const sh = toneFor(d.shift, 1, 3);
-                  const cy = toneFor(d.cycle, 5, 15);
-                  const fmt = (v: number | null) => v == null ? (d.hosBlocked ? 'Blocked' : '—') : `${v.toFixed(1)}h`;
-                  return (
-                    <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
-                      <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
-                      <td className="px-3 py-2 text-xs text-[#757A7F]">{d.currentStatus || 'No HOS log'}</td>
-                      <td className="px-3 py-2 text-xs font-black" style={{ color: dr.color }}>{fmt(d.drive)}</td>
-                      <td className="px-3 py-2 text-xs font-black" style={{ color: sh.color }}>{fmt(d.shift)}</td>
-                      <td className="px-3 py-2 text-xs font-black" style={{ color: cy.color }}>{fmt(d.cycle)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* ═══ DOT Compliance — License, Medical Card, Random Drug Test ═══ */}
-        <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F1F3F4]">
-            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">DOT License &amp; Medical Compliance</h2>
-            <p className="text-[10px] text-[#757A7F] mt-0.5">CDL expiration, medical certificate countdown, random selection status.</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-[#F1F3F4]">
-                <tr>
-                  {['Driver', 'CDL Expires', 'Days Left', 'Medical Expires', 'Days Left', 'Random Status'].map(h => (
-                    <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {compliance.length === 0 ? (
-                  <tr><td colSpan={6} className="px-3 py-6 text-center text-sm text-[#757A7F]">No compliance data. Add <code className="font-mono text-[11px]">driver_compliance.csv</code> to /data.</td></tr>
-                ) : compliance
-                  .sort((a, b) => {
-                    // Sort: soonest expiration first (either CDL or medical)
-                    const aMin = Math.min(a.cdlDaysLeft ?? 9999, a.medDaysLeft ?? 9999);
-                    const bMin = Math.min(b.cdlDaysLeft ?? 9999, b.medDaysLeft ?? 9999);
-                    return aMin - bMin;
-                  })
-                  .map((c, i) => {
-                    const cdl = cdlTone(c.cdlDaysLeft);
-                    const med = cdlTone(c.medDaysLeft);
-                    return (
-                      <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${(c.cdlDaysLeft != null && c.cdlDaysLeft <= 30) || (c.medDaysLeft != null && c.medDaysLeft <= 30) ? 'bg-[#E04343]/5' : ''}`}>
-                        <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{c.name}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{c.cdlExpiration || '—'}</td>
-                        <td className="px-3 py-2 text-xs font-black" style={{ color: cdl.color }}>{cdl.label}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{c.medExpiration || '—'}</td>
-                        <td className="px-3 py-2 text-xs font-black" style={{ color: med.color }}>{med.label}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">
-                          {c.randomStatus ? (
-                            <span className={`text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded ${c.randomStatus.toLowerCase().includes('pending') ? 'bg-[#F5A623]/15 text-[#F5A623]' : c.randomStatus.toLowerCase().includes('complete') ? 'bg-[#20BC64]/15 text-[#20BC64]' : 'bg-[#F1F3F4] text-[#757A7F]'}`}>
-                              {c.randomStatus}
-                            </span>
-                          ) : '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* ═══ Driver Safety Scores + ELD Diagnostics ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Driver Safety Scores — 2/3 width */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F1F3F4] flex justify-between items-center">
-            <div>
-              <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Driver Safety Scores</h2>
-              <p className="text-[10px] text-[#757A7F] mt-0.5">Samsara score based on speeding, harsh driving, phone use, seat belt, and collision warnings. 100 is best.</p>
-            </div>
-            <span className="text-[10px] text-[#757A7F]/60 font-bold uppercase">
-              {safety.length > 0 ? `Avg: ${Math.round(safety.reduce((s, d) => s + d.score, 0) / safety.length)}` : 'No data'}
-            </span>
-          </div>
+      <div className="grid gap-6">
+        <Section title="Driver Safety Scorecard" kicker="Score is rated from Samsara safety rows: speeding, harsh events, mobile use, seat belt, events, and miles. Worst scores first.">
           {safety.length === 0 ? (
-            <div className="p-6"><p className="text-sm text-[#757A7F] italic">No safety data. Add <code className="font-mono text-[11px]">samsara_driver_safety.csv</code> to /data.</p></div>
+            <EmptyState title="No driver safety rows found" detail="The Samsara safety export did not return rows." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#F1F3F4]">
+              <table className="ops-table w-full">
+                <thead>
                   <tr>
-                    {['#', 'Driver', 'Safety Score', 'Speeding %', 'Risk Events', 'Drive Time', 'Miles', 'Max Speed'].map(h => (
-                      <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                    {['Driver', 'Score', 'Events', 'Miles', 'Max Speed', 'Speeding', 'Behaviors Rated'].map(header => (
+                      <th key={header} className="px-4 py-3 text-left">{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {safety.map((d, i) => {
-                    const scoreColor = d.score >= 80 ? '#20BC64' : d.score >= 60 ? '#F5A623' : '#E04343';
-                    const speedingPct = d.lightSpeeding + d.moderateSpeeding + d.heavySpeeding + d.severeSpeeding;
-                    const behaviorEvents = d.harshAccel + d.harshBrake + d.harshTurn + d.mobileUsage + d.noSeatBelt + d.forwardCollisionWarning;
-                    const riskEvents = Math.max(d.events, d.behaviors, behaviorEvents);
+                  {safety.sort((a, b) => a.score - b.score).map(row => {
+                    const speeding = row.lightSpeeding + row.moderateSpeeding + row.heavySpeeding + row.severeSpeeding;
+                    const behaviors = row.harshAccel + row.harshBrake + row.harshTurn + row.mobileUsage + row.noSeatBelt;
                     return (
-                      <tr key={i} className={`border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40 ${d.score < 60 ? 'bg-[#E04343]/5' : ''}`}>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{d.rank}</td>
-                        <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{d.name}</td>
-                        <td className="px-3 py-2">
-                          <span className="text-sm font-black" style={{ color: scoreColor }}>{d.score}</span>
-                        </td>
-                        <td className="px-3 py-2 text-xs font-bold text-[#757A7F]">{speedingPct.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{riskEvents}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F] font-mono">{d.driveTime}</td>
-                        <td className="px-3 py-2 text-xs text-[#757A7F]">{d.totalMiles.toLocaleString()}</td>
-                        <td className="px-3 py-2 text-xs font-bold" style={{ color: d.maxSpeed > 80 ? '#E04343' : '#3C4043' }}>{Math.round(d.maxSpeed)} mph</td>
+                      <tr key={row.name}>
+                        <td className="px-4 py-3 font-extrabold">{row.name}</td>
+                        <td className="px-4 py-3"><HealthPill label={`${row.score}`} tone={scoreTone(row.score)} /></td>
+                        <td className="px-4 py-3">{row.events}</td>
+                        <td className="px-4 py-3">{Math.round(row.totalMiles).toLocaleString()}</td>
+                        <td className="px-4 py-3">{Math.round(row.maxSpeed)} mph</td>
+                        <td className="px-4 py-3">{speeding.toFixed(1)}%</td>
+                        <td className="px-4 py-3">{behaviors}</td>
                       </tr>
                     );
                   })}
@@ -471,213 +243,71 @@ export default async function FleetPage() {
               </table>
             </div>
           )}
-        </div>
+        </Section>
 
-        {/* ELD Diagnostics — 1/3 width */}
-        <div className="lg:col-span-1 bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-          <div className="px-5 py-4 border-b border-[#F1F3F4]">
-            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">ELD Diagnostics</h2>
-            <p className="text-[10px] text-[#757A7F] mt-0.5">Active malfunctions that need attention.</p>
-          </div>
-          {eldDiags.length === 0 ? (
-            <div className="p-6"><p className="text-sm text-[#20BC64] font-bold">All clear — no active diagnostics.</p></div>
+        <Section title="Vehicle Locations" kicker="Only vehicles currently returned by Samsara are shown.">
+          {vehicles.length === 0 ? (
+            <EmptyState title="No vehicles reporting" detail="Samsara did not return vehicle location rows." />
           ) : (
-            <div className="p-4 space-y-2">
-              {(() => {
-                const grouped: Record<string, string[]> = {};
-                for (const d of eldDiags) {
-                  const key = d.asset || 'Unknown';
-                  if (!grouped[key]) grouped[key] = [];
-                  if (!grouped[key].includes(d.event)) grouped[key].push(d.event);
-                }
-                return Object.entries(grouped).map(([asset, events], i) => (
-                  <div key={i} className="rounded-lg p-3 border border-[#F5A623]/20 bg-[#F5A623]/5">
-                    <p className="text-xs font-bold text-[#3C4043]">{asset}</p>
-                    {events.map((e, j) => (
-                      <p key={j} className="text-[10px] text-[#F5A623] font-bold mt-0.5">{e}</p>
+            <div className="overflow-x-auto">
+              <table className="ops-table w-full">
+                <thead>
+                  <tr>
+                    {['Vehicle', 'Driver', 'Location', 'Speed', 'Status'].map(header => (
+                      <th key={header} className="px-4 py-3 text-left">{header}</th>
                     ))}
-                  </div>
-                ));
-              })()}
+                  </tr>
+                </thead>
+                <tbody>
+                  {vehicles.map((vehicle: any) => (
+                    <tr key={vehicle.id || vehicle.name}>
+                      <td className="px-4 py-3 font-extrabold">{vehicle.name}</td>
+                      <td className="px-4 py-3">{vehicle.driver || 'Unassigned'}</td>
+                      <td className="px-4 py-3">{vehicle.address || 'Location missing'}</td>
+                      <td className="px-4 py-3">{Math.round(vehicle.speed || 0)} mph</td>
+                      <td className="px-4 py-3"><HealthPill label={(vehicle.speed || 0) > 2 ? 'Moving' : 'Parked'} tone={(vehicle.speed || 0) > 2 ? 'ok' : 'neutral'} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
-        </div>
-      </div>
+        </Section>
 
-        {/* ── LOWBOY COMMAND ─────────────────────────────────────────────── */}
-        {(() => {
-          const lowboyVehicle = samsara.configured
-            ? samsara.vehicles.find((v: any) => (v.name || '').toLowerCase().includes('lowboy') || (v.name || '').toLowerCase().includes('hudson') || (v.name || '').toLowerCase().includes('david'))
-            : null;
-          const lowboyCompliance = compliance.find((c: any) => {
-            const n = String(c.name || '').toLowerCase();
-            return n.includes('david') && n.includes('hudson');
-          });
-
-          // Always render the card — show an 'awaiting Samsara' placeholder if not configured.
-
-          return (
-            <div className="bg-white rounded-md border border-[#F1F3F4] shadow-sm overflow-hidden">
-              <div className="p-5 border-b border-[#F1F3F4] flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-[#3C4043]/70">🚛 Lowboy Command — David Hudson</h2>
-                  {lowboyVehicle && (
-                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${lowboyVehicle.speed > 2 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-[#F5A623] border border-amber-500/20'}`}>
-                      {lowboyVehicle.speed > 2 ? `🟢 EN ROUTE · ${Math.round(lowboyVehicle.speed)} mph` : '🟡 PARKED'}
-                    </span>
-                  )}
-                </div>
-                <span className="text-[9px] font-bold text-emerald-400 px-2 py-1 rounded bg-emerald-400/10 border border-emerald-400/20">✅ PERMANENT PERMIT</span>
-              </div>
-              {lowboyVehicle ? (
-                <div className="p-5">
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Current Location</p>
-                      <p className="text-xs font-bold text-[#3C4043] leading-relaxed">{lowboyVehicle.address || 'GPS Active'}</p>
-                    </div>
-                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Speed</p>
-                      <p className="text-2xl font-black text-[#3C4043]">{Math.round(lowboyVehicle.speed)}<span className="text-sm text-[#757A7F] ml-1">mph</span></p>
-                    </div>
-                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Heading</p>
-                      <p className="text-lg font-black text-[#3C4043]/70">{lowboyVehicle.heading || 0}°</p>
-                    </div>
-                    <div className="bg-[#FAFCFB] rounded-xl p-4 border border-[#F1F3F4]">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
-                      <p className="text-sm font-black text-[#3C4043]">David Hudson</p>
-                    </div>
-                  </div>
-                  {/* DOT HOS gauges (remaining legal time) */}
-                  {(() => {
-                    // Exact match on "David Hudson" — avoids accidentally pairing
-                    // with David Moctezuma or any other David in the fleet.
-                    let lowboyHos = (samsara.hos || []).find((h: any) => {
-                      const n = (h.driverName || '').toLowerCase().trim();
-                      return n === 'david hudson' || (n.includes('hudson') && n.includes('david'));
-                    });
-                    if (!lowboyHos) {
-                      lowboyHos = {
-                        driveRemainingHrs: null,
-                        shiftRemainingHrs: null,
-                        cycleRemainingHrs: null,
-                        cycleCapHrs: 60,
-                        logDate: '',
-                        currentStatus: 'No HOS log',
-                      };
-                    }
-                    const toneFor = (hrs: number | null, critical: number, warn: number) => {
-                      if (hrs == null && hosBlocked) return { color: '#F5A623', bg: '#FEF3DB', label: 'BLOCKED' };
-                      if (hrs == null) return { color: '#9CA3AF', bg: '#F1F3F4', label: 'N/A' };
-                      if (hrs <= critical) return { color: '#E04343', bg: '#FDECEC', label: 'STOP' };
-                      if (hrs <= warn)     return { color: '#F5A623', bg: '#FEF3DB', label: 'WATCH' };
-                      return { color: '#20BC64', bg: '#DFF5E6', label: 'OK' };
-                    };
-                    const d = toneFor(lowboyHos.driveRemainingHrs, 0.5, 2);
-                    const s = toneFor(lowboyHos.shiftRemainingHrs, 1, 3);
-                    const c = toneFor(lowboyHos.cycleRemainingHrs, 5, 15);
-                    const hrs = (v: number | null) => v == null ? (hosBlocked ? 'Blocked' : '—') : `${v.toFixed(1)}h`;
-                    return (
-                      <div className="mt-4 pt-4 border-t border-[#F1F3F4]">
-                        <div className="flex justify-between items-center mb-2">
-                          <p className="text-[10px] font-black uppercase tracking-widest text-[#757A7F]">DOT Hours of Service — Remaining</p>
-                          <span className="text-[9px] text-[#757A7F]/60 font-bold uppercase">Source: Samsara HOS API</span>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div className="rounded-xl p-3 border" style={{ background: d.bg, borderColor: `${d.color}33` }}>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Drive Time (11h cap)</p>
-                            <p className="text-2xl font-black" style={{ color: d.color }}>{hrs(lowboyHos.driveRemainingHrs)}</p>
-                            <p className="text-[9px] font-bold" style={{ color: d.color }}>{d.label}</p>
-                          </div>
-                          <div className="rounded-xl p-3 border" style={{ background: s.bg, borderColor: `${s.color}33` }}>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">On-Duty Shift (14h cap)</p>
-                            <p className="text-2xl font-black" style={{ color: s.color }}>{hrs(lowboyHos.shiftRemainingHrs)}</p>
-                            <p className="text-[9px] font-bold" style={{ color: s.color }}>{s.label}</p>
-                          </div>
-                          <div className="rounded-xl p-3 border" style={{ background: c.bg, borderColor: `${c.color}33` }}>
-                            <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Weekly Cycle ({lowboyHos.cycleCapHrs || 60}h / {lowboyHos.cycleCapHrs === 70 ? 8 : 7}d)</p>
-                            <p className="text-2xl font-black" style={{ color: c.color }}>{hrs(lowboyHos.cycleRemainingHrs)}</p>
-                            <p className="text-[9px] font-bold" style={{ color: c.color }}>{c.label}</p>
-                          </div>
-                        </div>
-                        {lowboyHos.logDate && (
-                          <p className="text-[10px] text-[#757A7F]/70 mt-2">Latest day logged: <span className="font-bold text-[#3C4043]">{lowboyHos.logDate}</span></p>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {lowboyVehicle.speed > 2 && (
-                    <div className="mt-3 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/15 flex items-center gap-3">
-                      <span className="text-emerald-400">🚛</span>
-                      <p className="text-xs text-[#0F8F47] font-bold">Lowboy is currently in transit at {Math.round(lowboyVehicle.speed)} mph. ETA to next staging site is shown on the Schedule lowboy card.</p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="p-5 grid gap-4 md:grid-cols-3">
-                  <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">Driver</p>
-                    <p className="text-sm font-black text-[#3C4043]">David Hudson</p>
-                    <p className="mt-1 text-xs text-[#757A7F]">{lowboyCompliance?.cdlExpiration ? `CDL expires ${lowboyCompliance.cdlExpiration}` : 'CDL date not loaded'}</p>
-                  </div>
-                  <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">GPS</p>
-                    <p className="text-sm font-black text-[#F5A623]">{samsara.configured ? 'No lowboy signal' : 'Samsara not configured'}</p>
-                    <p className="mt-1 text-xs text-[#757A7F]">Card stays visible until the truck reports.</p>
-                  </div>
-                  <div className="rounded-xl border border-[#F1F3F4] bg-[#FAFCFB] p-4">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-[#757A7F] mb-1">HOS</p>
-                    <p className={`text-sm font-black ${hosBlocked ? 'text-[#F5A623]' : 'text-[#9CA3AF]'}`}>{hosBlocked ? `Samsara HOS blocked${hosApiStatus ? ` ${hosApiStatus}` : ''}` : 'No HOS log'}</p>
-                    <p className="mt-1 text-xs text-[#757A7F]">No made-up drive hours shown.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-
-
-      {/* Vehicle locations table */}
-      <div className="bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#F1F3F4]">
-          <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Vehicle Locations</h2>
-          <p className="text-[10px] text-[#757A7F] mt-0.5">Live GPS from Samsara.</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[#F1F3F4]">
-              <tr>
-                {['Vehicle', 'Driver', 'Location', 'Speed', 'Status'].map(h => (
-                  <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {vehicles.length === 0 ? (
-                <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-[#757A7F]">No vehicles reporting.</td></tr>
-              ) : vehicles.map((v, i) => {
-                const isMoving = (v.speed || 0) > 2;
-                return (
-                  <tr key={i} className="border-t border-[#F1F3F4] hover:bg-[#F1F3F4]/40">
-                    <td className="px-3 py-2 text-xs font-bold text-[#3C4043]">{v.name}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F]">{v.driver || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-[#757A7F] truncate max-w-[200px]" title={v.address}>{v.address || '—'}</td>
-                    <td className="px-3 py-2 text-xs font-bold" style={{ color: isMoving ? '#20BC64' : '#757A7F' }}>{Math.round(v.speed || 0)} mph</td>
-                    <td className="px-3 py-2">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${isMoving ? 'text-[#20BC64]' : 'text-[#757A7F]'}`}>
-                        {isMoving ? 'Moving' : 'Parked'}
-                      </span>
-                    </td>
+        <Section title="DOT Compliance" kicker="Sorted by nearest CDL or medical-card deadline.">
+          {compliance.length === 0 ? (
+            <EmptyState title="No DOT compliance rows found" detail="The driver compliance sheet did not return rows." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="ops-table w-full">
+                <thead>
+                  <tr>
+                    {['Driver', 'CDL Expires', 'CDL Days Left', 'Medical Card Expires', 'Medical Days Left', 'Random Status'].map(header => (
+                      <th key={header} className="px-4 py-3 text-left">{header}</th>
+                    ))}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody>
+                  {compliance.sort((a, b) => Math.min(a.cdlDaysLeft ?? 9999, a.medDaysLeft ?? 9999) - Math.min(b.cdlDaysLeft ?? 9999, b.medDaysLeft ?? 9999)).map(row => {
+                    const cdl = daysTone(row.cdlDaysLeft);
+                    const med = daysTone(row.medDaysLeft);
+                    return (
+                      <tr key={row.name}>
+                        <td className="px-4 py-3 font-extrabold">{row.name}</td>
+                        <td className="px-4 py-3">{row.cdlExpiration || 'Missing'}</td>
+                        <td className="px-4 py-3"><HealthPill label={cdl.label} tone={cdl.tone} /></td>
+                        <td className="px-4 py-3">{row.medExpiration || 'Missing'}</td>
+                        <td className="px-4 py-3"><HealthPill label={med.label} tone={med.tone} /></td>
+                        <td className="px-4 py-3">{row.randomStatus || 'No status'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
       </div>
-    </div>
+    </PageShell>
   );
 }

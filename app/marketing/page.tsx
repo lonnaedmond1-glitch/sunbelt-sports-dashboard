@@ -1,118 +1,95 @@
-import React from 'react';
-import Link from 'next/link';
+import { EmptyState, HealthPill, KpiCard, PageShell, ProgressBar, Section } from '@/components/OperationsUI';
 import { fetchMarketingLeads } from '@/lib/sheets-data';
 
-export const revalidate = 86400;
+export const revalidate = 300;
 
 export default async function MarketingPage() {
   const leads = await fetchMarketingLeads();
   const today = new Date();
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-  const mtd = leads.filter(l => (l.Date || '') >= monthStart);
-  const qualified = leads.filter(l => /qualified|won|signed/i.test(l.Status || ''));
-  const bySource: Record<string, number> = {};
-  leads.forEach(l => { const s = l.Source || 'Unknown'; bySource[s] = (bySource[s] || 0) + 1; });
-  const sources = Object.entries(bySource).sort((a, b) => b[1] - a[1]);
+  const mtd = leads.filter(lead => (lead.Date || '') >= monthStart);
+  const qualified = leads.filter(lead => /qualified|won|signed/i.test(lead.Status || ''));
+  const bySource = new Map<string, number>();
+  leads.forEach(lead => bySource.set(lead.Source || 'Unknown source', (bySource.get(lead.Source || 'Unknown source') || 0) + 1));
+  const sourceRows = Array.from(bySource.entries()).sort((a, b) => b[1] - a[1]);
+  const conversion = leads.length ? Math.round((qualified.length / leads.length) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-[#F1F3F4] text-[#3C4043] font-body p-8">
-      <header className="mb-6 flex justify-between items-end">
-        <div>
-          <h1 className="text-2xl font-black uppercase tracking-tight text-[#3C4043] mb-1">Marketing Funnel</h1>
-          <p className="text-[#757A7F] text-sm">Leads, inbound inquiries &amp; campaign performance. Live from Marketing_Leads sheet.</p>
-          <div className="mt-3 rounded-lg bg-[#60a5fa]/5 border border-[#60a5fa]/20 px-4 py-3 max-w-3xl">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#60a5fa]/80 mb-1">What this page is for</p>
-            <p className="text-xs text-[#3C4043] leading-relaxed">Track where new work is coming from — GC referrals, website inquiries, trade shows, direct outreach. Use it to decide which channels to double-down on, which to cut, and whether marketing spend is converting to qualified bids. Log every new lead in the <code className="font-mono text-[10px]">Marketing_Leads</code> sheet tab with its source and status; the funnel refreshes daily and feeds the Sales pipeline when leads get qualified.</p>
-          </div>
-        </div>
-        <Link href="/dashboard" className="text-xs text-[#20BC64] font-bold uppercase hover:text-[#16a558]">← Dashboard</Link>
-      </header>
-
-      {/* KPI row — render em-dashes until the Marketing_Leads tab has rows, so 0/0/0/0 doesn't read as a healthy quarter. */}
-      {(() => {
-        const noData = leads.length === 0;
-        const mutedClass = 'text-3xl font-black text-[#9CA3AF]';
-        return (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">New Leads (MTD)</p>
-              <p className={noData ? mutedClass : 'text-3xl font-black text-[#20BC64]'}>{noData ? '—' : mtd.length}</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Total Leads</p>
-              <p className={noData ? mutedClass : 'text-3xl font-black'}>{noData ? '—' : leads.length}</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Qualified</p>
-              <p className={noData ? mutedClass : 'text-3xl font-black text-[#60a5fa]'}>{noData ? '—' : qualified.length}</p>
-            </div>
-            <div className="bg-white rounded-xl p-5 border border-[#F1F3F4]">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#757A7F] mb-1">Conversion Rate</p>
-              <p className={noData ? mutedClass : 'text-3xl font-black text-[#F5A623]'}>{noData ? '—' : ((qualified.length / leads.length) * 100).toFixed(0) + '%'}</p>
-            </div>
-          </div>
-        );
-      })()}
+    <PageShell title="Marketing" question="Where is new work coming from?" updatedAt={`${leads.length} lead rows read`}>
+      <div className="mb-6 grid gap-4 md:grid-cols-4">
+        <KpiCard label="New Leads MTD" value={leads.length ? mtd.length : 'Missing'} context="Current month" tone={mtd.length ? 'ok' : 'neutral'} />
+        <KpiCard label="Total Leads YTD" value={leads.length || 'Missing'} context="Marketing_Leads rows" />
+        <KpiCard label="Qualified" value={leads.length ? qualified.length : 'Missing'} context="Qualified, won, or signed" tone={qualified.length ? 'ok' : 'neutral'} />
+        <KpiCard label="Conversion Rate" value={leads.length ? `${conversion}%` : 'Missing'} context="Qualified / total leads" tone={conversion >= 30 ? 'ok' : conversion > 0 ? 'warning' : 'neutral'} />
+      </div>
 
       {leads.length === 0 ? (
-        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-5 py-4">
-          <p className="text-xs font-black uppercase tracking-widest text-amber-700 mb-1">No Lead Data Yet</p>
-          <p className="text-xs text-[#757A7F]">Add rows to the <code className="font-mono text-[11px]">Marketing_Leads</code> tab in the Scorecard sheet with columns:
-            <span className="font-mono text-[11px]"> Date, Source, Contact, Project, Status, Owner</span>.</p>
-        </div>
+        <Section title="No Lead Data Yet" kicker="Marketing needs source rows before this page can answer the question.">
+          <EmptyState
+            title="Add your first lead in the Marketing_Leads sheet"
+            detail="No rows were returned from the Marketing_Leads tab, so this page will not show fake zeroes."
+            href="https://docs.google.com/spreadsheets/d/1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY"
+            actionLabel="Open sheet"
+          />
+        </Section>
       ) : (
-        <div className="grid grid-cols-3 gap-6">
-          {/* Sources breakdown */}
-          <div className="col-span-1 bg-white rounded-xl border border-[#F1F3F4] p-5">
-            <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70 mb-4">Lead Sources</h2>
-            <div className="space-y-2">
-              {sources.map(([src, n]) => {
-                const pct = leads.length > 0 ? (n / leads.length) * 100 : 0;
+        <div className="grid gap-6 xl:grid-cols-[420px_1fr]">
+          <Section title="Source Breakdown" kicker="Lead count by source.">
+            <div className="space-y-4 p-4">
+              {sourceRows.map(([source, count]) => {
+                const pct = leads.length ? (count / leads.length) * 100 : 0;
                 return (
-                  <div key={src}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-bold text-[#3C4043]">{src}</span>
-                      <span className="text-[#757A7F]">{n} · {pct.toFixed(0)}%</span>
+                  <div key={source}>
+                    <div className="mb-2 flex justify-between text-sm">
+                      <span className="font-extrabold text-[#0F172A]">{source}</span>
+                      <span className="font-bold text-[#475569]">{count} · {Math.round(pct)}%</span>
                     </div>
-                    <div className="h-2 bg-[#F1F3F4] rounded-full overflow-hidden">
-                      <div className="h-full rounded-full bg-[#20BC64]" style={{ width: `${pct}%` }} />
-                    </div>
+                    <ProgressBar value={pct} tone="ok" />
                   </div>
                 );
               })}
             </div>
-          </div>
-          {/* Recent leads */}
-          <div className="col-span-2 bg-white rounded-xl border border-[#F1F3F4] overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#F1F3F4]">
-              <h2 className="text-xs font-black uppercase tracking-widest text-[#3C4043]/70">Recent Leads</h2>
-            </div>
+          </Section>
+
+          <Section title="Recent Leads" kicker="Newest rows first.">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-[#F1F3F4]">
+              <table className="ops-table w-full">
+                <thead>
                   <tr>
-                    {['Date', 'Source', 'Contact', 'Project', 'Status', 'Owner'].map(h => (
-                      <th key={h} className="text-left px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[#757A7F]">{h}</th>
+                    {['Date', 'Source', 'Contact', 'Project', 'Status', 'Owner'].map(header => (
+                      <th key={header} className="px-4 py-3 text-left">{header}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {leads.slice(0, 25).map((l, i) => (
-                    <tr key={i} className="border-t border-[#F1F3F4]">
-                      <td className="px-3 py-2 text-xs">{l.Date}</td>
-                      <td className="px-3 py-2 text-xs font-bold text-[#60a5fa]">{l.Source}</td>
-                      <td className="px-3 py-2 text-xs">{l.Contact}</td>
-                      <td className="px-3 py-2 text-xs text-[#757A7F]">{l.Project}</td>
-                      <td className="px-3 py-2 text-xs font-bold">{l.Status}</td>
-                      <td className="px-3 py-2 text-xs text-[#757A7F]">{l.Owner}</td>
+                  {leads.slice(0, 30).map((lead, index) => (
+                    <tr key={`${lead.Date}-${lead.Contact}-${index}`}>
+                      <td className="px-4 py-3">{lead.Date}</td>
+                      <td className="px-4 py-3 font-bold">{lead.Source || 'Unknown source'}</td>
+                      <td className="px-4 py-3">{lead.Contact || 'No contact'}</td>
+                      <td className="px-4 py-3">{lead.Project || 'No project named'}</td>
+                      <td className="px-4 py-3"><HealthPill label={lead.Status || 'New'} tone={/qualified|won|signed/i.test(lead.Status || '') ? 'ok' : 'neutral'} /></td>
+                      <td className="px-4 py-3">{lead.Owner || 'Owner missing'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </Section>
+
+          <Section title="Source ROI" kicker="Lead source performance. Connect won bids by source as data becomes available." className="xl:col-span-2">
+            <div className="grid gap-4 p-4 md:grid-cols-3">
+              {sourceRows.slice(0, 6).map(([source, count]) => (
+                <div key={source} className="rounded-lg border border-[rgba(31,41,55,0.15)] p-4">
+                  <p className="font-extrabold text-[#0F172A]">{source}</p>
+                  <p className="ops-display mt-2 text-[32px] font-extrabold leading-none text-[#0BBE63]">{count}</p>
+                  <p className="mt-1 text-xs font-semibold text-[#475569]">Lead rows. Won-bid attribution not connected yet.</p>
+                </div>
+              ))}
+            </div>
+          </Section>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }
