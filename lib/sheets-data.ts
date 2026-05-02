@@ -1,3 +1,14 @@
+import {
+  PROJECT_SETUP_TABS,
+  SCORECARD_TABS,
+  SHEET_IDS,
+  displayJobLifecycleStatus,
+  displayScheduleStatus,
+  normalizeContractStatus,
+  normalizeJobLifecycleStatus,
+  normalizeScheduleStatus,
+} from './operations-contract';
+
 /**
  * Shared data-fetching functions that call Google Sheets directly.
  * Use these in Server Components instead of fetching internal API routes.
@@ -75,9 +86,9 @@ export function clearSheetsDataCache() {
 
 // ──────────────────────────── JOBS (Google Sheets) ────────────────────────────
 
-const JOB_LIST_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+const JOB_LIST_SHEET_ID = SHEET_IDS.level10;
 const JOB_LIST_GID = '623969002';
-const PROJECT_SETUP_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
+const PROJECT_SETUP_SHEET_ID = SHEET_IDS.projectSetup;
 const PROJECT_SETUP_ACTIVE_JOBS_GID = '1448028936';
 
 type ProjectSetupActiveJob = {
@@ -137,7 +148,7 @@ async function fetchProjectSetupActiveJobs(): Promise<ProjectSetupActiveJob[]> {
 export function fetchLevel10Meeting() {
   return cached('level10Meeting', 24 * 60 * 60 * 1000, async () => {
     try {
-      const L10_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+      const L10_SHEET_ID = SHEET_IDS.level10;
       const MEETING_GID = '683987594'; // Specifically the Level 10 meeting tabs sheet
       const url = `https://docs.google.com/spreadsheets/d/${L10_SHEET_ID}/export?format=csv&gid=${MEETING_GID}`;
       const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, next: { revalidate: 86400 } });
@@ -294,7 +305,8 @@ export function fetchLiveJobs() {
         Job_Name: master?.Job_Name || legacy.Job_Name || qbo?.Project_Name || projectSetup?.Job_Name || '',
         Lat: projectSetup?.Lat || legacy.Lat || '',
         Lng: projectSetup?.Lng || legacy.Lng || '',
-        Status: master?.Job_Status || legacy.Status || 'Pending',
+        Status: displayJobLifecycleStatus(master?.Job_Status || legacy.Status || 'Pending'),
+        Job_Lifecycle_Status: normalizeJobLifecycleStatus(master?.Job_Status || legacy.Status || 'Pending'),
         General_Contractor: crewDayJob?.Contractor || legacy.General_Contractor || projectSetup?.General_Contractor || '',
         Project_Manager: master?.PM || legacy.Project_Manager || '',
         Contract_Amount: contractAmount,
@@ -319,7 +331,7 @@ export function fetchLiveJobs() {
 
 // ──────────────────────────── FLEET ASSETS (Google Sheets) ─────────────────────
 
-const FLEET_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+const FLEET_SHEET_ID = SHEET_IDS.level10;
 const FLEET_ASSETS_GID = '852503706';   // Sports Fleet Assets tab
 const FLEET_VEHICLES_GID = '1839763446'; // Sports Vehicle Fleet tab
 
@@ -429,11 +441,11 @@ async function fetchSheetByName(sheetId: string, tabName: string): Promise<strin
 export function fetchLiveRentals() {
   return cached('liveRentals', 5 * 60 * 1000, async () => {
     try {
-      const RENTAL_SHEET_ID = '1eIwv3pK0BBH3n4Uds6YZu4GWdMrlS3SAEFzsU3OKS5I';
+      const RENTAL_SHEET_ID = SHEET_IDS.projectSetup;
       const [sunbeltRows, unitedRows, overrideRows] = await Promise.all([
-        fetchSheetByName(RENTAL_SHEET_ID, 'Sunbelt Rentals Live'),
-        fetchSheetByName(RENTAL_SHEET_ID, 'United Rentals Live'),
-        fetchSheetByName(RENTAL_SHEET_ID, 'Rental_Status_Overrides'),
+        fetchSheetByName(RENTAL_SHEET_ID, PROJECT_SETUP_TABS.sunbeltRentalsLive),
+        fetchSheetByName(RENTAL_SHEET_ID, PROJECT_SETUP_TABS.unitedRentalsLive),
+        fetchSheetByName(RENTAL_SHEET_ID, PROJECT_SETUP_TABS.rentalStatusOverrides),
       ]);
 
       const rentals: any[] = [];
@@ -724,7 +736,7 @@ export async function fetchVisionLinkAssets(): Promise<VisionLinkAsset[]> {
   try {
     // Try sheet first; fall back to local CSV (data/VisionLink_Live.csv)
     let rows: string[][] = [];
-    try { rows = await fetchScorecardTabCsv('VisionLink_Live'); } catch {}
+    try { rows = await fetchScorecardTabCsv(SCORECARD_TABS.visionLinkLive); } catch {}
     // Validate: sheet tab might contain wrong data (e.g. scorecard rows instead of assets).
     // Real VisionLink_Live has 'asset_id' in header; if missing, discard and use local CSV.
     const sheetHdr = (rows[0] || []).map(c => c.trim().toLowerCase());
@@ -793,7 +805,7 @@ export async function fetchVisionLinkAssets(): Promise<VisionLinkAsset[]> {
 // For overlapping jobs, totals are combined (tonnage, days active, etc.)
 
 // ── Jotform (Legacy/Historical sheet data only) ──────────────────────────────
-const JOTFORM_LEGACY_TAB = 'JOTFORM_FIELD_RAW';
+const JOTFORM_LEGACY_TAB = SCORECARD_TABS.fieldLegacy;
 
 function safeNum(val: string): number { const n = parseFloat(val?.replace(/[^0-9.-]/g, '') || '0'); return isNaN(n) ? 0 : n; }
 
@@ -953,8 +965,8 @@ async function fetchJotformFeed(jobNumber: string): Promise<any[]> {
 }
 
 // ── Google Forms (New — Form Responses 1 sheet) ──────────────────────────────
-const FIELD_REPORT_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
-const FIELD_REPORT_TAB = 'Form Responses 1';
+const FIELD_REPORT_SHEET_ID = SHEET_IDS.scorecardHub;
+const FIELD_REPORT_TAB = SCORECARD_TABS.fieldForms;
 
 async function fetchFormResponseRows(): Promise<string[][]> {
   try {
@@ -1148,7 +1160,7 @@ export async function fetchFieldReportFeed(jobNumber: string): Promise<any[]> {
 
 // ──────────────────────────── ESTIMATING (Google Sheets) ────────────────────────────
 
-const EST_SHEET_ID = '1uvHDu3GmBpJhXLNw_bm-rYqXGcQxO1tbBUBSvhsz2zw';
+const EST_SHEET_ID = SHEET_IDS.estimating;
 const BID_LOG_GID = '928358188';
 const BACKLOG_GID = '1136500140';
 
@@ -1188,7 +1200,7 @@ export async function fetchEstimatingData() {
 
 // ──────────────────────────── SCORECARD (QuickBooks via Google Sheets) ────────────────────────────
 
-const QB_SHEET_ID = '1LYmHPUfoSW_UQq0mtQ7s9APvDJlymh_9trYRxc3lSss';
+const QB_SHEET_ID = SHEET_IDS.legacyQbo;
 const PL_GID = '0';
 const BS_GID = '1219933569';
 const AR_GID = '811286112';
@@ -1336,12 +1348,12 @@ export async function fetchScorecardData() {
 
 // ──────────────────────────── SCHEDULE (Google Sheets) ────────────────────────────
 
-const SCHEDULE_SHEET_ID = '1WAxsAA7aSjA4OA6KLG1PvY34ImCuDixxiluN2-JRfzQ';
+const SCHEDULE_SHEET_ID = SHEET_IDS.level10;
 const SCHEDULE_GID = '416948597';
-const GANTT_SHEET_ID = '178t9iioyveWqP6o8x2lQwMagexDP0W9FA4I2jfutJmw';
+const GANTT_SHEET_ID = SHEET_IDS.gantt;
 const GANTT_GID = '1949703319';
-const MS_PROJECT_SCHEDULE_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
-const MS_PROJECT_SCHEDULE_TAB = 'MS_PROJECT_SCHEDULE_LIVE';
+const MS_PROJECT_SCHEDULE_SHEET_ID = SHEET_IDS.scorecardHub;
+const MS_PROJECT_SCHEDULE_TAB = SCORECARD_TABS.msProjectScheduleLive;
 
 // Schedule column layout — verified live against Schedule tab header row.
 // Header row 0:
@@ -1435,7 +1447,8 @@ async function fetchMsProjectScheduleJobs() {
         Percent_Complete: parseFloatSafe(get(row, 'Percent_Complete')),
         Snapshot_Date: get(row, 'Snapshot_Date'),
         Source_File: get(row, 'Source_File'),
-        Schedule_Status: get(row, 'Schedule_Status'),
+        Schedule_Status: displayScheduleStatus(get(row, 'Schedule_Status'), get(row, 'Percent_Complete')),
+        Schedule_Status_Code: normalizeScheduleStatus(get(row, 'Schedule_Status'), get(row, 'Percent_Complete')),
         Matched_Master_Job: get(row, 'Matched_Master_Job'),
         taskType,
       };
@@ -1590,19 +1603,15 @@ export async function fetchScheduleData() {
   } catch { return { currentWeek: { days: [] }, nextWeek: { days: [] }, deliveries: [], activeGanttJobs: [], jobFirstOccurrences: [], looseEnds: [], scheduledJobCount: 0, ganttJobCount: 0 }; }
 }
 // ──────────────────────────── PROJECT SCORECARDS (Google Sheets Hub) ────────────────────────────
-const SCORECARD_HUB_SHEET_ID = '1yNpkY-gcbeZS2hGPyATTkDdt8iMbmOm4mhy7WGidKfY';
+const SCORECARD_HUB_SHEET_ID = SHEET_IDS.scorecardHub;
 
 export async function fetchProjectScorecards(): Promise<Record<string, string>[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/export?format=csv&gid=0`;
-    const res = await fetch(url, { next: { revalidate: 86400 } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const text = await res.text();
-    const rows = text.split(/\r\n|\n|\r/).filter(function(l) { return l.trim(); });
+    let rows = await fetchScorecardTabCsv(SCORECARD_TABS.projectScorecardsLive);
+    if (rows.length < 2) rows = await fetchScorecardTabCsv(SCORECARD_TABS.dashboard);
     if (rows.length < 2) return [];
-    const headers = parseCSVLine(rows[0]);
-    return rows.slice(1).map(function(line) {
-      const cols = parseCSVLine(line);
+    const headers = rows[0];
+    return rows.slice(1).map(function(cols) {
       const row: Record<string, string> = {};
       headers.forEach(function(h: string, i: number) { row[h] = cols[i] !== undefined ? cols[i] : ''; });
       return row;
@@ -1692,6 +1701,7 @@ export interface EstVsActualRow {
   Actual_Asphalt_Tons: number;
   Man_Hours: number;
   Status: string;
+  Contract_Status: ReturnType<typeof normalizeContractStatus>;
 }
 
 function idxByHeader(headers: string[], name: string): number {
@@ -1701,14 +1711,14 @@ function idxByHeader(headers: string[], name: string): number {
 
 export async function fetchMasterJobIndex(): Promise<MasterJobIndexRow[]> {
   try {
-    const rows = await fetchScorecardTabCsv('MASTER JOB INDEX');
+    const rows = await fetchScorecardTabCsv(SCORECARD_TABS.masterJobs);
     if (rows.length < 2) return [];
     const hdr = rows[0].map(c => c.trim());
     const get = (r: string[], name: string) => r[idxByHeader(hdr, name)] || '';
     return rows.slice(1).map(r => ({
       Job_Number: get(r, 'Job #').trim(),
       Job_Name: get(r, 'Job Name').trim(),
-      Job_Status: get(r, 'Job Status').trim(),
+      Job_Status: displayJobLifecycleStatus(get(r, 'Job Status').trim()),
       Contract_Amount: n(get(r, 'Contract Amount')),
       Estimated_GAB_Tons: n(get(r, 'Estimated GAB Tons')),
       Estimated_Binder_Tons: n(get(r, 'Estimated Binder Tons')),
@@ -1725,7 +1735,7 @@ export async function fetchMasterJobIndex(): Promise<MasterJobIndexRow[]> {
 
 export async function fetchEstVsActual(): Promise<EstVsActualRow[]> {
   try {
-    const rows = await fetchScorecardTabCsv('Est vs Actual');
+    const rows = await fetchScorecardTabCsv(SCORECARD_TABS.estVsActual);
     if (rows.length < 2) return [];
     const hdr = rows[0].map(c => c.trim());
     const get = (r: string[], name: string) => r[idxByHeader(hdr, name)] || '';
@@ -1743,6 +1753,7 @@ export async function fetchEstVsActual(): Promise<EstVsActualRow[]> {
       Actual_Asphalt_Tons: n(get(r, 'Actual Asphalt Tons')),
       Man_Hours: n(get(r, 'Man Hours')),
       Status: get(r, 'Status').trim(),
+      Contract_Status: normalizeContractStatus(get(r, 'Status').trim()),
     })).filter(r => /^\d{2,3}-\d{3}/.test(r.Job_Number));
   } catch (error) {
     console.error('[fetchEstVsActual] failed:', error);
@@ -1752,7 +1763,7 @@ export async function fetchEstVsActual(): Promise<EstVsActualRow[]> {
 
 export async function fetchQboFinancials(): Promise<QboJobFinancials[]> {
   try {
-    const rows = await fetchScorecardTabCsv('QBO Est vs Actuals');
+    const rows = await fetchScorecardTabCsv(SCORECARD_TABS.qboEstVsActuals);
     if (rows.length < 2) return [];
     const hdr = rows[0].map(c => c.trim());
     const idx = (name: string) => hdr.indexOf(name);
@@ -1784,7 +1795,7 @@ export async function fetchQboFinancials(): Promise<QboJobFinancials[]> {
 export async function fetchArAging(): Promise<QboArSummary> {
   const empty: QboArSummary = { rows: [], totals: { current: 0, d1_30: 0, d31_60: 0, d61_90: 0, d91Plus: 0, total: 0 } };
   try {
-    const rows = await fetchScorecardTabCsv('QBO AR Aging');
+    const rows = await fetchScorecardTabCsv(SCORECARD_TABS.qboArAging);
     if (rows.length < 2) return empty;
     const hdr = rows[0].map(c => c.trim());
     const idx = (name: string) => hdr.indexOf(name);
@@ -1846,7 +1857,7 @@ export interface ReworkEntry {
 
 export async function fetchReworkLog(): Promise<ReworkEntry[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('REWORK_LOG')}`;
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SCORECARD_TABS.rework)}`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const text = await res.text();
@@ -1924,7 +1935,7 @@ export interface MarketingLead {
 
 export async function fetchMarketingLeads(): Promise<MarketingLead[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Marketing_Leads')}`;
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SCORECARD_TABS.marketingLeads)}`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const text = await res.text();
@@ -1964,7 +1975,7 @@ export interface LiveScorecardRow {
 
 export async function fetchProjectScorecardsEstVsAct(): Promise<LiveScorecardRow[]> {
   try {
-    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Project_Scorecards_Live')}`;
+    const url = `https://docs.google.com/spreadsheets/d/${SCORECARD_HUB_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SCORECARD_TABS.projectScorecardsLive)}`;
     const res = await fetch(url, { next: { revalidate: 86400 } });
     if (!res.ok) return [];
     const text = await res.text();
@@ -2040,7 +2051,7 @@ export async function fetchGanttSchedule(): Promise<GanttRow[]> {
 // Source: https://docs.google.com/spreadsheets/d/1RhHIJooRFj-ChTwQlIl-EYx8IIcW02QT
 // Sheet tab "2026_Bid_Log" has a top dashboard section; bid rows start later.
 
-const BID_LOG_SHEET_ID = '1RhHIJooRFj-ChTwQlIl-EYx8IIcW02QT';
+const BID_LOG_SHEET_ID = SHEET_IDS.bidLog;
 
 export interface BidLogRow {
   Bid_Number: string;

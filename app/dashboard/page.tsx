@@ -13,6 +13,7 @@ import {
 import { getGlobalSamsara } from '@/app/api/telematics/samsara/route';
 import { getGlobalWeather } from '@/app/api/weather/route';
 import { formatDollars } from '@/lib/format';
+import { isTerminalJobStatus } from '@/lib/operations-contract';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 300;
@@ -27,7 +28,7 @@ type AlertItem = {
 };
 
 function isClosed(job: any): boolean {
-  return /closed|complete/i.test(String(job?.Status || ''));
+  return isTerminalJobStatus(job?.Job_Lifecycle_Status || job?.Status);
 }
 
 function parseDate(value: string): number {

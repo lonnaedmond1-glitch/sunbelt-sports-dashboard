@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { HealthPill, KpiCard, PageShell, ProgressBar, Section, moneyCompact } from '@/components/OperationsUI';
 import { fetchLiveFieldReports, fetchLiveJobs } from '@/lib/sheets-data';
 import { formatDollars } from '@/lib/format';
+import { isTerminalJobStatus } from '@/lib/operations-contract';
 
 export const revalidate = 300;
 
@@ -15,7 +16,7 @@ type SearchParams = {
 };
 
 function isClosed(job: any): boolean {
-  return /closed|complete/i.test(String(job?.Status || ''));
+  return isTerminalJobStatus(job?.Job_Lifecycle_Status || job?.Status);
 }
 
 function clean(value: unknown, fallback = 'Missing'): string {
